@@ -78,7 +78,6 @@ single network request. This is evidence, not quote status.
 
 ## Validation and transitions
 
-- New archive: absent -> schema 1, new document UUID, revision 1.
 - New archive: absent -> schema 2, FIC disabled, new document UUID, revision 1.
 - Schema 1 migration: preview -> confirmation -> backup -> atomic conversion; FIC becomes disabled,
   non-secret references are retained, remote snapshots remain remote, and local clients start empty.

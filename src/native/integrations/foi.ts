@@ -3,7 +3,8 @@ import { money } from '../../domain/decimal';
 import { err, ok, type FoiEvidence, type Result } from '../../domain/model';
 import { officialFetch } from './http';
 
-export const ISTAT_FOI_URL = 'https://esploradati.istat.it/SDMXWS/rest/data/169_745_DF_DCSP_FOI1B2015_1';
+export const ISTAT_FOI_URL = 'https://esploradati.istat.it/SDMXWS/rest/data/169_745_DF_DCSP_FOI1B2015_1/M.IT.55.4.00ST';
+const FOI_2015_TO_2025_LINK = '1.214';
 export interface FoiObservation { period: string; value: string; base: string; linkFactor: string }
 
 function splitCsvLine(line: string): string[] {
@@ -23,12 +24,18 @@ export function parseFoiSdmxCsv(csv: string): Result<FoiObservation[]> {
   const periodIndex = headers.indexOf('TIME_PERIOD'), valueIndex = headers.indexOf('OBS_VALUE');
   if (periodIndex < 0 || valueIndex < 0) return err({ code: 'SOURCE_INVALID', source: 'ISTAT', message: 'Colonne SDMX FOI mancanti.' });
   const baseIndex = headers.findIndex(value => value === 'BASE_PER' || value === 'BASE_YEAR');
+  const itemIndex = headers.indexOf('E_COICOP_REV_ISTAT');
+  const statusIndex = headers.indexOf('OBS_STATUS');
   const rows: FoiObservation[] = [];
   for (const line of lines.slice(1)) {
     const values = splitCsvLine(line);
     const period = values[periodIndex], value = values[valueIndex];
-    if (period && /^\d{4}-\d{2}$/.test(period) && value && /^\d+(?:\.\d+)?$/.test(value))
-      rows.push({ period, value, base: baseIndex >= 0 ? values[baseIndex] || '2015=100' : '2015=100', linkFactor: '1' });
+    const status=statusIndex>=0?values[statusIndex]:'';
+    if (period && /^\d{4}-\d{2}$/.test(period) && value && /^\d+(?:\.\d+)?$/.test(value)
+      && (itemIndex<0||values[itemIndex]==='00ST') && status!=='P' && status!=='E') {
+      const base=(baseIndex>=0&&values[baseIndex])||(period>='2026-01'?'2025=100':'2015=100');
+      rows.push({ period, value, base, linkFactor: base.startsWith('2025')?FOI_2015_TO_2025_LINK:'1' });
+    }
   }
   const unique = new Map(rows.map(row => [row.period, row]));
   if (!unique.size) return err({ code: 'SOURCE_INVALID', source: 'ISTAT', message: 'Nessuna osservazione mensile FOI valida nella risposta.' });
@@ -39,7 +46,7 @@ export function revalueFromSeries(amount: string, fromPeriod: string, series: Fo
   const start = series.find(row => row.period === fromPeriod);
   const end = [...series].sort((a, b) => b.period.localeCompare(a.period))[0];
   if (!start || !end) return err({ code: 'MISSING_DATA', source: 'ISTAT', message: `Indice FOI non disponibile per ${fromPeriod} o per il periodo finale.` });
-  if (start.base !== end.base && (start.linkFactor === '1' || end.linkFactor === '1'))
+  if (!start.linkFactor || !end.linkFactor)
     return err({ code: 'MISSING_DATA', source: 'ISTAT', message: 'Coefficienti ufficiali di raccordo mancanti per basi FOI diverse.' });
   try {
     const fromComparable = new Decimal(start.value).mul(start.linkFactor);
@@ -51,7 +58,7 @@ export function revalueFromSeries(amount: string, fromPeriod: string, series: Fo
 }
 
 export async function revalueFoi(amount: string, fromPeriod: string, fetcher: typeof fetch = fetch): Promise<Result<FoiEvidence>> {
-  const response = await officialFetch(`${ISTAT_FOI_URL}?startPeriod=${encodeURIComponent(fromPeriod)}&lastNObservations=240`,
+  const response = await officialFetch(`${ISTAT_FOI_URL}?startPeriod=${encodeURIComponent(fromPeriod)}&lastNObservations=360`,
     { headers: { Accept: 'application/vnd.sdmx.data+csv;version=1.0.0' } }, fetcher);
   if (!response.ok) return { ok: false, error: { ...response.error, source: 'ISTAT' } };
   if (!response.value.ok) return err({ code: 'SOURCE_UNAVAILABLE', source: 'ISTAT', message: `ISTAT ha risposto HTTP ${response.value.status}.` });

@@ -28,6 +28,11 @@ export async function refreshQuote(quote: Quote, sources: RefreshSources): Promi
   const profileSnapshot = snapshotProfile(profile, sources.costs);
   if (!profileSnapshot.ok) return profileSnapshot;
   next.profileSnapshot = profileSnapshot.value;
+  if (next.mainSite) {
+    const mainSite = sources.siteById(next.mainSite.sourceId);
+    if (!mainSite) return err({ code: 'MISSING_DATA', field: 'mainSite', message: 'La Sede principale di origine non esiste più.' });
+    next.mainSite.oneWayKm = mainSite.oneWayKm;
+  }
 
   for (const item of next.items) {
     if (item.referencePrice) {

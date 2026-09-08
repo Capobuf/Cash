@@ -8,7 +8,10 @@ export interface ProfileAnalysis {
   revenueTarget: string;
   revenueFromTime: string;
   forfaitIncome?: string;
+  contributionBase?: string;
   contributions?: string;
+  taxBase?: string;
+  effectiveTaxRate?: string;
   substituteTax?: string;
   fiscalNet?: string;
   annualBusinessCosts: string;
@@ -24,11 +27,12 @@ export interface ProfileAnalysis {
 
 const fail = <T>(message: string, field?: string): Result<T> => err({ code: 'VALIDATION', message, ...(field ? { field } : {}) });
 
-export function calculateProfile(profile: EconomicProfile, costs: BusinessCost[]): Result<ProfileAnalysis> {
+function calculateProfileCore(profile: EconomicProfile, costs: BusinessCost[], requireConfirmed: boolean): Result<ProfileAnalysis> {
   try {
     const revenue = d(profile.revenueTarget);
     const specific = d(profile.specificAnnualExpenses);
     if (revenue.lte(0)) return fail('Il fatturato obiettivo deve essere maggiore di zero.', 'revenueTarget');
+    if (!profile.fiscal.atecoCode.trim()) return fail('Il codice ATECO è obbligatorio.', 'atecoCode');
     if (specific.lt(0) || specific.gte(revenue)) return fail('Le spese specifiche devono essere non negative e inferiori al fatturato.', 'specificAnnualExpenses');
     const hours = d(profile.capacity.hoursPerDay);
     const clientPercent = d(profile.capacity.clientTimePercentage);
@@ -45,6 +49,17 @@ export function calculateProfile(profile: EconomicProfile, costs: BusinessCost[]
     const clientMinutes = d(workMinutes).mul(clientPercent).div(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
     if (clientMinutes <= 0) return fail('Le ore disponibili per i lavori devono essere maggiori di zero.', 'clientTimePercentage');
 
+    const profitability = d(profile.fiscal.profitabilityCoefficient).div(100);
+    const contributionRate = d(profile.fiscal.contributionRate).div(100);
+    const effectiveRate = profile.fiscal.activityPhase === 'reduced_eligible' && profile.fiscal.reducedEligibilityConfirmed
+      ? profile.fiscal.reducedSubstituteTaxRate : profile.fiscal.ordinarySubstituteTaxRate;
+    const taxRate = d(effectiveRate).div(100);
+    if (profitability.lte(0) || profitability.gt(1) || contributionRate.lt(0) || contributionRate.gt(1) || taxRate.lt(0) || taxRate.gt(1))
+      return fail('Coefficienti e aliquote fiscali non validi.', 'fiscal');
+    if (d(profile.fiscal.contributionCeiling).lte(0)) return fail('Il massimale contributivo deve essere positivo.', 'contributionCeiling');
+    if (d(profile.fiscal.ordinaryThreshold).lte(0) || d(profile.fiscal.cessationThreshold).lte(profile.fiscal.ordinaryThreshold))
+      return fail('Le soglie devono essere positive e la cessazione deve superare la soglia ordinaria.', 'fiscal.thresholds');
+
     const annualCosts = costs.reduce((sum, cost) => sum.plus(d(cost.monthlyAmount).mul(12)), d(0));
     if (annualCosts.lt(0)) return fail('I costi aziendali non possono essere negativi.', 'businessCosts');
     const revenueFromTime = revenue.minus(specific);
@@ -58,28 +73,35 @@ export function calculateProfile(profile: EconomicProfile, costs: BusinessCost[]
       availableDays, availableWorkMinutes: workMinutes, availableClientMinutes: clientMinutes,
       hourlyTarget: money(hourlyTarget), excludedHolidays: calendar.value.excludedWeekdayHolidays, warnings,
     };
-    if (!profile.confirmed) return err({ code: 'MISSING_DATA', field: 'confirmed', message: 'Confermare il profilo fiscale prima della proiezione.', details: [JSON.stringify(base)] });
+    if (requireConfirmed && !profile.confirmed) return err({ code: 'MISSING_DATA', field: 'confirmed', message: 'Confermare il profilo fiscale prima della proiezione.', details: [JSON.stringify(base)] });
+    if (requireConfirmed && profile.fiscal.activityPhase === 'reduced_eligible' && !profile.fiscal.reducedEligibilityConfirmed)
+      return err({ code: 'MISSING_DATA', field: 'reducedEligibilityConfirmed', message: 'Confermare separatamente i requisiti per l’aliquota agevolata.' });
+    if (requireConfirmed && revenue.gt(profile.fiscal.ordinaryThreshold) && revenue.lte(profile.fiscal.cessationThreshold) && !profile.fiscal.ordinaryApplicabilityConfirmed)
+      return err({ code: 'MISSING_DATA', field: 'ordinaryApplicabilityConfirmed', message: 'Confermare l’applicabilità del regime oltre la soglia ordinaria.' });
     if (revenue.gt(profile.fiscal.cessationThreshold)) {
       base.warnings.push('Superata la soglia di cessazione: proiezione fiscale non disponibile.');
       return ok(base);
     }
-    const profitability = d(profile.fiscal.profitabilityCoefficient).div(100);
-    const contributionRate = d(profile.fiscal.contributionRate).div(100);
-    const taxRate = d(profile.fiscal.substituteTaxRate).div(100);
-    if (profitability.lte(0) || profitability.gt(1) || contributionRate.lt(0) || contributionRate.gt(1) || taxRate.lt(0) || taxRate.gt(1))
-      return fail('Coefficienti e aliquote fiscali non validi.', 'fiscal');
     const forfaitIncome = revenue.mul(profitability);
     const contributionBase = Decimal.min(forfaitIncome, d(profile.fiscal.contributionCeiling));
     const contributions = d(money(contributionBase.mul(contributionRate)));
     const taxBase = Decimal.max(0, forfaitIncome.minus(contributions));
     const substituteTax = d(money(taxBase.mul(taxRate)));
     const fiscalNet = revenue.minus(contributions).minus(substituteTax);
-    return ok({ ...base, forfaitIncome: money(forfaitIncome), contributions: money(contributions),
-      substituteTax: money(substituteTax), fiscalNet: money(fiscalNet),
+    return ok({ ...base, forfaitIncome: money(forfaitIncome), contributionBase: money(contributionBase), contributions: money(contributions),
+      taxBase: money(taxBase), effectiveTaxRate: effectiveRate, substituteTax: money(substituteTax), fiscalNet: money(fiscalNet),
       availableIncome: money(fiscalNet.minus(annualCosts).minus(specific)) });
   } catch (cause) {
     return fail(cause instanceof Error ? cause.message : 'Valori del profilo non validi.');
   }
+}
+
+export function previewProfile(profile: EconomicProfile, costs: BusinessCost[]): Result<ProfileAnalysis> {
+  return calculateProfileCore(profile, costs, false);
+}
+
+export function calculateProfile(profile: EconomicProfile, costs: BusinessCost[]): Result<ProfileAnalysis> {
+  return calculateProfileCore(profile, costs, true);
 }
 
 export interface VehicleCost { fuelCostPerKm: string; annualCostPerKm: string; costPerKm: string }
@@ -155,16 +177,21 @@ export function calculateItem(item: QuoteItem, hourlyTarget: string): ItemAnalys
   return result;
 }
 
-export interface QuoteAnalysis extends ItemAnalysis { chosenTotal?: string; blockingItems: string[] }
+export interface QuoteAnalysis {
+  minutes?: number; expenses?: string; timeValue?: string; theoreticalValue?: string;
+  chosenTotal?: string; yieldPerHour?: string; deviationPercent?: string; coherentMinutes?: number;
+  deficit?: string; blockers: string[]; blockingItems: string[];
+}
 export function calculateQuote(items: QuoteItem[], hourlyTarget: string): QuoteAnalysis {
   const analyses = items.map(item => calculateItem(item, hourlyTarget));
-  const blockingItems = analyses.flatMap((a, i) => a.blockers.length ? [`${items[i]?.name ?? `Voce ${i + 1}`}: ${a.blockers.join(' ')}`] : []);
+  const blockingItems = items.length ? analyses.flatMap((a, i) => a.blockers.length ? [`${items[i]?.name ?? `Voce ${i + 1}`}: ${a.blockers.join(' ')}`] : []) : ['Preventivo: aggiungere almeno una voce calcolabile.'];
   const minutes = analyses.reduce((sum, value) => sum + value.minutes, 0);
   const expenses = sumMoney(analyses.map(value => value.expenses));
   const timeValue = sumMoney(analyses.map(value => value.timeValue));
   const theoreticalValue = sumMoney(analyses.map(value => value.theoreticalValue));
-  const result: QuoteAnalysis = { minutes, expenses, timeValue, theoreticalValue, blockers: [...blockingItems], blockingItems };
-  if (blockingItems.length || items.some(item => item.chosenPrice === undefined)) {
+  if (blockingItems.length) return { blockers: [...blockingItems], blockingItems };
+  const result: QuoteAnalysis = { minutes, expenses, timeValue, theoreticalValue, blockers: [], blockingItems };
+  if (items.some(item => item.chosenPrice === undefined)) {
     if (items.some(item => item.chosenPrice === undefined)) result.blockers.push('Ogni voce richiede un prezzo scelto per gli indicatori complessivi.');
     return result;
   }

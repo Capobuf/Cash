@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -30,7 +30,11 @@ export interface FiscalParameters {
   profitabilityCoefficient: DecimalString;
   contributionRate: DecimalString;
   contributionCeiling: DecimalString;
-  substituteTaxRate: DecimalString;
+  activityPhase: 'reduced_eligible' | 'ordinary';
+  reducedEligibilityConfirmed: boolean;
+  ordinaryApplicabilityConfirmed: boolean;
+  reducedSubstituteTaxRate: DecimalString;
+  ordinarySubstituteTaxRate: DecimalString;
   ordinaryThreshold: DecimalString;
   cessationThreshold: DecimalString;
 }
@@ -73,8 +77,13 @@ export interface Vehicle extends EntityMeta {
   annualMaintenance: DecimalString;
 }
 
-export interface ClientRef { companyId: string; clientId: string; displayName: string }
-export interface ClientSnapshot extends ClientRef { vatNumber: string }
+export interface LocalClient extends EntityMeta { displayName: string; vatNumber?: string }
+export interface LocalClientRef { source: 'local'; localClientId: string; displayName: string }
+export interface FicClientRef { source: 'fatture_in_cloud'; companyId: string; clientId: string; displayName: string }
+export type ClientRef = LocalClientRef | FicClientRef;
+export interface LocalClientSnapshot extends LocalClientRef { vatNumber?: string }
+export interface FicClientSnapshot extends FicClientRef { vatNumber?: string }
+export type ClientSnapshot = LocalClientSnapshot | FicClientSnapshot;
 export interface Site extends EntityMeta {
   name: string;
   address: string;
@@ -114,7 +123,7 @@ export interface FoiEvidence {
 
 export interface BaseSubItem extends EntityMeta {
   description: string;
-  variantOwner?: { groupId: string; optionId: string };
+  variantOwner?: { groupId: string; optionId: string; definitionIndex?: number };
   manuallyModified?: boolean;
 }
 export interface TimeSubItem extends BaseSubItem { kind: 'time'; minutes: number }
@@ -211,8 +220,13 @@ export interface Quote extends EntityMeta {
 
 export interface SharedSettings {
   fuelTerritory?: string;
-  ficCompanyId?: string;
-  ficConsultingProductId?: string;
+  fic: {
+    enabled: boolean;
+    company?: { id: string; name: string };
+    product?: { id: string; name: string };
+    legacyReferences?: { companyId?: string; productId?: string };
+    lastVerification?: { at: string; result: 'success' | 'error'; diagnostic?: string };
+  };
 }
 
 export interface CashDocument {
@@ -223,6 +237,7 @@ export interface CashDocument {
   updatedAt: string;
   settings: SharedSettings;
   profiles: EconomicProfile[];
+  localClients: LocalClient[];
   businessCosts: BusinessCost[];
   vehicles: Vehicle[];
   sites: Site[];
@@ -243,8 +258,9 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   revision: 1,
   createdAt: now,
   updatedAt: now,
-  settings: {},
+  settings: { fic: { enabled: false } },
   profiles: [],
+  localClients: [],
   businessCosts: [],
   vehicles: [],
   sites: [],
@@ -257,8 +273,17 @@ export const createFiscalPreset2026 = (): EconomicProfile => ({
   specificAnnualExpenses: '0.00',
   fiscal: {
     atecoCode: '62.20.10', profitabilityCoefficient: '67', contributionRate: '26.07',
-    contributionCeiling: '122295.00', substituteTaxRate: '15', ordinaryThreshold: '85000.00',
+    contributionCeiling: '122295.00', activityPhase: 'ordinary', reducedEligibilityConfirmed: false,
+    ordinaryApplicabilityConfirmed: false, reducedSubstituteTaxRate: '5', ordinarySubstituteTaxRate: '15', ordinaryThreshold: '85000.00',
     cessationThreshold: '100000.00',
   },
   capacity: { hoursPerDay: '8', vacationDays: 20, unplannedDays: 5, clientTimePercentage: '60', localHolidays: [] },
+});
+
+export const createBlankProfile = (year: number): EconomicProfile => ({
+  ...meta(), year, revision: 1, confirmed: false, revenueTarget: '0.00', specificAnnualExpenses: '0.00',
+  fiscal: { atecoCode: '', profitabilityCoefficient: '0', contributionRate: '0', contributionCeiling: '0.00',
+    activityPhase: 'ordinary', reducedEligibilityConfirmed: false, ordinaryApplicabilityConfirmed: false,
+    reducedSubstituteTaxRate: '0', ordinarySubstituteTaxRate: '0', ordinaryThreshold: '0.00', cessationThreshold: '0.00' },
+  capacity: { hoursPerDay: '0', vacationDays: 0, unplannedDays: 0, clientTimePercentage: '0', localHolidays: [] },
 });

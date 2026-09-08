@@ -11,13 +11,15 @@ No generic IPC sender, path/filesystem API, credential value, or fetch API reach
   schema 1 returns a migration preview and requires explicit confirmation before backup/atomic write.
 - `archive.save(document, token)` performs serialized, conflict-checked atomic persistence.
 - `archive.saveRecovery(document)` writes an independent document ID at revision 1.
+- `archive.restoreBackup(path, token)` requires native confirmation, preserves dated copies of both
+  current and backup files, restores atomically, and assigns a new document identity.
 - `archive.inspect()` returns current identity/revision/fingerprint without mutation.
 
 ## Credentials
 
 - `credentials.hasFicToken()` returns a boolean.
-- `credentials.setFicToken(token)` stores locally and returns no secret.
-- `credentials.deleteFicToken()` removes it. Renderer code can never read the token.
+- The renderer cannot set, read, or delete the token directly. `fic.completeActivation(...)` and
+  `fic.removeLink(...)` coordinate credential and archive changes natively with rollback.
 
 ## Official data
 
@@ -27,6 +29,10 @@ No generic IPC sender, path/filesystem API, credential value, or fetch API reach
 - `fic.verifyToken(token)` verifies the manual token and returns companies and granted scopes without
   exposing the token again; `fic.listCompanies()` is available only during the activation wizard.
 - `fic.verifyProduct({ companyId, productId })` returns a verified product summary.
+- `fic.completeActivation({ token, companyId, productId, path, document, concurrencyToken })` verifies
+  the staged configuration, then commits credential and archive state atomically with rollback.
+- `fic.removeLink({ path, document, concurrencyToken })` removes shared configuration and the local
+  credential atomically with rollback, leaving historical snapshots/evidence untouched.
 - `fic.exportQuote({ companyId, payload, attemptId })` performs exactly one request and returns
   success, rejected, or uncertain; it never retries.
 

@@ -31,4 +31,4 @@
 
 ## Notes
 
-- The canonical v0.5 document supplies the detailed requirements and 54 acceptance criteria.
+- The canonical v0.6 document supplies the detailed requirements and 57 acceptance criteria.

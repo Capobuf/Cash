@@ -1,4 +1,4 @@
-import { meta, nowIso, type CashDocument, type QuoteItem, type ReusableSubItem, type SubItemDefinition, type Template,
+import { err, meta, nowIso, ok, type CashDocument, type QuoteItem, type QuoteSubItem, type Result, type ReusableSubItem, type SubItemDefinition, type Template,
   type TemplateItem, type VariantGroup, type VariantOption } from './model';
 
 const copyDefinition = (definition: SubItemDefinition): ReusableSubItem => ({ ...structuredClone(definition), ...meta() } as ReusableSubItem);
@@ -36,6 +36,29 @@ export function previewTemplate(name: string, items: QuoteItem[]): TemplatePrevi
       ...(group.defaultOptionId ? { default: group.options.find(option => option.id === group.defaultOptionId)?.name } : {}) })) })) };
 }
 
+export function reusableFromQuoteSubItem(source: QuoteSubItem): ReusableSubItem {
+  if (source.kind === 'time') return { ...meta(), kind:'time', description:source.description, minutes:source.minutes };
+  if (source.kind === 'expense') return { ...meta(), kind:'expense', description:source.description, amount:source.amount };
+  return { ...meta(), kind:'travel', description:source.description, roundTrip:source.roundTrip, occurrences:source.occurrences,
+    timeMode:source.timeMode, ...(source.timeMode==='manual'&&source.manualMinutesPerOccurrence?{manualMinutesPerOccurrence:source.manualMinutesPerOccurrence}:{}) };
+}
+
+export function templateFromQuote(name: string, items: QuoteItem[]): Result<Template> {
+  const cleanName=name.trim();if(!cleanName)return err({code:'VALIDATION',field:'template.name',message:'Il nome del template è obbligatorio.'});
+  if(!items.length)return err({code:'VALIDATION',field:'template.items',message:'Selezionare almeno una voce.'});
+  return ok({ ...meta(), name:cleanName, items:items.map(item=>{
+    const groups=structuredClone(item.variantGroups);
+    for(const sub of item.subItems.filter(candidate=>candidate.variantOwner&&candidate.manuallyModified)){
+      const owner=sub.variantOwner!;const option=groups.find(group=>group.id===owner.groupId)?.options.find(candidate=>candidate.id===owner.optionId);
+      if(option&&owner.definitionIndex!==undefined&&option.subItems[owner.definitionIndex]){
+        const reusable=reusableFromQuoteSubItem(sub);const {id:_id,createdAt:_createdAt,updatedAt:_updatedAt,...definition}=reusable;option.subItems[owner.definitionIndex]=definition;
+      }
+    }
+    return { ...meta(), name:item.name, ...(item.referencePrice?{referencePrice:{amount:item.referencePrice.amount,period:item.referencePrice.period}}:{}),
+      subItems:item.subItems.filter(sub=>!sub.variantOwner).map(reusableFromQuoteSubItem), variantGroups:groups.map(copyGroup) };
+  }) });
+}
+
 export function findLiveReferences(document: CashDocument, entityId: string): string[] {
   const refs: string[] = [];
   for (const template of document.catalog.templates) {
@@ -47,7 +70,7 @@ export function findLiveReferences(document: CashDocument, entityId: string): st
       }
     }
   }
-  if (document.settings.ficConsultingProductId === entityId) refs.push('Impostazione prodotto Consulenza');
+  if (document.settings.fic.product?.id === entityId) refs.push('Impostazione prodotto Consulenza');
   return refs;
 }
 

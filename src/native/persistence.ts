@@ -7,6 +7,7 @@ import { cashDocumentSchema, documentHeaderSchema, parseDocument } from '../doma
 
 export interface ConcurrencyToken { documentId: string; revision: number; fingerprint: string }
 export interface ArchiveSession { path: string; document?: CashDocument; token: ConcurrencyToken; readOnly: boolean; headerOnly?: true }
+export interface MigrationPreview { fromVersion: number; toVersion: number; changes: string[]; backupPath: string }
 
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const encode = (document: CashDocument): Buffer => Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8');
@@ -50,6 +51,69 @@ export async function openArchive(path: string): Promise<Result<ArchiveSession>>
     return ok({ path, document: parsed.data, token, readOnly: false });
   } catch (cause) {
     return err({ code: 'IO', source: 'archive', message: 'Impossibile aprire l’archivio.', details: [String(cause)] });
+  }
+}
+
+export async function previewMigration(path: string): Promise<Result<MigrationPreview>> {
+  const inspection = await inspectArchive(path);
+  if (!inspection.ok) return inspection;
+  if (inspection.value.header.schemaVersion !== 1)
+    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto lo schema 1.' });
+  return ok({ fromVersion: 1, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes: [
+    'Aggiunge l’anagrafica Clienti locali vuota.',
+    'Imposta Fatture in Cloud su Disattivata conservando i riferimenti non segreti.',
+    'Aggiunge fase attività, aliquote 5%/15% e conferme ai profili; i profili diventano Da verificare.',
+    'Marca come Fatture in Cloud i riferimenti cliente e gli snapshot esistenti.',
+  ] });
+}
+
+function migrateV1(raw: Record<string, unknown>): CashDocument {
+  const settings = (raw.settings ?? {}) as Record<string, unknown>;
+  const profiles = ((raw.profiles ?? []) as Array<Record<string, unknown>>).map(profile => {
+    const fiscal = profile.fiscal as Record<string, unknown>;
+    return { ...profile, confirmed: false, fiscal: { ...fiscal, activityPhase: 'ordinary',
+      reducedEligibilityConfirmed: false, ordinaryApplicabilityConfirmed: false,
+      reducedSubstituteTaxRate: '5', ordinarySubstituteTaxRate: fiscal.substituteTaxRate ?? '15',
+      substituteTaxRate: undefined } };
+  });
+  const migrateRef = (value: unknown): unknown => {
+    if (!value || typeof value !== 'object' || 'source' in value) return value;
+    return { ...value as Record<string, unknown>, source: 'fatture_in_cloud' };
+  };
+  const sites = ((raw.sites ?? []) as Array<Record<string, unknown>>).map(site => ({ ...site, client: migrateRef(site.client) }));
+  const quotes = ((raw.quotes ?? []) as Array<Record<string, unknown>>).map(quote => ({ ...quote, client: migrateRef(quote.client),
+    profileSnapshot: quote.profileSnapshot ? { ...quote.profileSnapshot as Record<string, unknown>,
+      fiscal: { ...((quote.profileSnapshot as Record<string, unknown>).fiscal as Record<string, unknown>), activityPhase: 'ordinary',
+        reducedEligibilityConfirmed: false, ordinaryApplicabilityConfirmed: false, reducedSubstituteTaxRate: '5',
+        ordinarySubstituteTaxRate: (((quote.profileSnapshot as Record<string, unknown>).fiscal as Record<string, unknown>).substituteTaxRate ?? '15'),
+        substituteTaxRate: undefined } } : undefined }));
+  const legacyReferences = {
+    ...(typeof settings.ficCompanyId === 'string' ? { companyId: settings.ficCompanyId } : {}),
+    ...(typeof settings.ficConsultingProductId === 'string' ? { productId: settings.ficConsultingProductId } : {}),
+  };
+  return parseDocument({ ...raw, schemaVersion: CURRENT_SCHEMA_VERSION, profiles, sites, quotes, localClients: [],
+    settings: { ...(typeof settings.fuelTerritory === 'string' ? { fuelTerritory: settings.fuelTerritory } : {}),
+      fic: { enabled: false, ...(Object.keys(legacyReferences).length ? { legacyReferences } : {}) } } });
+}
+
+export async function migrateArchive(path: string): Promise<Result<ArchiveSession>> {
+  let temp: string | undefined;
+  try {
+    const before = await readFile(path);
+    const parsed = parseJson(before); if (!parsed.ok) return parsed;
+    const preview = await previewMigration(path); if (!preview.ok) return preview;
+    const migrated = migrateV1(parsed.value as Record<string, unknown>);
+    await copyFile(path, preview.value.backupPath);
+    temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
+    const bytes = encode(migrated);
+    const handle = await open(temp, 'wx');
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    parseDocument(JSON.parse((await readFile(temp)).toString('utf8')));
+    await rename(temp, path); temp = undefined;
+    return openArchive(path);
+  } catch (cause) {
+    if (temp) await rm(temp, { force: true }).catch(() => undefined);
+    return err({ code: 'IO', source: 'archive', message: 'Migrazione atomica non riuscita; usare la copia di sicurezza.', details: [String(cause)] });
   }
 }
 
@@ -117,6 +181,23 @@ async function saveArchiveNow(path: string, document: CashDocument, token: Concu
 export async function saveRecoveryCopy(path: string, document: CashDocument): Promise<Result<ArchiveSession>> {
   const now = new Date().toISOString();
   return createArchive(path, { ...structuredClone(document), documentId: randomUUID(), revision: 1, createdAt: now, updatedAt: now });
+}
+
+export async function restoreBackup(path: string, token: ConcurrencyToken): Promise<Result<ArchiveSession>> {
+  let temp:string|undefined;
+  try {
+    const mainBytes=await readFile(path);const header=documentHeaderSchema.safeParse(JSON.parse(mainBytes.toString('utf8')));
+    if(!header.success||header.data.documentId!==token.documentId||header.data.revision!==token.revision||sha256(mainBytes)!==token.fingerprint)
+      return err({code:'CONFLICT',source:'archive',message:'Il file principale è cambiato: ripristino bloccato.'});
+    const backupPath=backupPathFor(path);const backupBytes=await readFile(backupPath);const backup=parseDocument(JSON.parse(backupBytes.toString('utf8')));
+    const now=new Date();const iso=now.toISOString();const stamp=iso.replace(/[:.]/g,'-');const extension=extname(path);const base=basename(path,extension);
+    await copyFile(path,join(dirname(path),`${base}.prima-ripristino.${stamp}.json`));
+    await copyFile(backupPath,join(dirname(path),`${base}.backup-conservato.${stamp}.json`));
+    const restored=parseDocument({...structuredClone(backup),documentId:randomUUID(),revision:1,createdAt:iso,updatedAt:iso});
+    temp=join(dirname(path),`.${basename(path)}.${randomUUID()}.restore.tmp`);const handle=await open(temp,'wx');
+    try{await handle.writeFile(encode(restored));await handle.sync();}finally{await handle.close();}
+    parseDocument(JSON.parse((await readFile(temp)).toString('utf8')));await rename(temp,path);temp=undefined;return openArchive(path);
+  }catch(cause){if(temp)await rm(temp,{force:true}).catch(()=>undefined);return err({code:'IO',source:'archive',message:'Ripristino della copia di sicurezza non riuscito.',details:[String(cause)]});}
 }
 
 export async function archiveMetadata(path: string): Promise<Result<{ modifiedAt: string; size: number }>> {

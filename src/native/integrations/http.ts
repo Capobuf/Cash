@@ -9,7 +9,7 @@ export async function officialFetch(url: string, init: RequestInit = {}, fetcher
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetcher(url, { ...init, signal: controller.signal, redirect: 'follow' });
+    const response = await fetcher(url, { ...init, signal: controller.signal, redirect: 'error' });
     return ok(response);
   } catch (cause) {
     return err({ code: 'SOURCE_UNAVAILABLE', message: 'Fonte ufficiale non raggiungibile.', details: [String(cause)] });

@@ -24,8 +24,8 @@ export interface VariantContext {
   materializeTravel: (definition: Extract<SubItemDefinition, { kind: 'travel' }>) => Result<QuoteSubItem>;
 }
 
-function materialize(definition: SubItemDefinition, groupId: string, optionId: string, context: VariantContext): Result<QuoteSubItem> {
-  const owner = { groupId, optionId };
+function materialize(definition: SubItemDefinition, groupId: string, optionId: string, definitionIndex: number, context: VariantContext): Result<QuoteSubItem> {
+  const owner = { groupId, optionId, definitionIndex };
   if (definition.kind === 'time') return ok({ ...meta(), ...structuredClone(definition), variantOwner: owner });
   if (definition.kind === 'expense') return ok({ ...meta(), ...structuredClone(definition), variantOwner: owner });
   const travel = context.materializeTravel(definition);
@@ -44,8 +44,8 @@ export function applyVariantSelections(item: QuoteItem, choices: Record<string, 
     const option = group.options.find(candidate => candidate.id === optionId);
     if (!option) return err({ code: 'VALIDATION', field: `variant.${group.id}`, message: `Opzione non valida per ${group.name}.` });
     selections.push({ groupId: group.id, optionId: option.id });
-    for (const definition of option.subItems) {
-      const sub = materialize(definition, group.id, option.id, context);
+    for (const [definitionIndex, definition] of option.subItems.entries()) {
+      const sub = materialize(definition, group.id, option.id, definitionIndex, context);
       if (!sub.ok) return sub;
       generated.push(sub.value);
     }
@@ -68,8 +68,8 @@ export function changeVariant(item: QuoteItem, groupId: string, optionId: string
   const warnings = variantChangeWarnings(item, groupId);
   if (warnings.length && !confirmed) return err({ code: 'CANCELLED', message: 'Conferma necessaria prima di perdere modifiche manuali.', details: warnings });
   const created: QuoteSubItem[] = [];
-  for (const definition of option.subItems) {
-    const sub = materialize(definition, groupId, optionId, context);
+  for (const [definitionIndex, definition] of option.subItems.entries()) {
+    const sub = materialize(definition, groupId, optionId, definitionIndex, context);
     if (!sub.ok) return sub;
     created.push(sub.value);
   }
