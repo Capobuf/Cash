@@ -1,0 +1,62 @@
+{
+  "name": "cash-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Assistente desktop locale per la preventivazione professionale",
+  "main": "dist/native/main.cjs",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package:win": "npm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "decimal.js": "10.6.0",
+    "keytar": "7.9.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.35.0",
+    "@types/node": "24.3.1",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "eslint": "9.35.0",
+    "globals": "16.3.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.42.0",
+    "vitest": "5.0.0"
+  },
+  "build": {
+    "appId": "it.cash.desktop",
+    "productName": "Cash",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/keytar/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Cash-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "keytar@7.9.0": true,
+    "electron-winstaller@5.4.0": true
+  }
+}
