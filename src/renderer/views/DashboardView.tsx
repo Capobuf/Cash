@@ -5,9 +5,15 @@ import { createFiscalPreset2026, type CashDocument, type EconomicProfile } from 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckboxField, Field, MoneyField, Option, SelectField, SuffixField } from "@/components/FormControls"
-import { dateIt, eur, formReader } from "@/lib/format"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import { Separator } from "@/components/ui/separator"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { dateIt, eur, formReader, moneyInputValue } from "@/lib/format"
 import type { AppState } from "../state"
 
 const parseLocalHolidays = (value: string): EconomicProfile["capacity"]["localHolidays"] =>
@@ -84,48 +90,56 @@ export function DashboardView({ doc, appState, activeProfileId, onCopyProfile, o
   }
 
   return (
-    <div className="app-grid">
-      <Card className="card"><CardContent><div className="muted small">Valore medio da generare</div><div className="metric">{values ? `${eur(values.hourlyTarget)}/h` : "—"}</div><div className="small muted">Non è una tariffa obbligatoria.</div></CardContent></Card>
-      <Card className="card"><CardContent><div className="muted small">Netto fiscale stimato</div><div className="metric">{eur(values?.fiscalNet)}</div><div className="small muted">Stima interna, non fiscale/contabile.</div></CardContent></Card>
-      <Card className="card"><CardContent><div className="muted small">Disponibile stimato</div><div className="metric">{eur(values?.availableIncome)}</div><div className="small muted">Dopo costi aziendali e spese specifiche.</div></CardContent></Card>
+    <div className="grid grid-cols-12 gap-4">
+      {[
+        ["Valore medio da generare", values ? `${eur(values.hourlyTarget)}/h` : "—", "Non è una tariffa obbligatoria."],
+        ["Netto fiscale stimato", eur(values?.fiscalNet), "Stima interna, non fiscale/contabile."],
+        ["Disponibile stimato", eur(values?.availableIncome), "Dopo costi aziendali e spese specifiche."],
+      ].map(([label, value, description]) => <Card className="col-span-4" key={label}><CardHeader><CardDescription>{label}</CardDescription><CardTitle className="text-2xl tabular-nums">{value}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{description}</CardContent></Card>)}
       {!profile ? (
-        <Card className="card full empty"><CardHeader><CardTitle>Configura il profilo 2026</CardTitle></CardHeader><CardContent><p>Parti dal preset previsto dalla specifica e conferma i parametri.</p><Button onClick={() => appState.mutate((document) => document.profiles.push(createFiscalPreset2026()))}>Crea preset 2026</Button></CardContent></Card>
+        <Card className="col-span-12"><CardHeader><CardTitle>Configura il profilo 2026</CardTitle><CardDescription>Parti dal preset previsto dalla specifica e conferma i parametri.</CardDescription></CardHeader><CardContent><Button onClick={() => appState.mutate((document) => document.profiles.push(createFiscalPreset2026()))}>Crea preset 2026</Button></CardContent></Card>
       ) : (
         <>
-          <Card className="card wide profile-card"><CardHeader className="section-heading"><div><span className="eyebrow">Parametri annuali</span><CardTitle>Profilo economico {profile.year}</CardTitle></div><Badge variant={profile.confirmed ? "default" : "secondary"}>{profile.confirmed ? "Confermato" : "Da verificare"}</Badge></CardHeader><CardContent>
-            {!profile.confirmed ? <Alert className="compact-notice"><AlertDescription>Controlla i parametri fiscali e conferma il profilo per attivare tutte le proiezioni.</AlertDescription></Alert> : null}
-            <form className="form-grid profile-form" onSubmit={submitProfile} onInput={updatePreview}>
-              <div className="form-section-title full"><span>Obiettivi</span><small>Valori economici usati per la proiezione</small></div>
-              <Field label="Anno fiscale" name="year" value={profile.year} type="number" min={2000} max={2200} step={1} required />
-              <MoneyField label="Fatturato obiettivo" name="revenueTarget" value={profile.revenueTarget} required />
-              <MoneyField label="Spese specifiche annue" name="specificAnnualExpenses" value={profile.specificAnnualExpenses} required />
-              <div className="form-section-title full"><span>Capacità lavorativa</span><small>Disponibilità e tempo fatturabile</small></div>
-              <SuffixField label="Ore lavorative al giorno" name="hoursPerDay" value={profile.capacity.hoursPerDay} suffix="ore" min={0.01} max={24} step={0.01} required />
-              <SuffixField label="Tempo dedicabile ai clienti" name="clientTimePercentage" value={profile.capacity.clientTimePercentage} suffix="%" min={0.0001} max={100} step={0.0001} required />
-              <SuffixField label="Ferie" name="vacationDays" value={profile.capacity.vacationDays} suffix="giorni" min={0} step={1} required />
-              <SuffixField label="Malattia e imprevisti" name="unplannedDays" value={profile.capacity.unplannedDays} suffix="giorni" min={0} step={1} required />
-              <SuffixField label="Velocità media trasferta" name="travelSpeedKmh" value={profile.capacity.travelSpeedKmh ?? ""} suffix="km/h" min={0.1} step={0.1} />
-              <Field label="Festività locali" name="localHolidays" value={profile.capacity.localHolidays.map((holiday) => holiday.kind === "recurring" ? `${String(holiday.month).padStart(2, "0")}-${String(holiday.day).padStart(2, "0")}` : holiday.date).join(", ")} placeholder="es. 06-29, 2026-12-07" hint="Formato MM-GG ricorrente o AAAA-MM-GG" />
-              <div className="form-section-title full"><span>Regime fiscale</span><small>Parametri da verificare con il proprio consulente</small></div>
-              <Field label="Codice ATECO 2025" name="atecoCode" value={profile.fiscal.atecoCode} required />
-              <SuffixField label="Coefficiente di redditività" name="profitabilityCoefficient" value={profile.fiscal.profitabilityCoefficient} suffix="%" min={0.0001} max={100} step={0.0001} required />
-              <SuffixField label="Aliquota Gestione Separata" name="contributionRate" value={profile.fiscal.contributionRate} suffix="%" min={0} max={100} step={0.0001} required />
-              <MoneyField label="Massimale contributivo" name="contributionCeiling" value={profile.fiscal.contributionCeiling} required />
-              <SelectField label="Fase attività" name="activityPhase" value={profile.fiscal.activityPhase}><Option value="ordinary">Regime ordinario / agevolazione non spettante</Option><Option value="reduced_eligible">Primi 5 periodi · agevolazione spettante</Option></SelectField>
-              <SuffixField label="Aliquota agevolata" name="reducedSubstituteTaxRate" value={profile.fiscal.reducedSubstituteTaxRate} suffix="%" min={0} max={100} step={0.0001} required />
-              <SuffixField label="Aliquota ordinaria" name="ordinarySubstituteTaxRate" value={profile.fiscal.ordinarySubstituteTaxRate} suffix="%" min={0} max={100} step={0.0001} required />
-              <MoneyField label="Soglia regime ordinario" name="ordinaryThreshold" value={profile.fiscal.ordinaryThreshold} required />
-              <MoneyField label="Soglia di cessazione" name="cessationThreshold" value={profile.fiscal.cessationThreshold} required />
-              <CheckboxField className="full" name="reducedEligibilityConfirmed" checked={profile.fiscal.reducedEligibilityConfirmed}>Confermo i requisiti per l’aliquota agevolata</CheckboxField>
-              <CheckboxField className="full" name="ordinaryApplicabilityConfirmed" checked={profile.fiscal.ordinaryApplicabilityConfirmed}>Confermo l’applicabilità oltre la soglia ordinaria</CheckboxField>
-              <div className="full"><Preview {...livePreview} /></div>
-              <div className="full actions form-actions"><Button type="submit" name="profileAction" value="confirm">Conferma profilo</Button><Button type="submit" variant="secondary" name="profileAction" value="save">Salva come da verificare</Button><Button type="button" variant="ghost" onClick={() => onCopyProfile(profile.id)}>Copia per nuovo anno</Button></div>
-            </form>
-          </CardContent></Card>
-          <Card className="card"><CardHeader><CardTitle>Capacità</CardTitle></CardHeader><CardContent><div className="list"><div className="row"><span>Giorni teorici</span><strong>{values?.theoreticalWorkdays ?? "—"}</strong></div><div className="row"><span>Giorni disponibili</span><strong>{values?.availableDays ?? "—"}</strong></div><div className="row"><span>Ore clienti</span><strong>{values ? (values.availableClientMinutes / 60).toFixed(1) : "—"}</strong></div><div className="row"><span>Costi annui</span><strong>{eur(values?.annualBusinessCosts)}</strong></div></div>{analysis && !analysis.ok ? <Alert variant="destructive"><AlertDescription>{analysis.error.message}</AlertDescription></Alert> : null}</CardContent></Card>
+          <Card className="col-span-8">
+            <CardHeader><CardTitle>Profilo economico {profile.year}</CardTitle><CardDescription>Parametri annuali usati per proiezioni, capacità e fiscalità.</CardDescription><CardAction><Badge variant={profile.confirmed ? "default" : "secondary"}>{profile.confirmed ? "Confermato" : "Da verificare"}</Badge></CardAction></CardHeader>
+            <CardContent className="space-y-6">
+              {!profile.confirmed ? <Alert><AlertDescription>Controlla i parametri fiscali e conferma il profilo per attivare tutte le proiezioni.</AlertDescription></Alert> : null}
+              <form className="space-y-6" onSubmit={submitProfile} onInput={updatePreview}>
+                <FieldSet><FieldLegend>Obiettivi</FieldLegend><FieldDescription>Valori economici usati per la proiezione.</FieldDescription><FieldGroup className="grid grid-cols-2">
+                  <Field><FieldLabel htmlFor="year">Anno fiscale</FieldLabel><Input id="year" name="year" type="number" defaultValue={profile.year} min={2000} max={2200} step={1} required /></Field>
+                  {[["revenueTarget", "Fatturato obiettivo", profile.revenueTarget], ["specificAnnualExpenses", "Spese specifiche annue", profile.specificAnnualExpenses]].map(([id, label, value]) => <Field key={id}><FieldLabel htmlFor={String(id)}>{label}</FieldLabel><InputGroup><InputGroupAddon><InputGroupText>€</InputGroupText></InputGroupAddon><InputGroupInput id={String(id)} name={String(id)} defaultValue={moneyInputValue(value)} inputMode="decimal" required /></InputGroup></Field>)}
+                </FieldGroup></FieldSet>
+                <Separator />
+                <FieldSet><FieldLegend>Capacità lavorativa</FieldLegend><FieldDescription>Disponibilità e tempo fatturabile.</FieldDescription><FieldGroup className="grid grid-cols-2">
+                  {[
+                    ["hoursPerDay", "Ore lavorative al giorno", profile.capacity.hoursPerDay, "ore", .01, 24, .01, true],
+                    ["clientTimePercentage", "Tempo dedicabile ai clienti", profile.capacity.clientTimePercentage, "%", .0001, 100, .0001, true],
+                    ["vacationDays", "Ferie", profile.capacity.vacationDays, "giorni", 0, undefined, 1, true],
+                    ["unplannedDays", "Malattia e imprevisti", profile.capacity.unplannedDays, "giorni", 0, undefined, 1, true],
+                    ["travelSpeedKmh", "Velocità media trasferta", profile.capacity.travelSpeedKmh ?? "", "km/h", .1, undefined, .1, false],
+                  ].map(([id, label, value, suffix, min, max, step, required]) => <Field key={String(id)}><FieldLabel htmlFor={String(id)}>{label}</FieldLabel><InputGroup><InputGroupInput id={String(id)} name={String(id)} type="number" defaultValue={String(value)} min={min as number} max={max as number | undefined} step={step as number} required={Boolean(required)} /><InputGroupAddon align="inline-end"><InputGroupText>{suffix}</InputGroupText></InputGroupAddon></InputGroup></Field>)}
+                  <Field><FieldLabel htmlFor="localHolidays">Festività locali</FieldLabel><Input id="localHolidays" name="localHolidays" defaultValue={profile.capacity.localHolidays.map((holiday) => holiday.kind === "recurring" ? `${String(holiday.month).padStart(2, "0")}-${String(holiday.day).padStart(2, "0")}` : holiday.date).join(", ")} placeholder="es. 06-29, 2026-12-07" /><FieldDescription>Formato MM-GG ricorrente o AAAA-MM-GG.</FieldDescription></Field>
+                </FieldGroup></FieldSet>
+                <Separator />
+                <FieldSet><FieldLegend>Regime fiscale</FieldLegend><FieldDescription>Parametri da verificare con il proprio consulente.</FieldDescription><FieldGroup className="grid grid-cols-2">
+                  <Field><FieldLabel htmlFor="atecoCode">Codice ATECO 2025</FieldLabel><Input id="atecoCode" name="atecoCode" defaultValue={profile.fiscal.atecoCode} required /></Field>
+                  {[["profitabilityCoefficient", "Coefficiente di redditività", profile.fiscal.profitabilityCoefficient, .0001], ["contributionRate", "Aliquota Gestione Separata", profile.fiscal.contributionRate, 0]].map(([id, label, value, min]) => <Field key={String(id)}><FieldLabel htmlFor={String(id)}>{label}</FieldLabel><InputGroup><InputGroupInput id={String(id)} name={String(id)} type="number" defaultValue={String(value)} min={min as number} max={100} step={.0001} required /><InputGroupAddon align="inline-end"><InputGroupText>%</InputGroupText></InputGroupAddon></InputGroup></Field>)}
+                  <Field><FieldLabel htmlFor="contributionCeiling">Massimale contributivo</FieldLabel><InputGroup><InputGroupAddon><InputGroupText>€</InputGroupText></InputGroupAddon><InputGroupInput id="contributionCeiling" name="contributionCeiling" defaultValue={moneyInputValue(profile.fiscal.contributionCeiling)} inputMode="decimal" required /></InputGroup></Field>
+                  <Field><FieldLabel htmlFor="activityPhase">Fase attività</FieldLabel><NativeSelect className="w-full" id="activityPhase" name="activityPhase" defaultValue={profile.fiscal.activityPhase}><NativeSelectOption value="ordinary">Regime ordinario / agevolazione non spettante</NativeSelectOption><NativeSelectOption value="reduced_eligible">Primi 5 periodi · agevolazione spettante</NativeSelectOption></NativeSelect></Field>
+                  {[["reducedSubstituteTaxRate", "Aliquota agevolata", profile.fiscal.reducedSubstituteTaxRate], ["ordinarySubstituteTaxRate", "Aliquota ordinaria", profile.fiscal.ordinarySubstituteTaxRate]].map(([id, label, value]) => <Field key={id}><FieldLabel htmlFor={String(id)}>{label}</FieldLabel><InputGroup><InputGroupInput id={String(id)} name={String(id)} type="number" defaultValue={String(value)} min={0} max={100} step={.0001} required /><InputGroupAddon align="inline-end"><InputGroupText>%</InputGroupText></InputGroupAddon></InputGroup></Field>)}
+                  {[["ordinaryThreshold", "Soglia regime ordinario", profile.fiscal.ordinaryThreshold], ["cessationThreshold", "Soglia di cessazione", profile.fiscal.cessationThreshold]].map(([id, label, value]) => <Field key={id}><FieldLabel htmlFor={String(id)}>{label}</FieldLabel><InputGroup><InputGroupAddon><InputGroupText>€</InputGroupText></InputGroupAddon><InputGroupInput id={String(id)} name={String(id)} defaultValue={moneyInputValue(value)} inputMode="decimal" required /></InputGroup></Field>)}
+                  <Field orientation="horizontal" className="col-span-2"><Checkbox id="reducedEligibilityConfirmed" name="reducedEligibilityConfirmed" defaultChecked={profile.fiscal.reducedEligibilityConfirmed} /><FieldLabel htmlFor="reducedEligibilityConfirmed">Confermo i requisiti per l’aliquota agevolata</FieldLabel></Field>
+                  <Field orientation="horizontal" className="col-span-2"><Checkbox id="ordinaryApplicabilityConfirmed" name="ordinaryApplicabilityConfirmed" defaultChecked={profile.fiscal.ordinaryApplicabilityConfirmed} /><FieldLabel htmlFor="ordinaryApplicabilityConfirmed">Confermo l’applicabilità oltre la soglia ordinaria</FieldLabel></Field>
+                </FieldGroup></FieldSet>
+                <Preview {...livePreview} />
+                <div className="flex flex-wrap gap-2"><Button type="submit" name="profileAction" value="confirm">Conferma profilo</Button><Button type="submit" variant="secondary" name="profileAction" value="save">Salva come da verificare</Button><Button type="button" variant="ghost" onClick={() => onCopyProfile(profile.id)}>Copia per nuovo anno</Button></div>
+              </form>
+            </CardContent>
+          </Card>
+          <Card className="col-span-4"><CardHeader><CardTitle>Capacità</CardTitle></CardHeader><CardContent><Table><TableBody>{[["Giorni teorici", values?.theoreticalWorkdays ?? "—"], ["Giorni disponibili", values?.availableDays ?? "—"], ["Ore clienti", values ? (values.availableClientMinutes / 60).toFixed(1) : "—"], ["Costi annui", eur(values?.annualBusinessCosts)]].map(([label, value]) => <TableRow key={label}><TableCell className="text-muted-foreground">{label}</TableCell><TableCell className="text-right font-medium tabular-nums">{value}</TableCell></TableRow>)}</TableBody></Table>{analysis && !analysis.ok ? <Alert variant="destructive" className="mt-4"><AlertDescription>{analysis.error.message}</AlertDescription></Alert> : null}</CardContent></Card>
         </>
       )}
-      <Card className="card full"><CardHeader><CardTitle>Preventivi recenti</CardTitle></CardHeader><CardContent>{doc.quotes.length ? <div className="list">{doc.quotes.slice(-5).reverse().map((quote) => <div className="row" key={quote.id}><div><div className="row-title">{quote.items.map((item) => item.name).join(", ") || "Preventivo incompleto"}</div><div className="row-detail">{dateIt(quote.date)} · {quote.items.length} voci</div></div><Button onClick={() => onOpenQuote(quote.id)}>Apri</Button></div>)}</div> : <div className="empty">Nessun preventivo. Creane uno dalla sezione Preventivi.</div>}</CardContent></Card>
+      <Card className="col-span-12"><CardHeader><CardTitle>Preventivi recenti</CardTitle></CardHeader><CardContent>{doc.quotes.length ? <Table><TableHeader><TableRow><TableHead>Preventivo</TableHead><TableHead>Data</TableHead><TableHead>Voci</TableHead><TableHead className="text-right">Azione</TableHead></TableRow></TableHeader><TableBody>{doc.quotes.slice(-5).reverse().map((quote) => <TableRow key={quote.id}><TableCell className="font-medium">{quote.items.map((item) => item.name).join(", ") || "Preventivo incompleto"}</TableCell><TableCell>{dateIt(quote.date)}</TableCell><TableCell>{quote.items.length}</TableCell><TableCell className="text-right"><Button size="sm" onClick={() => onOpenQuote(quote.id)}>Apri</Button></TableCell></TableRow>)}</TableBody></Table> : <p className="py-8 text-center text-sm text-muted-foreground">Nessun preventivo. Creane uno dalla sezione Preventivi.</p>}</CardContent></Card>
     </div>
   )
 }
