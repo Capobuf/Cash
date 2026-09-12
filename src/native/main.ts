@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { join } from 'node:path';
-import { createEmptyDocument, err, type CashDocument, type Fuel } from '../domain/model';
+import { createEmptyDocument, err, ok, type CashDocument, type Fuel } from '../domain/model';
 import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigration, restoreBackup, saveArchive, saveRecoveryCopy, type ArchiveSession, type ConcurrencyToken } from './persistence';
 import { deleteFicToken, hasFicToken, requireFicToken, setFicToken } from './credentials';
 import { latestFuelPrice } from './integrations/mimit';
@@ -9,10 +9,9 @@ import { exportQuote, listCompanies, listConsultingProducts, searchClients, veri
 import { IPC } from '../shared/ipc';
 import { requireActiveFic } from '../domain/integration';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from './fic-link';
-import { readPreferences, rememberArchive } from './preferences';
+import { readPreferences, rememberArchive, setFicClientId } from './preferences';
 
-declare const __CASH_FIC_CLIENT_ID__: string;
-const FIC_SCOPES = ['entity.clients:r', 'products:r', 'issued_documents.quotes:a'];
+const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a'];
 
 let window: BrowserWindow | null = null;
 let current: ArchiveSession | null = null;
@@ -80,9 +79,16 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.archiveInspect, (_event, path: string) => selectedPathValid(path)
     ? inspectArchive(path) : err({ code: 'CONFLICT', source: 'archive', message: 'Percorso non appartenente alla sessione attiva.' }));
   ipcMain.handle(IPC.tokenHas, () => hasFicToken());
+  ipcMain.handle(IPC.tokenSet, (_event, value: unknown) => setFicToken(typeof value === 'string' ? value : ''));
   ipcMain.handle(IPC.mimitFuel, (_event, input: { territory: string; fuel: Fuel }) => latestFuelPrice(input.territory, input.fuel));
   ipcMain.handle(IPC.foiRevalue, (_event, input: { amount: string; fromPeriod: string }) => revalueFoi(input.amount, input.fromPeriod));
-  ipcMain.handle(IPC.ficSetupInfo, () => ({ clientId: __CASH_FIC_CLIENT_ID__, requiredScopes: FIC_SCOPES }));
+  ipcMain.handle(IPC.ficSetupInfo, async () => ({ clientId: (await readPreferences()).ficClientId?.trim() ?? '', requiredScopes: FIC_SCOPES }));
+  ipcMain.handle(IPC.ficSetClientId, async (_event, value: unknown) => {
+    const clientId = typeof value === 'string' ? value.trim() : '';
+    if (!clientId) return err({ code: 'VALIDATION', source: 'FattureInCloud', field: 'clientId', message: 'Il Client ID è obbligatorio.' });
+    try { await setFicClientId(clientId); return ok({ clientId }); }
+    catch (cause) { return err({ code: 'IO', source: 'FattureInCloud', message: 'Impossibile salvare il Client ID nelle preferenze locali.', details: [String(cause)] }); }
+  });
   ipcMain.handle(IPC.ficWizardCompanies, (_event, token: string) => listCompanies(token));
   ipcMain.handle(IPC.ficWizardProducts, (_event, input: { token: string; companyId: string }) => listConsultingProducts(input.token, input.companyId));
   ipcMain.handle(IPC.ficWizardActivate, async (_event, input: { token: string; companyId: string; productId: string; path: string; document: CashDocument; concurrencyToken: ConcurrencyToken }) => {

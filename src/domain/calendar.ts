@@ -9,6 +9,8 @@ export interface WorkCalendar {
   warnings: string[];
 }
 
+export interface ItalianNationalHoliday { name: string; date: string }
+
 const dateKey = (year: number, month: number, day: number): string =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
@@ -28,15 +30,31 @@ function isValidDate(year: number, month: number, day: number): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
-export function italianNationalHolidays(year: number): Set<string> {
-  const fixed: Array<[number, number]> = [[1, 1], [1, 6], [4, 25], [5, 1], [6, 2], [8, 15],
-    [11, 1], [12, 8], [12, 25], [12, 26]];
-  if (year >= 2026) fixed.push([10, 4]);
-  const values = new Set(fixed.map(([month, day]) => dateKey(year, month, day)));
+export function italianNationalHolidayEntries(year: number): ItalianNationalHoliday[] {
+  if (!Number.isInteger(year) || year < 2000 || year > 2200) return [];
+  const fixed: Array<{ name: string; month: number; day: number }> = [
+    { name: 'Capodanno', month: 1, day: 1 },
+    { name: 'Epifania', month: 1, day: 6 },
+    { name: 'Festa della Liberazione', month: 4, day: 25 },
+    { name: 'Festa dei Lavoratori', month: 5, day: 1 },
+    { name: 'Festa della Repubblica', month: 6, day: 2 },
+    { name: 'Ferragosto', month: 8, day: 15 },
+    { name: 'Ognissanti', month: 11, day: 1 },
+    { name: 'Immacolata Concezione', month: 12, day: 8 },
+    { name: 'Natale', month: 12, day: 25 },
+    { name: 'Santo Stefano', month: 12, day: 26 },
+  ];
+  if (year >= 2026) fixed.push({ name: "San Francesco d'Assisi", month: 10, day: 4 });
   const easter = easterSunday(year);
   easter.setUTCDate(easter.getUTCDate() + 1);
-  values.add(dateKey(year, easter.getUTCMonth() + 1, easter.getUTCDate()));
-  return values;
+  return [
+    ...fixed.map(({ name, month, day }) => ({ name, date: dateKey(year, month, day) })),
+    { name: "Lunedì dell'Angelo", date: dateKey(year, easter.getUTCMonth() + 1, easter.getUTCDate()) },
+  ].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function italianNationalHolidays(year: number): Set<string> {
+  return new Set(italianNationalHolidayEntries(year).map((holiday) => holiday.date));
 }
 
 export function calculateWorkCalendar(year: number, localHolidays: LocalHoliday[]): Result<WorkCalendar> {

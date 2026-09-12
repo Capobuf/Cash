@@ -56,17 +56,15 @@ modifica parzialmente il preventivo.
 ## Fatture in Cloud opzionale
 
 Il modulo parte disattivato. In questo stato non effettua chiamate a Fatture in Cloud e l’intero ciclo
-locale funziona senza token, azienda o prodotto. Per produrre una build attivabile, incorporare il Client
-ID dell’app privata al build:
+locale funziona senza token, azienda o prodotto. Il Client ID dell’app privata si inserisce dalla schermata
+**Impostazioni → Integrazioni** o direttamente nel primo passaggio della procedura guidata. Viene salvato
+soltanto nelle preferenze locali della postazione e non è incorporato nella build.
 
-```powershell
-$env:CASH_FIC_CLIENT_ID = 'CLIENT_ID_DELL_APP_PRIVATA'
-npm run package:win
-```
-
-La procedura guidata richiede un token manuale con i soli permessi `entity.clients:r`, `products:r` e
-`issued_documents.quotes:a`, fa scegliere azienda e prodotto con nome esatto `Consulenza`, verifica i
-permessi e salva il token nel Gestore credenziali di Windows. Ogni postazione deve essere configurata
+La procedura guidata richiede un token manuale con i soli permessi `entity.clients:r`, `products:r`,
+`settings:r` e `issued_documents.quotes:a` e lo salva nel Gestore credenziali di Windows non appena viene confermato,
+anche se il wizard viene poi interrotto. Fa quindi scegliere azienda e prodotto con nome esatto
+`Consulenza`, verifica i permessi e importa il profilo fiscale aziendale. I valori disponibili in Fatture in
+Cloud prevalgono su quelli manuali; i campi non esposti restano da compilare. Ogni postazione deve essere configurata
 separatamente. Disattivare il modulo conserva configurazione e token; `Rimuovi collegamento` elimina il
 token locale e i riferimenti condivisi, senza modificare snapshot o esportazioni storiche.
 

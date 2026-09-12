@@ -110,7 +110,7 @@ export function App() {
         ? <ClientsView doc={doc} appState={appState} requestDelete={setDeleteTarget} />
         : view === "catalog"
           ? <CatalogView doc={doc} appState={appState} requestDelete={setDeleteTarget} />
-          : <SettingsView doc={doc} appState={appState} activeProfileId={activeProfileId} ficUi={{ hasToken: hasFicToken, connectionError: ficConnectionError, setupInfo: ficSetupInfo, setHasToken: setHasFicToken, setConnectionError: setFicConnectionError }} onEditProfile={setActiveProfileId} onCopyProfile={setCopyProfileId} requestDelete={setDeleteTarget} />
+          : <SettingsView doc={doc} appState={appState} activeProfileId={activeProfileId} ficUi={{ hasToken: hasFicToken, connectionError: ficConnectionError, setupInfo: ficSetupInfo, setSetupInfo: setFicSetupInfo, setHasToken: setHasFicToken, setConnectionError: setFicConnectionError }} onEditProfile={setActiveProfileId} onCopyProfile={setCopyProfileId} requestDelete={setDeleteTarget} />
 
   const copySource = doc.profiles.find((profile) => profile.id === copyProfileId)
   return <>

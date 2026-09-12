@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
@@ -129,12 +129,14 @@ export function AppShell({ appState, view, onView, children }: {
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Azioni archivio" />}><Archive />Archivio <MoreHorizontal /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>Archivio</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void appState.open()}>Apri archivio</DropdownMenuItem>
-                <DropdownMenuItem disabled={appState.status === "Salvato"} onClick={() => void appState.save()}><Save />Salva ora</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void appState.recovery()}>Copia di recupero</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void appState.restoreBackup()}>Ripristina backup</DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Archivio</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => void appState.open()}>Apri archivio</DropdownMenuItem>
+                  <DropdownMenuItem disabled={appState.status === "Salvato"} onClick={() => void appState.save()}><Save />Salva ora</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void appState.recovery()}>Copia di recupero</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void appState.restoreBackup()}>Ripristina backup</DropdownMenuItem>
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

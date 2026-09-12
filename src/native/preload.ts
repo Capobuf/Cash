@@ -13,11 +13,13 @@ const api: CashNativeApi = {
   },
   credentials: {
     hasFicToken: () => ipcRenderer.invoke(IPC.tokenHas),
+    setFicToken: token => ipcRenderer.invoke(IPC.tokenSet, token),
   },
   mimit: { latestFuelPrice: input => ipcRenderer.invoke(IPC.mimitFuel, input) },
   istat: { revalue: input => ipcRenderer.invoke(IPC.foiRevalue, input) },
   fic: {
     setupInfo: () => ipcRenderer.invoke(IPC.ficSetupInfo),
+    setClientId: clientId => ipcRenderer.invoke(IPC.ficSetClientId, clientId),
     listCompaniesForActivation: token => ipcRenderer.invoke(IPC.ficWizardCompanies, token),
     listProductsForActivation: input => ipcRenderer.invoke(IPC.ficWizardProducts, input),
     completeActivation: input => ipcRenderer.invoke(IPC.ficWizardActivate, input),

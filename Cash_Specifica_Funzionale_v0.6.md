@@ -210,7 +210,7 @@ Cash supporta esclusivamente il regime forfettario. Non è richiesto un motore f
 
 ### 5.1 Profilo fiscale annuale configurabile
 
-Il profilo fiscale è annuale, datato, revisionato e configurabile dall'utente in **Impostazioni → Profilo fiscale**. Il preset 2026 è soltanto una proposta iniziale modificabile; Cash non aggiorna automaticamente valori fiscali o previdenziali e non presenta il preset come consulenza fiscale.
+Il profilo fiscale è annuale, datato e revisionato. Senza Fatture in Cloud è configurabile dall'utente in **Impostazioni → Profilo fiscale** e il preset 2026 è soltanto una proposta iniziale modificabile. Quando viene collegata un'azienda Fatture in Cloud, Cash importa il relativo profilo fiscale: i valori esposti dal servizio sono autorevoli e prevalgono su quelli manuali dello stesso anno; i parametri non esposti restano invariati oppure, se mancanti, devono essere compilati dall'utente. Cash non inventa valori fiscali o previdenziali assenti e non presenta il preset come consulenza fiscale.
 
 | **Parametro** | **Preset 2026** | **Regola funzionale** |
 | --- | --- | --- |
@@ -788,17 +788,19 @@ L'utente attiva e configura autonomamente il modulo in **Impostazioni → Integr
 
 **2.** Visualizzare il Client ID dell'applicazione privata e le istruzioni per generare un token manuale.
 
-**3.** Incollare il token e avviare **Verifica collegamento**.
+**3.** Incollare il token. Cash lo salva immediatamente nel gestore credenziali locale prima di avviare **Verifica collegamento**; il token resta salvato anche se la procedura guidata viene interrotta o una fase successiva non riesce.
 
 **4.** Selezionare una delle aziende restituite dal servizio.
 
 **5.** Verificare i permessi richiesti e selezionare il prodotto “Consulenza”.
 
-**6.** Salvare la configurazione e visualizzare lo stato finale `Attiva` con azienda, prodotto e data/ora dell'ultima verifica riuscita.
+**6.** Leggere il profilo fiscale dell'azienda, applicare al profilo dell'anno corrente i valori disponibili con precedenza su quelli manuali e lasciare da completare i soli campi non esposti dal servizio.
 
-Per l'MVP Cash usa l'autenticazione manuale prevista da Fatture in Cloud, coerente con un'applicazione privata monoutente. Cash distribuisce o mostra il Client ID della propria applicazione privata e non conserva alcun Client Secret. Sono richiesti almeno `entity.clients:r` per leggere i clienti, `products:r` per cercare e verificare il prodotto e `issued_documents.quotes:a` per creare preventivi; eventuali permessi ulteriori devono essere giustificati da una funzione effettivamente implementata.
+**7.** Salvare la configurazione e visualizzare lo stato finale `Attiva` con azienda, prodotto, fiscalità importata e data/ora dell'ultima verifica riuscita.
 
-Il token non viene scritto nel file dati né sincronizzato con Google Drive. Viene custodito dal portachiavi/gestore credenziali del sistema operativo della singola postazione. Ogni postazione viene collegata separatamente. Cash salva nel file dati solo l'identificativo dell'azienda Fatture in Cloud selezionata e i riferimenti non segreti necessari.
+Per l'MVP Cash usa l'autenticazione manuale prevista da Fatture in Cloud, coerente con un'applicazione privata monoutente. Cash distribuisce o mostra il Client ID della propria applicazione privata e non conserva alcun Client Secret. Sono richiesti almeno `entity.clients:r` per leggere i clienti, `products:r` per cercare e verificare il prodotto, `settings:r` per leggere il profilo fiscale aziendale e `issued_documents.quotes:a` per creare preventivi; eventuali permessi ulteriori devono essere giustificati da una funzione effettivamente implementata.
+
+Il token non viene scritto nel file dati né sincronizzato con Google Drive. Viene custodito dal portachiavi/gestore credenziali del sistema operativo della singola postazione. Ogni postazione viene collegata separatamente. Cash salva nel file dati l'identificativo dell'azienda Fatture in Cloud selezionata, i riferimenti non segreti necessari e lo snapshot non segreto del profilo fiscale importato.
 
 Il token manuale può essere revocato dall'utente. Una risposta di autenticazione o autorizzazione fallita produce un errore esplicito e richiede di correggere il collegamento; Cash non prova credenziali alternative.
 
@@ -1322,7 +1324,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **1.** Impostare Fatturato obiettivo e Spese specifiche annue previste, quindi visualizzare immediatamente Fatturato da generare con il tempo, netto fiscale stimato, costi aziendali annui e disponibile stimato.
 
-**2.** Configurare dalle Impostazioni un profilo annuale esclusivamente forfettario con anno, ATECO, coefficiente di redditività, aliquota e massimale Gestione Separata, fase nei/oltre i primi cinque periodi, aliquote sostitutive e soglie; proporre il preset 2026, mostrare l'anteprima, richiedere le conferme previste e bloccare le proiezioni finché il profilo non è confermato.
+**2.** Configurare dalle Impostazioni un profilo annuale esclusivamente forfettario con anno, ATECO, coefficiente di redditività, aliquota e massimale Gestione Separata, fase nei/oltre i primi cinque periodi, aliquote sostitutive e soglie; proporre il preset 2026 quando la configurazione è manuale. Se Fatture in Cloud è collegato, importare i valori fiscali esposti dall'azienda con precedenza su quelli manuali e richiedere all'utente soltanto i campi mancanti; mostrare l'anteprima e bloccare le proiezioni finché il profilo complessivo non è completo.
 
 **3.** Inserire costi aziendali tramite categoria, descrizione e importo mensile.
 

@@ -224,9 +224,21 @@ export interface SharedSettings {
     enabled: boolean;
     company?: { id: string; name: string };
     product?: { id: string; name: string };
+    taxProfile?: FicTaxProfileSnapshot;
     legacyReferences?: { companyId?: string; productId?: string };
     lastVerification?: { at: string; result: 'success' | 'error'; diagnostic?: string };
   };
+}
+
+export interface FicTaxProfileSnapshot {
+  acquiredAt: string;
+  companyType?: string;
+  companySubtype?: string;
+  profession?: string;
+  regime?: string;
+  profitCoefficient?: DecimalString;
+  contributionsPercentage?: DecimalString;
+  defaultVat?: { id: string; value?: number; description?: string };
 }
 
 export interface CashDocument {
