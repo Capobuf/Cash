@@ -3,6 +3,7 @@ import { cashDocumentSchema, validationErrorFromIssues } from '../domain/schema'
 import type { ArchiveSession } from '../native/persistence';
 
 export type SaveStatus = 'Nessun archivio' | 'Modifiche non salvate' | 'Salvataggio' | 'Salvato' | 'Dati da correggere' | 'Errore di salvataggio' | 'Conflitto esterno' | 'Sola lettura';
+export type ArchiveDecision = 'save' | 'recovery' | 'discard' | 'cancel';
 type Listener = () => void;
 
 export class AppState {
@@ -14,6 +15,7 @@ export class AppState {
   private savePromise: Promise<void> = Promise.resolve();
   private mutationVersion = 0;
   private sessionVersion = 0;
+  private requestArchiveDecision?: () => Promise<ArchiveDecision>;
 
   get document(): CashDocument | undefined { return this.session?.document; }
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -50,6 +52,7 @@ export class AppState {
   }
 
   acceptNativeSession(session: ArchiveSession): void { this.accept(session); }
+  setArchiveDecisionHandler(handler: () => Promise<ArchiveDecision>): void { this.requestArchiveDecision = handler; }
 
   mutate(mutator: (document: CashDocument) => void): void {
     if (!this.session?.document || this.session.readOnly || this.status === 'Conflitto esterno') return;
@@ -106,10 +109,10 @@ export class AppState {
 
   private async mayReplaceSession(): Promise<boolean> {
     if (!this.session || this.status === 'Salvato' || this.status === 'Sola lettura') return true;
-    const choice = window.prompt('Esistono modifiche non salvate. Digita: salva, recupero, scarta oppure annulla.', 'annulla')?.trim().toLocaleLowerCase('it');
-    if (choice === 'salva') { await this.save(); return this.isSaved(); }
-    if (choice === 'recupero') return this.recovery();
-    return choice === 'scarta';
+    const choice = await this.requestArchiveDecision?.() ?? 'cancel';
+    if (choice === 'save') { await this.save(); return this.isSaved(); }
+    if (choice === 'recovery') return this.recovery();
+    return choice === 'discard';
   }
 
   private isSaved(): boolean { return this.status === 'Salvato'; }

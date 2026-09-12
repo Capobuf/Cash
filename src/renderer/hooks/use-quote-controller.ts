@@ -1,986 +1,302 @@
-import { useState, type FormEvent } from "react";
-import { calculateTravel, calculateVehicleCost } from "../../domain/calculations";
-import {
-  cloneTemplate,
-  previewTemplate,
-  reusableFromQuoteSubItem,
-  templateFromQuote,
-} from "../../domain/catalog";
-import {
-  buildExportLines,
-  createPendingAttempt,
-  needsRepeatWarning,
-} from "../../domain/export";
-import {
-  meta,
-  type CashDocument,
-  type FicClientSnapshot,
-  type Quote,
-  type QuoteItem,
-  type QuoteSubItem,
-  type SiteSnapshot,
-  type SubItemDefinition,
-} from "../../domain/model";
-import { refreshQuote, snapshotProfile } from "../../domain/refresh";
-import {
-  applyVariantSelections,
-  changeVariant,
-  validateVariantGroups,
-} from "../../domain/variants";
-import type { QuoteItemActions } from "@/components/QuoteItemCard";
-import { decimalInputValue, eur, formReader } from "@/lib/format";
-import type { AppState } from "../state";
-import type { DeleteTarget } from "../types";
+import { useState } from "react"
+import { calculateTravel, calculateVehicleCost } from "../../domain/calculations"
+import { cloneTemplate, reusableFromQuoteSubItem, templateFromQuote } from "../../domain/catalog"
+import { buildExportLines, createPendingAttempt } from "../../domain/export"
+import { meta, type CashDocument, type FicClientSnapshot, type Quote, type QuoteItem, type QuoteSubItem, type ReusableSubItem, type SubItemDefinition, type VariantGroup } from "../../domain/model"
+import { refreshQuote, snapshotProfile } from "../../domain/refresh"
+import { applyVariantSelections, changeVariant, validateVariantGroups } from "../../domain/variants"
+import type { AppState } from "../state"
+import type { DeleteTarget } from "../types"
 
-const promptRequired = (message: string, initial = ""): string | undefined =>
-  window.prompt(message, initial)?.trim() || undefined;
-const siteSnapshot = (
-  doc: CashDocument,
-  id: string,
-): SiteSnapshot | undefined => {
-  const site = doc.sites.find((candidate) => candidate.id === id);
-  return site
-    ? {
-        sourceId: site.id,
-        name: site.name,
-        address: site.address,
-        ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}),
-      }
-    : undefined;
-};
+export interface TravelInput {
+  description: string
+  siteId: string
+  vehicleId: string
+  roundTrip: boolean
+  occurrences: number
+  timeMode: "automatic" | "manual"
+  manualMinutesPerOccurrence?: number
+}
 
-export function useQuoteController({
-  doc,
-  appState,
-  activeQuoteId,
-  setActiveQuoteId,
-  requestDelete,
-}: {
-  doc: CashDocument;
-  appState: AppState;
-  activeQuoteId?: string;
-  setActiveQuoteId: (id?: string) => void;
-  requestDelete: (target: DeleteTarget) => void;
+export type SimpleSubInput =
+  | { kind: "time"; description: string; minutes: number }
+  | { kind: "expense"; description: string; amount: string }
+
+interface TravelContext { siteId?: string; vehicleId?: string }
+
+export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuoteId, requestDelete }: {
+  doc: CashDocument
+  appState: AppState
+  activeQuoteId?: string
+  setActiveQuoteId: (id?: string) => void
+  requestDelete: (target: DeleteTarget) => void
 }) {
-  const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([]);
-  const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId);
+  const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([])
+  const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId)
 
-  const materializeTemplateTravel = async (
-    definition: Extract<SubItemDefinition, { kind: "travel" }>,
-    targetQuote: Quote,
-  ): Promise<QuoteSubItem | undefined> => {
-    const profile = doc.profiles.find(
-      (candidate) => candidate.id === targetQuote.profileId,
-    );
-    if (
-      !doc.settings.fuelTerritory ||
-      !doc.sites.length ||
-      !doc.vehicles.length
-    ) {
-      window.alert(
-        "Per inserire una Trasferta servono territorio MIMIT, Sede e veicolo.",
-      );
-      return undefined;
+  const materializeTravel = async (definition: Extract<SubItemDefinition, { kind: "travel" }> | TravelInput, targetQuote: Quote, context?: TravelContext): Promise<QuoteSubItem | undefined> => {
+    const siteId = "siteId" in definition ? definition.siteId : context?.siteId
+    const vehicleId = "vehicleId" in definition ? definition.vehicleId : context?.vehicleId
+    const site = doc.sites.find((entry) => entry.id === siteId)
+    const vehicle = doc.vehicles.find((entry) => entry.id === vehicleId)
+    const profile = doc.profiles.find((entry) => entry.id === targetQuote.profileId)
+    if (!doc.settings.fuelTerritory || !site || !vehicle) {
+      appState.setError({ code: "MISSING_DATA", message: "La trasferta non può essere calcolata.", action: "Seleziona una Sede e un Veicolo e configura il territorio MIMIT." })
+      return undefined
     }
-    const proposed =
-      Math.max(
-        0,
-        doc.sites.findIndex(
-          (site) => site.id === targetQuote.mainSite?.sourceId,
-        ),
-      ) + 1;
-    const site =
-      doc.sites[
-        Number(
-          promptRequired(
-            `Sede per “${definition.description}”:\n${doc.sites.map((candidate, index) => `${index + 1}. ${candidate.name}`).join("\n")}`,
-            String(proposed),
-          ),
-        ) - 1
-      ];
-    const vehicle =
-      doc.vehicles[
-        Number(
-          promptRequired(
-            `Veicolo per “${definition.description}”:\n${doc.vehicles.map((candidate, index) => `${index + 1}. ${candidate.name}`).join("\n")}`,
-            "1",
-          ),
-        ) - 1
-      ];
-    if (!site || !vehicle) return undefined;
-    const fuel = await window.cash.mimit.latestFuelPrice({
-      territory: doc.settings.fuelTerritory,
-      fuel: vehicle.fuel,
-    });
-    if (!fuel.ok) {
-      appState.setError(fuel.error);
-      return undefined;
-    }
-    const cost = calculateVehicleCost(vehicle, fuel.value);
-    if (!cost.ok) {
-      appState.setError(cost.error);
-      return undefined;
-    }
-    const travel = calculateTravel({
-      oneWayKm: site.oneWayKm,
-      roundTrip: definition.roundTrip,
-      occurrences: definition.occurrences,
-      vehicleCostPerKm: cost.value.costPerKm,
-      ...(definition.timeMode === "manual"
-        ? { manualMinutesPerOccurrence: definition.manualMinutesPerOccurrence }
-        : { speedKmh: profile?.capacity.travelSpeedKmh }),
-    });
-    if (!travel.ok) {
-      appState.setError(travel.error);
-      return undefined;
-    }
+    const fuel = await window.cash.mimit.latestFuelPrice({ territory: doc.settings.fuelTerritory, fuel: vehicle.fuel })
+    if (!fuel.ok) { appState.setError(fuel.error); return undefined }
+    const vehicleCost = calculateVehicleCost(vehicle, fuel.value)
+    if (!vehicleCost.ok) { appState.setError(vehicleCost.error); return undefined }
+    const manualMinutes = definition.timeMode === "manual" ? definition.manualMinutesPerOccurrence : undefined
+    const calculated = calculateTravel({
+      oneWayKm: site.oneWayKm, roundTrip: definition.roundTrip, occurrences: definition.occurrences,
+      vehicleCostPerKm: vehicleCost.value.costPerKm,
+      ...(manualMinutes ? { manualMinutesPerOccurrence: manualMinutes } : { speedKmh: profile?.capacity.travelSpeedKmh }),
+    })
+    if (!calculated.ok) { appState.setError(calculated.error); return undefined }
     return {
-      ...meta(),
-      kind: "travel",
-      description: definition.description,
-      site: {
-        sourceId: site.id,
-        name: site.name,
-        address: site.address,
-        ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}),
-      },
-      vehicleId: vehicle.id,
-      roundTrip: definition.roundTrip,
-      occurrences: definition.occurrences,
-      timeMode: definition.timeMode,
-      ...(definition.manualMinutesPerOccurrence
-        ? { manualMinutesPerOccurrence: definition.manualMinutesPerOccurrence }
-        : {}),
-      ...travel.value,
-      vehicleCostPerKm: cost.value.costPerKm,
-      fuelEvidence: fuel.value,
-    };
-  };
+      ...meta(), kind: "travel", description: definition.description,
+      site: { sourceId: site.id, name: site.name, address: site.address, ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}) },
+      vehicleId: vehicle.id, roundTrip: definition.roundTrip, occurrences: definition.occurrences, timeMode: definition.timeMode,
+      ...(manualMinutes ? { manualMinutesPerOccurrence: manualMinutes } : {}),
+      ...calculated.value, vehicleCostPerKm: vehicleCost.value.costPerKm, fuelEvidence: fuel.value,
+    }
+  }
 
   const newQuote = () => {
-    const profile = doc.profiles.find((candidate) => candidate.confirmed);
-    let snap;
-    if (profile) {
-      const value = snapshotProfile(profile, doc.businessCosts);
-      if (value.ok) snap = value.value;
-    }
-    const created: Quote = {
-      ...meta(),
-      date: new Date().toISOString().slice(0, 10),
-      ...(profile ? { profileId: profile.id } : {}),
-      ...(snap ? { profileSnapshot: snap } : {}),
-      items: [],
-      snapshotRevision: 0,
-      exportAttempts: [],
-    };
-    appState.mutate((document) => document.quotes.push(created));
-    setActiveQuoteId(created.id);
-  };
+    const profile = [...doc.profiles].sort((a, b) => b.year - a.year).find((entry) => entry.confirmed)
+    const snapshot = profile ? snapshotProfile(profile, doc.businessCosts) : undefined
+    const created: Quote = { ...meta(), date: new Date().toISOString().slice(0, 10), ...(profile ? { profileId: profile.id } : {}), ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}), items: [], snapshotRevision: 0, exportAttempts: [] }
+    appState.mutate((document) => document.quotes.push(created))
+    setActiveQuoteId(created.id)
+  }
 
-  const saveQuote = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!quote) return;
-    const { get, money } = formReader(event.currentTarget);
-    const profile = doc.profiles.find(
-      (candidate) => candidate.id === get("profileId"),
-    );
-    const quoteYear = Number(get("date").slice(0, 4));
-    if (
-      profile &&
-      profile.year !== quoteYear &&
-      !window.confirm(
-        `La data è nel ${quoteYear}, ma il profilo selezionato è ${profile.year}. Mantenere questa associazione esplicita?`,
-      )
-    )
-      return;
-    const snap = profile
-      ? snapshotProfile(profile, doc.businessCosts)
-      : undefined;
-    if (profile && !snap?.ok) {
-      appState.setError(
-        snap?.error ?? {
-          code: "MISSING_DATA",
-          message: "Profilo non calcolabile.",
-        },
-      );
-      return;
+  const updateQuote = (updates: { date?: string; profileId?: string; mainSiteId?: string; commission?: string }, allowYearMismatch = false): "updated" | "year-mismatch" | "invalid" => {
+    if (!quote) return "invalid"
+    const date = updates.date ?? quote.date
+    const profileId = updates.profileId === undefined ? quote.profileId : updates.profileId || undefined
+    const profile = doc.profiles.find((entry) => entry.id === profileId)
+    if (profile && profile.year !== Number(date.slice(0, 4)) && !allowYearMismatch) return "year-mismatch"
+    const snapshot = profile ? snapshotProfile(profile, doc.businessCosts) : undefined
+    if (profile && !snapshot?.ok) { appState.setError(snapshot?.error ?? { code: "MISSING_DATA", message: "Il profilo selezionato non è calcolabile." }); return "invalid" }
+    const siteId = updates.mainSiteId === undefined ? quote.mainSite?.sourceId : updates.mainSiteId || undefined
+    const site = doc.sites.find((entry) => entry.id === siteId)
+    appState.mutate((document) => {
+      const target = document.quotes.find((entry) => entry.id === quote.id)!
+      target.date = date; target.profileId = profile?.id; target.profileSnapshot = snapshot?.ok ? snapshot.value : undefined
+      target.mainSite = site ? { sourceId: site.id, name: site.name, address: site.address, ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}) } : undefined
+      if (updates.commission !== undefined) target.commission = updates.commission ? Number(updates.commission).toFixed(2) : undefined
+    })
+    return "updated"
+  }
+
+  const searchRemoteClients = async (query: string) => {
+    const companyId = doc.settings.fic.company?.id
+    if (!doc.settings.fic.enabled || !companyId) { appState.setError({ code: "MISSING_DATA", source: "FattureInCloud", message: "Fatture in Cloud non è attivo.", action: "Completa la configurazione nelle Impostazioni oppure usa un Cliente locale." }); return }
+    const result = await window.cash.fic.searchClients({ companyId, query })
+    if (!result.ok) { appState.setError(result.error); return }
+    setClientResults(result.value)
+  }
+
+  const addItem = (name: string) => {
+    if (!quote || !name.trim()) return
+    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.push({ ...meta(), name: name.trim(), subItems: [], variantGroups: [], variantSelections: [] }))
+  }
+
+  const renameItem = (itemId: string, name: string) => {
+    if (!quote || !name.trim()) return
+    appState.mutate((document) => { const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!; item.name = name.trim(); item.updatedAt = new Date().toISOString() })
+  }
+
+  const updatePrices = (itemId: string, chosenPrice: string, referenceAmount: string, referencePeriod: string) => {
+    if (!quote) return
+    appState.mutate((document) => {
+      const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
+      item.chosenPrice = chosenPrice ? Number(chosenPrice).toFixed(2) : undefined
+      item.referencePrice = referenceAmount && referencePeriod ? { amount: Number(referenceAmount).toFixed(2), period: referencePeriod } : undefined
+    })
+  }
+
+  const saveSimpleSub = (itemId: string, input: SimpleSubInput, subId?: string) => {
+    if (!quote || !input.description.trim()) return false
+    if (input.kind === "time" && (!Number.isFinite(input.minutes) || input.minutes <= 0)) {
+      appState.setError({ code: "VALIDATION", field: "minutes", message: "La durata deve essere maggiore di zero." })
+      return false
+    }
+    if (input.kind === "expense" && (!Number.isFinite(Number(input.amount)) || Number(input.amount) < 0)) {
+      appState.setError({ code: "VALIDATION", field: "amount", message: "L’importo della spesa non è valido." })
+      return false
     }
     appState.mutate((document) => {
-      const target = document.quotes.find(
-        (candidate) => candidate.id === quote.id,
-      )!;
-      target.date = get("date");
-      target.commission = get("commission")
-        ? Number(money("commission")).toFixed(2)
-        : undefined;
-      target.profileId = profile?.id;
-      target.profileSnapshot = snap?.ok ? snap.value : undefined;
-      target.mainSite = get("mainSiteId")
-        ? siteSnapshot(doc, get("mainSiteId"))
-        : undefined;
-    });
-  };
+      const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
+      const existing = item.subItems.find((entry) => entry.id === subId)
+      if (existing && input.kind === "time" && existing.kind === "time") {
+        existing.description = input.description.trim(); existing.minutes = input.minutes
+        if (existing.variantOwner) existing.manuallyModified = true
+        existing.updatedAt = new Date().toISOString()
+      } else if (existing && input.kind === "expense" && existing.kind === "expense") {
+        existing.description = input.description.trim(); existing.amount = Number(input.amount).toFixed(2)
+        if (existing.variantOwner) existing.manuallyModified = true
+        existing.updatedAt = new Date().toISOString()
+      } else item.subItems.push(input.kind === "time" ? { ...meta(), kind: "time", description: input.description.trim(), minutes: input.minutes } : { ...meta(), kind: "expense", description: input.description.trim(), amount: Number(input.amount).toFixed(2) })
+    })
+    return true
+  }
 
-  const searchRemoteClients = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const companyId = doc.settings.fic.company?.id;
-    if (!doc.settings.fic.enabled || !companyId) {
-      window.alert("Attivare prima Fatture in Cloud.");
-      return;
-    }
-    const result = await window.cash.fic.searchClients({
-      companyId,
-      query: formReader(event.currentTarget).get("query"),
-    });
-    if (!result.ok) {
-      appState.setError(result.error);
-      return;
-    }
-    setClientResults(result.value);
-  };
+  const saveTravel = async (itemId: string, input: TravelInput, subId?: string) => {
+    if (!quote) return false
+    const built = await materializeTravel(input, quote)
+    if (!built) return false
+    appState.mutate((document) => {
+      const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
+      const index = item.subItems.findIndex((entry) => entry.id === subId)
+      if (index >= 0) {
+        const previous = item.subItems[index]!
+        item.subItems[index] = { ...built, id: previous.id, createdAt: previous.createdAt, updatedAt: new Date().toISOString(), ...(previous.variantOwner ? { variantOwner: previous.variantOwner, manuallyModified: true } : {}) }
+      } else item.subItems.push(built)
+    })
+    return true
+  }
 
-  const addTravel = async (itemId: string) => {
-    if (!quote) return;
-    const profile = doc.profiles.find(
-      (candidate) => candidate.id === quote.profileId,
-    );
-    if (!doc.settings.fuelTerritory) {
-      window.alert("Configura prima la regione MIMIT.");
-      return;
-    }
-    if (!doc.sites.length || !doc.vehicles.length) {
-      window.alert("Configura almeno una Sede e un veicolo.");
-      return;
-    }
-    const proposed =
-      Math.max(
-        0,
-        doc.sites.findIndex((site) => site.id === quote.mainSite?.sourceId),
-      ) + 1;
-    const site =
-      doc.sites[
-        Number(
-          promptRequired(
-            `Sede:\n${doc.sites.map((entry, index) => `${index + 1}. ${entry.name}`).join("\n")}`,
-            String(proposed),
-          ),
-        ) - 1
-      ];
-    const vehicle =
-      doc.vehicles[
-        Number(
-          promptRequired(
-            `Veicolo:\n${doc.vehicles.map((entry, index) => `${index + 1}. ${entry.name}`).join("\n")}`,
-            "1",
-          ),
-        ) - 1
-      ];
-    if (!site || !vehicle) return;
-    const description = promptRequired(
-      "Descrizione trasferta",
-      `Trasferta ${site.name}`,
-    );
-    if (!description) return;
-    const occurrences = Number(promptRequired("Occorrenze previste", "1"));
-    const roundTrip = window.confirm("Andata e ritorno?");
-    const manual = promptRequired(
-      "Minuti manuali per occorrenza (lascia vuoto per automatico)",
-      "",
-    );
-    const fuel = await window.cash.mimit.latestFuelPrice({
-      territory: doc.settings.fuelTerritory,
-      fuel: vehicle.fuel,
-    });
-    if (!fuel.ok) {
-      appState.setError(fuel.error);
-      return;
-    }
-    const cost = calculateVehicleCost(vehicle, fuel.value);
-    if (!cost.ok) {
-      appState.setError(cost.error);
-      return;
-    }
-    const travel = calculateTravel({
-      oneWayKm: site.oneWayKm,
-      roundTrip,
-      occurrences,
-      vehicleCostPerKm: cost.value.costPerKm,
-      ...(manual
-        ? { manualMinutesPerOccurrence: Number(manual) }
-        : { speedKmh: profile?.capacity.travelSpeedKmh }),
-    });
-    if (!travel.ok) {
-      appState.setError(travel.error);
-      return;
-    }
-    appState.mutate((document) =>
-      document.quotes
-        .find((candidate) => candidate.id === quote.id)!
-        .items.find((item) => item.id === itemId)!
-        .subItems.push({
-          ...meta(),
-          kind: "travel",
-          description,
-          site: {
-            sourceId: site.id,
-            name: site.name,
-            address: site.address,
-            ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}),
-          },
-          vehicleId: vehicle.id,
-          roundTrip,
-          occurrences,
-          timeMode: manual ? "manual" : "automatic",
-          ...(manual ? { manualMinutesPerOccurrence: Number(manual) } : {}),
-          ...travel.value,
-          vehicleCostPerKm: cost.value.costPerKm,
-          fuelEvidence: fuel.value,
-        }),
-    );
-  };
+  const addReusable = async (itemId: string, reusable: ReusableSubItem, context?: TravelContext) => {
+    if (!quote) return false
+    let sub: QuoteSubItem | undefined
+    if (reusable.kind === "time") sub = { ...meta(), kind: "time", description: reusable.description, minutes: reusable.minutes }
+    else if (reusable.kind === "expense") sub = { ...meta(), kind: "expense", description: reusable.description, amount: reusable.amount }
+    else sub = await materializeTravel(reusable, quote, context)
+    if (!sub) return false
+    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.subItems.push(sub!))
+    return true
+  }
 
-  const addVariant = async (itemId: string) => {
-    if (!quote) return;
-    const source = quote.items.find((item) => item.id === itemId);
-    if (!source) return;
-    const name = promptRequired("Nome gruppo variante");
-    const names = promptRequired(
-      "Nomi delle opzioni, uno per riga",
-      "Nessuna\nStandard",
-    );
-    if (!name || !names) return;
-    const options = [];
-    for (const optionName of names
-      .split(/\r?\n/)
-      .map((value) => value.trim())
-      .filter(Boolean)) {
-      const raw = window.prompt(
-        `Sottovoci prodotte da “${optionName}”, una per riga.\nFormati:\ntempo|Descrizione|minuti\nspesa|Descrizione|euro\ntrasferta|Descrizione|AR o A|occorrenze|automatic o manual|minuti manuali`,
-        optionName === "Nessuna" ? "" : `tempo|${name} · ${optionName}|30`,
-      );
-      if (raw === null) return;
-      const definitions: SubItemDefinition[] = [];
-      for (const line of raw
-        .split(/\r?\n/)
-        .map((value) => value.trim())
-        .filter(Boolean)) {
-        const [kind, description, value, occurrences, timeMode, manualMinutes] =
-          line.split("|").map((value) => value?.trim());
-        if (!description) {
-          window.alert(`Definizione non valida: ${line}`);
-          return;
-        }
-        if (
-          kind === "tempo" &&
-          Number.isInteger(Number(value)) &&
-          Number(value) > 0
-        )
-          definitions.push({
-            kind: "time",
-            description,
-            minutes: Number(value),
-          });
-        else if (kind === "spesa" && Number(value) >= 0)
-          definitions.push({
-            kind: "expense",
-            description,
-            amount: Number(value).toFixed(2),
-          });
-        else if (
-          kind === "trasferta" &&
-          Number.isInteger(Number(occurrences)) &&
-          Number(occurrences) > 0 &&
-          (timeMode === "automatic" || timeMode === "manual")
-        )
-          definitions.push({
-            kind: "travel",
-            description,
-            roundTrip: value?.toLocaleUpperCase("it") === "AR",
-            occurrences: Number(occurrences),
-            timeMode,
-            ...(timeMode === "manual" && Number(manualMinutes) > 0
-              ? { manualMinutesPerOccurrence: Number(manualMinutes) }
-              : {}),
-          });
-        else {
-          window.alert(`Definizione non valida: ${line}`);
-          return;
-        }
-      }
-      options.push({ ...meta(), name: optionName, subItems: definitions });
-    }
-    const defaultRaw = window.prompt(
-      `Opzione predefinita (numero, lascia vuoto per nessun default):\n${options.map((option, index) => `${index + 1}. ${option.name}`).join("\n")}`,
-      "1",
-    );
-    if (defaultRaw === null) return;
-    const defaultOption = defaultRaw.trim()
-      ? options[Number(defaultRaw) - 1]
-      : undefined;
-    if (defaultRaw.trim() && !defaultOption) {
-      window.alert("Opzione predefinita non valida.");
-      return;
-    }
-    const group = {
-      ...meta(),
-      name,
-      options,
-      ...(defaultOption ? { defaultOptionId: defaultOption.id } : {}),
-    };
-    const validation = validateVariantGroups([...source.variantGroups, group]);
-    if (!validation.ok) {
-      appState.setError(validation.error);
-      return;
-    }
-    let selected = defaultOption;
-    if (!selected) {
-      const selectedRaw = promptRequired(
-        `Questo gruppo non ha default: scegli esplicitamente l’opzione iniziale.\n${options.map((option, index) => `${index + 1}. ${option.name}`).join("\n")}`,
-      );
-      selected = selectedRaw ? options[Number(selectedRaw) - 1] : undefined;
-      if (!selected) return;
-    }
-    const travelQueue: QuoteSubItem[] = [];
-    for (const definition of selected.subItems)
-      if (definition.kind === "travel") {
-        const travel = await materializeTemplateTravel(definition, quote);
-        if (!travel) return;
-        travelQueue.push(travel);
-      }
-    const draft = structuredClone(source);
-    draft.variantGroups.push(group);
-    const applied = changeVariant(draft, group.id, selected.id, true, {
-      materializeTravel: () => {
-        const travel = travelQueue.shift();
-        return travel
-          ? { ok: true, value: travel }
-          : {
-              ok: false,
-              error: {
-                code: "MISSING_DATA",
-                message: "Dati Trasferta non disponibili.",
-              },
-            };
-      },
-    });
-    if (!applied.ok) {
-      appState.setError(applied.error);
-      return;
-    }
-    appState.mutate((document) =>
-      Object.assign(
-        document.quotes
-          .find((candidate) => candidate.id === quote.id)!
-          .items.find((item) => item.id === itemId)!,
-        applied.value,
-      ),
-    );
-  };
+  const saveSubToCatalog = (itemId: string, subId: string) => {
+    const sub = quote?.items.find((item) => item.id === itemId)?.subItems.find((entry) => entry.id === subId)
+    if (sub) appState.mutate((document) => document.catalog.subItems.push(reusableFromQuoteSubItem(sub)))
+  }
 
-  const changeVariantFromUi = async (
-    itemId: string,
-    groupId: string,
-    optionId: string,
-  ) => {
-    if (!quote) return;
-    const item = quote.items.find((candidate) => candidate.id === itemId);
-    const group = item?.variantGroups.find(
-      (candidate) => candidate.id === groupId,
-    );
-    const option = group?.options.find(
-      (candidate) => candidate.id === optionId,
-    );
-    if (!item || !group || !option) return;
-    const warning = item.subItems.some(
-      (sub) => sub.variantOwner?.groupId === group.id && sub.manuallyModified,
-    );
-    if (
-      warning &&
-      !window.confirm(
-        "Le modifiche manuali alle sottovoci della variante verranno perse. Continuare?",
-      )
-    )
-      return;
-    const travelQueue: QuoteSubItem[] = [];
-    for (const definition of option.subItems)
-      if (definition.kind === "travel") {
-        const travel = await materializeTemplateTravel(definition, quote);
-        if (!travel) return;
-        travelQueue.push(travel);
-      }
-    const changed = changeVariant(item, group.id, option.id, true, {
-      materializeTravel: () => {
-        const travel = travelQueue.shift();
-        return travel
-          ? { ok: true, value: travel }
-          : {
-              ok: false,
-              error: {
-                code: "MISSING_DATA",
-                message: "Dati Trasferta non disponibili.",
-              },
-            };
-      },
-    });
-    if (!changed.ok) {
-      appState.setError(changed.error);
-      return;
-    }
-    appState.mutate((document) =>
-      Object.assign(
-        document.quotes
-          .find((candidate) => candidate.id === quote.id)!
-          .items.find((candidate) => candidate.id === item.id)!,
-        changed.value,
-      ),
-    );
-  };
+  const switchVariant = async (itemId: string, groupId: string, optionId: string, context: TravelContext, force: boolean) => {
+    if (!quote) return false
+    const item = quote.items.find((entry) => entry.id === itemId)
+    const option = item?.variantGroups.find((entry) => entry.id === groupId)?.options.find((entry) => entry.id === optionId)
+    if (!item || !option) return false
+    const queue: QuoteSubItem[] = []
+    for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
+    const result = changeVariant(item, groupId, optionId, force, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
+    if (!result.ok) { appState.setError(result.error); return false }
+    appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
+    return true
+  }
 
-  const insertTemplate = async () => {
-    if (!quote) return;
-    const selected =
-      doc.catalog.templates[
-        Number(
-          promptRequired(
-            `Template:\n${doc.catalog.templates.map((template, index) => `${index + 1}. ${template.name}`).join("\n")}`,
-          ),
-        ) - 1
-      ];
-    if (!selected) return;
-    const template = cloneTemplate(selected);
-    const prepared: QuoteItem[] = [];
-    for (const source of template.items) {
-      const item: QuoteItem = {
-        ...meta(),
-        name: source.name,
-        subItems: [],
-        variantGroups: source.variantGroups,
-        variantSelections: [],
-        ...(source.referencePrice
-          ? { referencePrice: { ...source.referencePrice } }
-          : {}),
-      };
+  const saveVariantGroup = async (itemId: string, group: VariantGroup, selectedOptionId: string, context: TravelContext, force: boolean) => {
+    if (!quote) return false
+    const source = quote.items.find((entry) => entry.id === itemId)
+    if (!source) return false
+    const draft = structuredClone(source)
+    const index = draft.variantGroups.findIndex((entry) => entry.id === group.id)
+    if (index >= 0) draft.variantGroups[index] = group
+    else draft.variantGroups.push(group)
+    const validation = validateVariantGroups(draft.variantGroups)
+    if (!validation.ok) { appState.setError(validation.error); return false }
+    const option = group.options.find((entry) => entry.id === selectedOptionId)
+    if (!option) { appState.setError({ code: "MISSING_DATA", message: "Scegli l’opzione iniziale del gruppo variante." }); return false }
+    const queue: QuoteSubItem[] = []
+    for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
+    const result = changeVariant(draft, group.id, option.id, force, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
+    if (!result.ok) { appState.setError(result.error); return false }
+    appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
+    return true
+  }
+
+  const insertTemplate = async (templateId: string, choices: Record<string, string>, context: TravelContext) => {
+    if (!quote) return false
+    const sourceTemplate = doc.catalog.templates.find((entry) => entry.id === templateId)
+    if (!sourceTemplate) return false
+    // The dialog returns IDs from the catalog template. Cloning deliberately
+    // regenerates every group/option ID, so preserve the user's choices by
+    // position and resolve them against the cloned identities below.
+    const selectedOptionIndexes = sourceTemplate.items.map((item) => item.variantGroups.map((group) => {
+      const selectedId = choices[group.id] || group.defaultOptionId
+      return group.options.findIndex((option) => option.id === selectedId)
+    }))
+    const template = cloneTemplate(sourceTemplate)
+    const prepared: QuoteItem[] = []
+    for (const [itemIndex, source] of template.items.entries()) {
+      const item: QuoteItem = { ...meta(), name: source.name, subItems: [], variantGroups: source.variantGroups, variantSelections: [], ...(source.referencePrice ? { referencePrice: { ...source.referencePrice } } : {}) }
       for (const reusable of source.subItems) {
-        if (reusable.kind === "time")
-          item.subItems.push({
-            ...meta(),
-            kind: "time",
-            description: reusable.description,
-            minutes: reusable.minutes,
-          });
-        else if (reusable.kind === "expense")
-          item.subItems.push({
-            ...meta(),
-            kind: "expense",
-            description: reusable.description,
-            amount: reusable.amount,
-          });
-        else {
-          const travel = await materializeTemplateTravel(reusable, quote);
-          if (!travel) return;
-          item.subItems.push(travel);
-        }
+        if (reusable.kind === "time") item.subItems.push({ ...meta(), kind: "time", description: reusable.description, minutes: reusable.minutes })
+        else if (reusable.kind === "expense") item.subItems.push({ ...meta(), kind: "expense", description: reusable.description, amount: reusable.amount })
+        else { const travel = await materializeTravel(reusable, quote, context); if (!travel) return false; item.subItems.push(travel) }
       }
-      const choices: Record<string, string> = {};
-      const travelQueue: QuoteSubItem[] = [];
-      for (const group of item.variantGroups) {
-        let optionId = group.defaultOptionId;
-        if (!optionId) {
-          const option =
-            group.options[
-              Number(
-                promptRequired(
-                  `Opzione per ${group.name}:\n${group.options.map((candidate, index) => `${index + 1}. ${candidate.name}`).join("\n")}`,
-                ),
-              ) - 1
-            ];
-          if (!option) return;
-          optionId = option.id;
-        }
-        choices[group.id] = optionId;
-        const option = group.options.find(
-          (candidate) => candidate.id === optionId,
-        )!;
-        for (const definition of option.subItems)
-          if (definition.kind === "travel") {
-            const travel = await materializeTemplateTravel(definition, quote);
-            if (!travel) return;
-            travelQueue.push(travel);
-          }
+      const resolved: Record<string, string> = {}
+      const queue: QuoteSubItem[] = []
+      for (const [groupIndex, group] of item.variantGroups.entries()) {
+        const optionIndex = selectedOptionIndexes[itemIndex]?.[groupIndex] ?? -1
+        const option = optionIndex >= 0 ? group.options[optionIndex] : undefined
+        if (!option) { appState.setError({ code: "MISSING_DATA", message: `Scegli un’opzione per ${group.name}.` }); return false }
+        resolved[group.id] = option.id
+        for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
       }
-      const applied = applyVariantSelections(item, choices, {
-        materializeTravel: () => {
-          const travel = travelQueue.shift();
-          return travel
-            ? { ok: true, value: travel }
-            : {
-                ok: false,
-                error: {
-                  code: "MISSING_DATA",
-                  message: "Dati Trasferta non disponibili.",
-                },
-              };
-        },
-      });
-      if (!applied.ok) {
-        appState.setError(applied.error);
-        return;
-      }
-      prepared.push(applied.value);
+      const applied = applyVariantSelections(item, resolved, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
+      if (!applied.ok) { appState.setError(applied.error); return false }
+      prepared.push(applied.value)
     }
-    if (
-      window.confirm(
-        `Inserire una copia indipendente del template “${selected.name}” con ${prepared.length} voci?`,
-      )
-    )
-      appState.mutate((document) =>
-        document.quotes
-          .find((candidate) => candidate.id === quote.id)!
-          .items.push(...prepared),
-      );
-  };
+    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.push(...prepared))
+    return true
+  }
 
-  const saveTemplate = () => {
-    if (!quote) return;
-    const name = promptRequired("Nome del nuovo template");
-    if (!name) return;
-    const raw = promptRequired(
-      `Voci da includere (numeri separati da virgola):\n${quote.items.map((item, index) => `${index + 1}. ${item.name}`).join("\n")}`,
-      quote.items.map((_item, index) => index + 1).join(","),
-    );
-    if (!raw) return;
-    const items = [
-      ...new Set(
-        raw
-          .split(",")
-          .map((value) => quote.items[Number(value.trim()) - 1])
-          .filter((item): item is QuoteItem => Boolean(item)),
-      ),
-    ];
-    const built = templateFromQuote(name, items);
-    if (!built.ok) {
-      appState.setError(built.error);
-      return;
-    }
-    const preview = previewTemplate(name, items);
-    const changed = items.flatMap((item) =>
-      item.subItems
-        .filter((sub) => sub.variantOwner && sub.manuallyModified)
-        .map((sub) => `${item.name} / ${sub.description}`),
-    );
-    if (
-      !window.confirm(
-        `Anteprima del nuovo template (sempre una copia):\n${preview.items.map((item) => `${item.name}: ${item.subItems.join(", ") || "nessuna sottovoce base"}${item.variants.length ? ` · varianti ${item.variants.map((variant) => variant.group).join(", ")}` : ""}`).join("\n")}${changed.length ? `\n\nLe modifiche manuali seguenti saranno applicate alle rispettive opzioni:\n${changed.join("\n")}` : ""}\n\nSalvare?`,
-      )
-    )
-      return;
-    appState.mutate((document) => document.catalog.templates.push(built.value));
-  };
+  const saveTemplate = (name: string, itemIds: string[]) => {
+    if (!quote) return false
+    const items = quote.items.filter((item) => itemIds.includes(item.id))
+    const built = templateFromQuote(name, items)
+    if (!built.ok) { appState.setError(built.error); return false }
+    appState.mutate((document) => document.catalog.templates.push(built.value))
+    return true
+  }
 
   const performRefresh = async () => {
-    if (!quote) return;
+    if (!quote) return false
     const result = await refreshQuote(quote, {
-      profileById: (id) => doc.profiles.find((entry) => entry.id === id),
-      costs: doc.businessCosts,
-      siteById: (id) => doc.sites.find((entry) => entry.id === id),
-      vehicleById: (id) => doc.vehicles.find((entry) => entry.id === id),
-      fuel: (vehicle) =>
-        doc.settings.fuelTerritory
-          ? window.cash.mimit.latestFuelPrice({
-              territory: doc.settings.fuelTerritory,
-              fuel: vehicle.fuel,
-            })
-          : Promise.resolve({
-              ok: false,
-              error: {
-                code: "MISSING_DATA",
-                field: "fuelTerritory",
-                message: "Regione MIMIT non configurata.",
-              },
-            }),
-      foi: (amount, period) =>
-        window.cash.istat.revalue({ amount, fromPeriod: period }),
-    });
-    if (!result.ok) {
-      appState.setError(result.error);
-      return;
-    }
-    appState.mutate((document) => {
-      const index = document.quotes.findIndex((entry) => entry.id === quote.id);
-      document.quotes[index] = result.value;
-    });
-  };
+      profileById: (id) => doc.profiles.find((entry) => entry.id === id), costs: doc.businessCosts,
+      siteById: (id) => doc.sites.find((entry) => entry.id === id), vehicleById: (id) => doc.vehicles.find((entry) => entry.id === id),
+      fuel: (vehicle) => doc.settings.fuelTerritory ? window.cash.mimit.latestFuelPrice({ territory: doc.settings.fuelTerritory, fuel: vehicle.fuel }) : Promise.resolve({ ok: false, error: { code: "MISSING_DATA", field: "fuelTerritory", message: "Regione MIMIT non configurata." } }),
+      foi: (amount, period) => window.cash.istat.revalue({ amount, fromPeriod: period }),
+    })
+    if (!result.ok) { appState.setError(result.error); return false }
+    appState.mutate((document) => { document.quotes[document.quotes.findIndex((entry) => entry.id === quote.id)] = result.value })
+    return true
+  }
 
-  const performExport = async () => {
-    if (!quote) return;
-    const fic = doc.settings.fic;
-    if (!fic.enabled || !fic.company || !fic.product) {
-      window.alert(
-        "Fatture in Cloud è disattivato o non configurato. Il preventivo resta utilizzabile localmente.",
-      );
-      return;
+  const performExport = async (client: FicClientSnapshot, groups: Array<{ itemIds: string[]; description: string }>) => {
+    if (!quote) return false
+    const fic = doc.settings.fic
+    if (!fic.enabled || !fic.company || !fic.product) { appState.setError({ code: "MISSING_DATA", source: "FattureInCloud", message: "Fatture in Cloud non è configurato.", action: "Completa la procedura guidata nelle Impostazioni." }); return false }
+    const product = await window.cash.fic.verifyProduct({ companyId: fic.company.id, productId: fic.product.id })
+    if (!product.ok) { appState.setError(product.error); return false }
+    const exportSnapshot = { ...quote, client }
+    const built = buildExportLines(exportSnapshot, groups, fic.company.id)
+    if (!built.ok) { appState.setError(built.error); return false }
+    if (quote.client?.source !== "fatture_in_cloud" || quote.client.clientId !== client.clientId) {
+      appState.mutate((document) => { document.quotes.find((entry) => entry.id === quote.id)!.client = client })
+      await appState.save()
+      if (appState.status !== "Salvato") return false
     }
-    let remoteClient = quote.client;
-    if (
-      !remoteClient ||
-      remoteClient.source !== "fatture_in_cloud" ||
-      remoteClient.companyId !== fic.company.id
-    ) {
-      const query = promptRequired(
-        "Cerca e seleziona esplicitamente il cliente remoto per questa esportazione",
-        quote.client?.displayName ?? "",
-      );
-      if (!query) return;
-      const found = await window.cash.fic.searchClients({
-        companyId: fic.company.id,
-        query,
-      });
-      if (!found.ok) {
-        appState.setError(found.error);
-        return;
-      }
-      const selected =
-        found.value[
-          Number(
-            promptRequired(
-              `Cliente remoto:\n${found.value.map((entry, index) => `${index + 1}. ${entry.displayName} · ${entry.vatNumber ?? "P.IVA assente"}`).join("\n")}`,
-            ),
-          ) - 1
-        ];
-      if (!selected) return;
-      if (
-        !window.confirm(
-          `Sostituire lo snapshot cliente del preventivo con “${selected.displayName}”? Il Cliente locale originario non verrà modificato.`,
-        )
-      )
-        return;
-      remoteClient = selected;
-      appState.mutate((document) => {
-        document.quotes.find((entry) => entry.id === quote.id)!.client =
-          selected;
-      });
-      await appState.save();
-      if (appState.status !== "Salvato") return;
-    }
-    const exportQuoteSnapshot = { ...quote, client: remoteClient };
-    if (
-      needsRepeatWarning(exportQuoteSnapshot) &&
-      !window.confirm(
-        "Preventivo già esportato o con esito da verificare. Confermi una nuova esportazione?",
-      )
-    )
-      return;
-    const product = await window.cash.fic.verifyProduct({
-      companyId: fic.company.id,
-      productId: fic.product.id,
-    });
-    if (!product.ok) {
-      appState.setError(product.error);
-      return;
-    }
-    let groups: Array<{ itemIds: string[]; description: string }> | undefined;
-    if (
-      quote.items.length > 1 &&
-      window.confirm(
-        "Raggruppare tutte le voci in una sola riga di esportazione?",
-      )
-    ) {
-      const description = promptRequired(
-        "Descrizione modificabile della riga",
-        quote.items.map((item) => item.name).join(" + "),
-      );
-      if (!description) return;
-      groups = [{ itemIds: quote.items.map((item) => item.id), description }];
-    } else {
-      groups = [];
-      for (const item of quote.items) {
-        const description = promptRequired(
-          `Descrizione riga per “${item.name}”`,
-          item.name,
-        );
-        if (!description) return;
-        groups.push({ itemIds: [item.id], description });
-      }
-    }
-    const built = buildExportLines(exportQuoteSnapshot, groups, fic.company.id);
-    if (!built.ok) {
-      appState.setError(built.error);
-      return;
-    }
-    if (
-      !window.confirm(
-        `Anteprima definitiva:\n${built.value.map((line) => `${line.description}: ${eur(line.amount)} · quantità 1`).join("\n")}\n\nInviare?`,
-      )
-    )
-      return;
-    const attempt = createPendingAttempt(fic.company.id, built.value);
-    appState.mutate((document) =>
-      document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .exportAttempts.push(attempt),
-    );
-    await appState.save();
-    if (appState.status !== "Salvato") return;
-    const sent = await window.cash.fic.exportQuote({
-      companyId: fic.company.id,
-      clientId: remoteClient.clientId,
-      productId: fic.product.id,
-      lines: built.value,
-      attemptId: attempt.id,
-    });
+    const attempt = createPendingAttempt(fic.company.id, built.value)
+    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.exportAttempts.push(attempt))
+    await appState.save()
+    if (appState.status !== "Salvato") return false
+    const sent = await window.cash.fic.exportQuote({ companyId: fic.company.id, clientId: client.clientId, productId: fic.product.id, lines: built.value, attemptId: attempt.id })
     appState.mutate((document) => {
-      const saved = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .exportAttempts.find((entry) => entry.id === attempt.id)!;
-      if (sent.ok) {
-        saved.outcome = sent.value.outcome;
-        if (sent.value.remoteDocumentId)
-          saved.remoteDocumentId = sent.value.remoteDocumentId;
-        if (sent.value.diagnostic) saved.diagnostic = sent.value.diagnostic;
-      } else {
-        saved.outcome = "uncertain";
-        saved.diagnostic = sent.error.message;
-      }
-    });
-  };
+      const saved = document.quotes.find((entry) => entry.id === quote.id)!.exportAttempts.find((entry) => entry.id === attempt.id)!
+      if (sent.ok) { saved.outcome = sent.value.outcome; saved.remoteDocumentId = sent.value.remoteDocumentId; saved.diagnostic = sent.value.diagnostic }
+      else { saved.outcome = "uncertain"; saved.diagnostic = sent.error.message }
+    })
+    return sent.ok && sent.value.outcome === "success"
+  }
 
-  const itemActions: QuoteItemActions = {
-    rename: (item) => {
-      const title = promptRequired("Nome della voce commerciale", item.name);
-      if (title)
-        appState.mutate((document) => {
-          const target = document.quotes
-            .find((candidate) => candidate.id === quote?.id)!
-            .items.find((candidate) => candidate.id === item.id)!;
-          target.name = title;
-          target.updatedAt = new Date().toISOString();
-        });
-    },
-    savePrices: (item, form) => {
-      if (!quote) return;
-      const { get, money } = formReader(form);
-      appState.mutate((document) => {
-        const target = document.quotes
-          .find((candidate) => candidate.id === quote.id)!
-          .items.find((candidate) => candidate.id === item.id)!;
-        target.chosenPrice = get("chosenPrice")
-          ? Number(money("chosenPrice")).toFixed(2)
-          : undefined;
-        target.referencePrice =
-          get("referenceAmount") && get("referencePeriod")
-            ? {
-                amount: Number(money("referenceAmount")).toFixed(2),
-                period: get("referencePeriod"),
-              }
-            : undefined;
-      });
-    },
-    editSub: (itemId, subId) => {
-      const sub = quote?.items
-        .find((item) => item.id === itemId)
-        ?.subItems.find((candidate) => candidate.id === subId);
-      if (!sub) return;
-      const description = promptRequired("Descrizione", sub.description);
-      if (!description) return;
-      const value =
-        sub.kind === "time"
-          ? promptRequired("Minuti", String(sub.minutes))
-          : sub.kind === "expense"
-            ? promptRequired("Importo (€)", sub.amount)
-            : undefined;
-      if ((sub.kind === "time" || sub.kind === "expense") && !value) return;
-      appState.mutate((document) => {
-        const target = document.quotes
-          .find((candidate) => candidate.id === quote?.id)!
-          .items.find((item) => item.id === itemId)!
-          .subItems.find((candidate) => candidate.id === subId)!;
-        target.description = description;
-        if (target.kind === "time") target.minutes = Number(value);
-        else if (target.kind === "expense")
-          target.amount = Number(decimalInputValue(value!)).toFixed(2);
-        if (target.variantOwner) target.manuallyModified = true;
-        target.updatedAt = new Date().toISOString();
-      });
-    },
-    saveSub: (itemId, subId) => {
-      const sub = quote?.items
-        .find((item) => item.id === itemId)
-        ?.subItems.find((candidate) => candidate.id === subId);
-      if (
-        sub &&
-        window.confirm(
-          `Salvare “${sub.description}” come nuova copia indipendente nel catalogo?`,
-        )
-      )
-        appState.mutate((document) =>
-          document.catalog.subItems.push(reusableFromQuoteSubItem(sub)),
-        );
-    },
-    changeVariant: (itemId, groupId, optionId) =>
-      void changeVariantFromUi(itemId, groupId, optionId),
-    addTimeOrExpense: (kind, itemId) => {
-      const description = promptRequired("Descrizione");
-      const value = promptRequired(
-        kind === "time" ? "Durata in minuti" : "Importo (€)",
-        kind === "time" ? "30" : "0.00",
-      );
-      if (description && value)
-        appState.mutate((document) => {
-          const item = document.quotes
-            .find((candidate) => candidate.id === quote?.id)!
-            .items.find((candidate) => candidate.id === itemId)!;
-          item.subItems.push(
-            kind === "time"
-              ? { ...meta(), kind: "time", description, minutes: Number(value) }
-              : {
-                  ...meta(),
-                  kind: "expense",
-                  description,
-                  amount: Number(decimalInputValue(value)).toFixed(2),
-                },
-          );
-        });
-    },
-    addTravel: (itemId) => void addTravel(itemId),
-    addCatalog: (itemId) => {
-      const raw = promptRequired(
-        `Scegli il numero:\n${doc.catalog.subItems.map((entry, index) => `${index + 1}. ${entry.description}`).join("\n")}`,
-      );
-      const source = raw ? doc.catalog.subItems[Number(raw) - 1] : undefined;
-      if (source)
-        appState.mutate((document) => {
-          const item = document.quotes
-            .find((candidate) => candidate.id === quote?.id)!
-            .items.find((candidate) => candidate.id === itemId)!;
-          if (source.kind === "time")
-            item.subItems.push({
-              ...meta(),
-              kind: "time",
-              description: source.description,
-              minutes: source.minutes,
-            });
-          else if (source.kind === "expense")
-            item.subItems.push({
-              ...meta(),
-              kind: "expense",
-              description: source.description,
-              amount: source.amount,
-            });
-        });
-    },
-    addVariant: (itemId) => void addVariant(itemId),
-    requestDelete,
-  };
   return {
-    quote,
-    clientResults,
-    newQuote,
-    saveQuote,
-    searchRemoteClients,
-    insertTemplate,
-    saveTemplate,
-    performRefresh,
-    performExport,
-    itemActions,
-  };
+    quote, clientResults, newQuote, updateQuote, searchRemoteClients, setClientResults, addItem, renameItem, updatePrices,
+    saveSimpleSub, saveTravel, addReusable, saveSubToCatalog, switchVariant, saveVariantGroup, insertTemplate,
+    saveTemplate, performRefresh, performExport, requestDelete,
+  }
 }

@@ -1,4 +1,4 @@
-import { Archive, BookOpen, Boxes, Database, FileText, Gauge, MoreHorizontal, Save, Settings, Users, X } from "lucide-react"
+import { Archive, BookOpen, CheckCircle2, CircleAlert, CloudCog, Database, FileText, Gauge, LoaderCircle, MoreHorizontal, Save, Settings, Users, X } from "lucide-react"
 import type { ReactNode } from "react"
 import type { AppState } from "../state"
 import type { DeleteTarget, View } from "../types"
@@ -25,20 +25,19 @@ const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
   { key: "dashboard", label: "Panoramica", icon: Gauge },
   { key: "quotes", label: "Preventivi", icon: FileText },
   { key: "clients", label: "Clienti", icon: Users },
-  { key: "resources", label: "Risorse", icon: Boxes },
   { key: "catalog", label: "Catalogo", icon: BookOpen },
   { key: "settings", label: "Impostazioni", icon: Settings },
 ]
 
 const titles: Record<View, string> = {
   dashboard: "Panoramica", quotes: "Preventivi", clients: "Clienti",
-  resources: "Risorse", catalog: "Catalogo", settings: "Impostazioni",
+  catalog: "Catalogo", settings: "Impostazioni",
 }
 
 const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
-  clients: "Gestisci le anagrafiche locali", resources: "Costi, veicoli e sedi operative",
-  catalog: "Contenuti e modelli riutilizzabili", settings: "Archivio e integrazioni",
+  clients: "Anagrafiche locali essenziali",
+  catalog: "Sottovoci e template riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 
 export function GlobalError({ appState }: { appState: AppState }) {
@@ -84,7 +83,8 @@ export function AppShell({ appState, view, onView, children }: {
   children: ReactNode
 }) {
   const archiveName = (appState.session?.path ?? "").split(/[\\/]/).pop() ?? ""
-  const statusVariant = appState.status === "Salvato" ? "secondary" : appState.status.includes("Errore") || appState.status.includes("Conflitto") ? "destructive" : "outline"
+  const statusCritical = appState.status.includes("Errore") || appState.status.includes("Conflitto") || appState.status === "Dati da correggere" || appState.status === "Sola lettura"
+  const StatusIcon = appState.status === "Salvato" ? CheckCircle2 : appState.status === "Salvataggio" ? LoaderCircle : statusCritical ? CircleAlert : CloudCog
   return (
     <SidebarProvider>
       <Sidebar collapsible="none">
@@ -118,21 +118,21 @@ export function AppShell({ appState, view, onView, children }: {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header className="flex min-h-20 items-center justify-between gap-6 border-b px-8 py-4">
+        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-6 border-b bg-background/95 px-8 py-3 backdrop-blur">
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{descriptions[view]}</p>
-            <h1 className="text-2xl font-semibold tracking-tight">{titles[view]}</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{titles[view]}</h1>
             {archiveName ? <p className="max-w-lg truncate text-xs text-muted-foreground" title={appState.session?.path}>{archiveName}</p> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Badge variant={statusVariant} role="status">{appState.status}</Badge>
-            <Button variant="outline" onClick={() => void appState.open()}><Archive />Apri archivio</Button>
-            <Button onClick={() => void appState.save()} disabled={appState.status === "Salvato"}><Save />Salva ora</Button>
+            <Badge variant={statusCritical ? "destructive" : "outline"} role="status" className="gap-1.5"><StatusIcon className={appState.status === "Salvataggio" ? "animate-spin" : undefined} />{appState.status}</Badge>
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label="Altre azioni" />}><MoreHorizontal /></DropdownMenuTrigger>
+              <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Azioni archivio" />}><Archive />Archivio <MoreHorizontal /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuLabel>Archivio</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void appState.open()}>Apri archivio</DropdownMenuItem>
+                <DropdownMenuItem disabled={appState.status === "Salvato"} onClick={() => void appState.save()}><Save />Salva ora</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void appState.recovery()}>Copia di recupero</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void appState.restoreBackup()}>Ripristina backup</DropdownMenuItem>
               </DropdownMenuContent>
@@ -140,7 +140,7 @@ export function AppShell({ appState, view, onView, children }: {
           </div>
         </header>
         <Separator />
-        <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 p-8">
+        <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 p-6 2xl:p-8">
           <GlobalError appState={appState} />
           {children}
         </div>
