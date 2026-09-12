@@ -1,7 +1,8 @@
 import { createEmptyDocument, type CashDocument, type CashError } from '../domain/model';
+import { cashDocumentSchema, validationErrorFromIssues } from '../domain/schema';
 import type { ArchiveSession } from '../native/persistence';
 
-export type SaveStatus = 'Nessun archivio' | 'Modifiche non salvate' | 'Salvataggio' | 'Salvato' | 'Errore di salvataggio' | 'Conflitto esterno' | 'Sola lettura';
+export type SaveStatus = 'Nessun archivio' | 'Modifiche non salvate' | 'Salvataggio' | 'Salvato' | 'Dati da correggere' | 'Errore di salvataggio' | 'Conflitto esterno' | 'Sola lettura';
 type Listener = () => void;
 
 export class AppState {
@@ -54,8 +55,14 @@ export class AppState {
     if (!this.session?.document || this.session.readOnly || this.status === 'Conflitto esterno') return;
     const next = structuredClone(this.session.document);
     mutator(next);
+    const validation = cashDocumentSchema.safeParse(next);
+    if (!validation.success) {
+      this.error = validationErrorFromIssues(validation.error.issues);
+      this.emit();
+      return;
+    }
     this.mutationVersion += 1;
-    this.session = { ...this.session, document: next };
+    this.session = { ...this.session, document: validation.data };
     this.status = 'Modifiche non salvate';
     this.error = null;
     window.cash.setDirty(true);
@@ -83,7 +90,7 @@ export class AppState {
         this.emit();
         this.timer = window.setTimeout(() => { void this.save(); }, 0);
       }
-      else { this.error = result.error; this.status = result.error.code === 'CONFLICT' ? 'Conflitto esterno' : 'Errore di salvataggio'; window.cash.setDirty(true); this.emit(); }
+      else { this.error = result.error; this.status = result.error.code === 'CONFLICT' ? 'Conflitto esterno' : result.error.code === 'VALIDATION' ? 'Dati da correggere' : 'Errore di salvataggio'; window.cash.setDirty(true); this.emit(); }
     });
     await this.savePromise;
   }
@@ -108,6 +115,7 @@ export class AppState {
   private isSaved(): boolean { return this.status === 'Salvato'; }
 
   clearError(): void { this.error = null; this.emit(); }
+  setError(error: CashError): void { this.error = error; this.emit(); }
 }
 
 export const state = new AppState();
