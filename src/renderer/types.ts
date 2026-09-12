@@ -1,4 +1,4 @@
-export type View = "dashboard" | "quotes" | "clients" | "resources" | "catalog" | "settings"
+export type View = "dashboard" | "quotes" | "clients" | "catalog" | "settings"
 
 export interface DeleteTarget {
   kind: string

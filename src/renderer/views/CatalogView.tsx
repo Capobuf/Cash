@@ -1,96 +1,80 @@
-import { MoreHorizontal } from "lucide-react"
+import { BookOpen, Clock3, Layers3, MapPin, MoreHorizontal, Plus, ReceiptText, Trash2 } from "lucide-react"
 import { useState, type FormEvent } from "react"
-import { meta, type CashDocument } from "../../domain/model"
+import { meta, type CashDocument, type ReusableSubItem, type Template, type VariantOption } from "../../domain/model"
+import { validateVariantGroups } from "../../domain/variants"
+import { DefinitionDialog } from "@/components/QuoteDialogs"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { decimalInputValue, eur, formReader } from "@/lib/format"
+import { eur, formReader, moneyInputValue } from "@/lib/format"
 import type { AppState } from "../state"
 import type { DeleteTarget } from "../types"
 
-const promptRequired = (message: string, initial = ""): string | undefined => window.prompt(message, initial)?.trim() || undefined
-
 export function CatalogView({ doc, appState, requestDelete }: { doc: CashDocument; appState: AppState; requestDelete: (target: DeleteTarget) => void }) {
-  const [kind, setKind] = useState<"time" | "expense" | "travel">("time")
-  const [timeMode, setTimeMode] = useState<"automatic" | "manual">("automatic")
-
-  const add = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const { data, get } = formReader(event.currentTarget)
-    appState.mutate((document) => {
-      if (kind === "time") document.catalog.subItems.push({ ...meta(), kind: "time", description: get("description"), minutes: Number(get("value")) })
-      else if (kind === "expense") document.catalog.subItems.push({ ...meta(), kind: "expense", description: get("description"), amount: Number(decimalInputValue(get("value"))).toFixed(2) })
-      else document.catalog.subItems.push({ ...meta(), kind: "travel", description: get("description"), roundTrip: data.get("roundTrip") === "on", occurrences: Number(get("occurrences")), timeMode, ...(timeMode === "manual" ? { manualMinutesPerOccurrence: Number(get("value")) } : {}) })
-    })
-    event.currentTarget.reset(); setKind("time"); setTimeMode("automatic")
-  }
-
-  const editReusable = (id: string) => {
-    const reusable = doc.catalog.subItems.find((candidate) => candidate.id === id)
-    if (!reusable) return
-    const description = promptRequired("Descrizione", reusable.description)
-    if (!description) return
-    if (reusable.kind === "time") {
-      const minutes = promptRequired("Minuti interi positivi", String(reusable.minutes)); if (!minutes) return
-      appState.mutate((document) => Object.assign(document.catalog.subItems.find((candidate) => candidate.id === id)!, { description, minutes: Number(minutes), updatedAt: new Date().toISOString() }))
-    } else if (reusable.kind === "expense") {
-      const amount = promptRequired("Importo (€)", reusable.amount); if (!amount) return
-      appState.mutate((document) => Object.assign(document.catalog.subItems.find((candidate) => candidate.id === id)!, { description, amount: Number(decimalInputValue(amount)).toFixed(2), updatedAt: new Date().toISOString() }))
-    } else {
-      const occurrences = promptRequired("Occorrenze", String(reusable.occurrences))
-      const mode = promptRequired("Modalità: automatic o manual", reusable.timeMode)
-      const manual = mode === "manual" ? promptRequired("Minuti manuali per occorrenza", String(reusable.manualMinutesPerOccurrence ?? 30)) : undefined
-      if (!occurrences || !mode || (mode !== "automatic" && mode !== "manual") || (mode === "manual" && !manual)) return
-      appState.mutate((document) => { const target = document.catalog.subItems.find((candidate) => candidate.id === id); if (target?.kind === "travel") Object.assign(target, { description, occurrences: Number(occurrences), timeMode: mode, manualMinutesPerOccurrence: mode === "manual" ? Number(manual) : undefined, updatedAt: new Date().toISOString() }) })
-    }
-  }
-
-  const editTemplate = (id: string) => {
-    const template = doc.catalog.templates.find((candidate) => candidate.id === id)
-    if (!template) return
-    const draft = structuredClone(template)
-    const templateName = promptRequired("Nome template", draft.name); if (!templateName) return
-    draft.name = templateName
-    const itemRaw = window.prompt(`Voce da modificare (numero; vuoto modifica solo il nome template):\n${draft.items.map((item, index) => `${index + 1}. ${item.name}`).join("\n")}`, "")
-    if (itemRaw === null) return
-    const item = itemRaw.trim() ? draft.items[Number(itemRaw) - 1] : undefined
-    if (itemRaw.trim() && !item) return
-    if (item) {
-      const itemName = promptRequired("Nome voce", item.name); if (!itemName) return
-      item.name = itemName
-      const subRaw = window.prompt(`Sottovoce base da modificare (numero; vuoto nessuna):\n${item.subItems.map((sub, index) => `${index + 1}. ${sub.description}`).join("\n")}`, "")
-      if (subRaw === null) return
-      const sub = subRaw.trim() ? item.subItems[Number(subRaw) - 1] : undefined
-      if (sub) {
-        const description = promptRequired("Descrizione sottovoce", sub.description); if (!description) return
-        sub.description = description
-        if (sub.kind === "time") { const minutes = promptRequired("Minuti", String(sub.minutes)); if (!minutes) return; sub.minutes = Number(minutes) }
-        else if (sub.kind === "expense") { const amount = promptRequired("Importo", sub.amount); if (!amount) return; sub.amount = Number(amount).toFixed(2) }
-      }
-    }
-    if (!window.confirm("Salvare esplicitamente le modifiche a questo template?")) return
-    draft.updatedAt = new Date().toISOString()
-    appState.mutate((document) => { const index = document.catalog.templates.findIndex((candidate) => candidate.id === id); document.catalog.templates[index] = draft })
-  }
-
-  return (
-    <div className="grid grid-cols-12 gap-4">
-      <Card className="col-span-4"><CardHeader><CardTitle>Nuova sottovoce</CardTitle><CardDescription>Contenuto riutilizzabile nei preventivi.</CardDescription></CardHeader><CardContent><form onSubmit={add}><FieldGroup>
-        <Field><FieldLabel htmlFor="catalog-kind">Tipo</FieldLabel><NativeSelect className="w-full" id="catalog-kind" name="kind" value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><NativeSelectOption value="time">Tempo</NativeSelectOption><NativeSelectOption value="expense">Spesa</NativeSelectOption><NativeSelectOption value="travel">Trasferta</NativeSelectOption></NativeSelect></Field>
-        <Field><FieldLabel htmlFor="catalog-description">Descrizione</FieldLabel><Input id="catalog-description" name="description" placeholder="Descrivi l’attività" required /></Field>
-        {(kind !== "travel" || timeMode === "manual") ? <Field><FieldLabel htmlFor="catalog-value">{kind === "expense" ? "Importo" : kind === "travel" ? "Durata manuale" : "Durata"}</FieldLabel><InputGroup><InputGroupInput id="catalog-value" name="value" defaultValue={kind === "expense" ? "0.00" : "30"} inputMode="decimal" required /><InputGroupAddon align="inline-end"><InputGroupText>{kind === "expense" ? "€" : "min"}</InputGroupText></InputGroupAddon></InputGroup></Field> : <input type="hidden" name="value" value="30" />}
-        {kind === "travel" ? <><Field><FieldLabel htmlFor="catalog-occurrences">Occorrenze</FieldLabel><InputGroup><InputGroupInput id="catalog-occurrences" name="occurrences" type="number" defaultValue="1" min={1} step={1} required /><InputGroupAddon align="inline-end"><InputGroupText>volte</InputGroupText></InputGroupAddon></InputGroup></Field><Field><FieldLabel htmlFor="catalog-time-mode">Calcolo del tempo</FieldLabel><NativeSelect className="w-full" id="catalog-time-mode" name="timeMode" value={timeMode} onChange={(event) => setTimeMode(event.target.value as typeof timeMode)}><NativeSelectOption value="automatic">Automatico dalla distanza</NativeSelectOption><NativeSelectOption value="manual">Manuale · usa la durata indicata</NativeSelectOption></NativeSelect></Field><Field orientation="horizontal"><Checkbox id="catalog-round-trip" name="roundTrip" defaultChecked /><FieldLabel htmlFor="catalog-round-trip">Andata e ritorno</FieldLabel></Field></> : null}
-        <Button type="submit">Aggiungi al catalogo</Button>
-      </FieldGroup></form></CardContent></Card>
-      <Card className="col-span-8"><CardHeader><CardTitle>Sottovoci riutilizzabili</CardTitle><CardDescription>Libreria di contenuti indipendenti.</CardDescription><CardAction><Badge variant="secondary">{doc.catalog.subItems.length} elementi</Badge></CardAction></CardHeader><CardContent>{doc.catalog.subItems.length ? <Table><TableHeader><TableRow><TableHead>Descrizione</TableHead><TableHead>Dettagli</TableHead><TableHead className="w-16 text-right">Azioni</TableHead></TableRow></TableHeader><TableBody>{doc.catalog.subItems.map((item) => <TableRow key={item.id}><TableCell className="font-medium">{item.description}</TableCell><TableCell className="text-muted-foreground">{item.kind === "time" ? `${item.minutes} min` : item.kind === "expense" ? eur(item.amount) : `Trasferta ${item.roundTrip ? "A/R" : "solo andata"} · ${item.occurrences} occorrenze · ${item.timeMode === "automatic" ? "tempo automatico" : "tempo manuale"}`}</TableCell><TableCell className="text-right"><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Azioni per ${item.description}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => editReusable(item.id)}>Modifica</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => requestDelete({ kind: "catalog", id: item.id, label: item.description })}>Elimina</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell></TableRow>)}</TableBody></Table> : <p className="py-8 text-center text-sm text-muted-foreground">Nessun elemento.</p>}</CardContent></Card>
-      <Card className="col-span-12"><CardHeader><CardTitle>Template</CardTitle><CardDescription>Strutture complete riutilizzabili come copie indipendenti.</CardDescription><CardAction><Badge variant="secondary">{doc.catalog.templates.length} template</Badge></CardAction></CardHeader><CardContent>{doc.catalog.templates.length ? <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Contenuto</TableHead><TableHead className="w-16 text-right">Azioni</TableHead></TableRow></TableHeader><TableBody>{doc.catalog.templates.map((template) => <TableRow key={template.id}><TableCell className="font-medium">{template.name}</TableCell><TableCell className="text-muted-foreground">{template.items.length} voci · copia indipendente</TableCell><TableCell className="text-right"><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Azioni per ${template.name}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => editTemplate(template.id)}>Apri e modifica</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => requestDelete({ kind: "template", id: template.id, label: template.name })}>Elimina</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell></TableRow>)}</TableBody></Table> : <p className="py-8 text-center text-sm text-muted-foreground">Nessun template. Salva una o più voci da un preventivo per crearne uno.</p>}</CardContent></Card>
-    </div>
-  )
+  const [editingReusableId, setEditingReusableId] = useState<string | null>()
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>()
+  const reusable = editingReusableId ? doc.catalog.subItems.find((entry) => entry.id === editingReusableId) : undefined
+  const template = editingTemplateId ? doc.catalog.templates.find((entry) => entry.id === editingTemplateId) : undefined
+  return <>
+    <Tabs defaultValue="subitems" className="space-y-4"><TabsList><TabsTrigger value="subitems"><Layers3 />Sottovoci</TabsTrigger><TabsTrigger value="templates"><BookOpen />Template</TabsTrigger></TabsList>
+      <TabsContent value="subitems"><section className="rounded-xl border bg-card"><div className="flex items-center justify-between border-b p-5"><div><h2 className="font-semibold">Sottovoci riutilizzabili</h2><p className="text-sm text-muted-foreground">Copie di partenza per attività, spese e trasferte.</p></div><Button onClick={() => setEditingReusableId(null)}><Plus />Nuova sottovoce</Button></div><div className="p-5">{doc.catalog.subItems.length ? <Table><TableHeader><TableRow><TableHead className="w-28">Tipo</TableHead><TableHead>Descrizione</TableHead><TableHead>Valore predefinito</TableHead><TableHead className="w-12" /></TableRow></TableHeader><TableBody>{doc.catalog.subItems.map((item) => <TableRow key={item.id}><TableCell><KindBadge kind={item.kind} /></TableCell><TableCell className="font-medium">{item.description}</TableCell><TableCell className="text-muted-foreground">{item.kind === "time" ? `${item.minutes} min` : item.kind === "expense" ? eur(item.amount) : `${item.roundTrip ? "A/R" : "Solo andata"} · ${item.occurrences} occorrenze · ${item.timeMode === "automatic" ? "tempo automatico" : `${item.manualMinutesPerOccurrence} min/occ.`}`}</TableCell><TableCell><RowMenu label={item.description} onEdit={() => setEditingReusableId(item.id)} onDelete={() => requestDelete({ kind: "catalog", id: item.id, label: item.description })} /></TableCell></TableRow>)}</TableBody></Table> : <Empty title="Nessuna sottovoce riutilizzabile" description="Puoi crearla qui o salvare una sottovoce da un preventivo." onAction={() => setEditingReusableId(null)} />}</div></section></TabsContent>
+      <TabsContent value="templates"><section className="rounded-xl border bg-card"><div className="flex items-center justify-between border-b p-5"><div><h2 className="font-semibold">Template</h2><p className="text-sm text-muted-foreground">Una o più voci complete, con sottovoci e varianti.</p></div><Button onClick={() => setEditingTemplateId(null)}><Plus />Nuovo template</Button></div><div className="p-5">{doc.catalog.templates.length ? <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Voci</TableHead><TableHead>Varianti</TableHead><TableHead className="w-12" /></TableRow></TableHeader><TableBody>{doc.catalog.templates.map((entry) => <TableRow key={entry.id}><TableCell><div className="font-medium">{entry.name}</div><div className="text-xs text-muted-foreground">Modello riutilizzabile indipendente</div></TableCell><TableCell>{entry.items.map((item) => item.name).join(" · ")}</TableCell><TableCell>{entry.items.reduce((sum, item) => sum + item.variantGroups.length, 0)}</TableCell><TableCell><RowMenu label={entry.name} onEdit={() => setEditingTemplateId(entry.id)} onDelete={() => requestDelete({ kind: "template", id: entry.id, label: entry.name })} /></TableCell></TableRow>)}</TableBody></Table> : <Empty title="Nessun template" description="Crea un modello qui o salva una selezione di voci dal preventivo." onAction={() => setEditingTemplateId(null)} />}</div></section></TabsContent>
+    </Tabs>
+    <ReusableDialog open={editingReusableId !== undefined} value={reusable} onClose={() => setEditingReusableId(undefined)} onSave={(value) => { appState.mutate((document) => { if (reusable) document.catalog.subItems[document.catalog.subItems.findIndex((entry) => entry.id === reusable.id)] = value; else document.catalog.subItems.push(value) }); setEditingReusableId(undefined) }} />
+    {editingTemplateId !== undefined ? <TemplateEditor source={template} appState={appState} onClose={() => setEditingTemplateId(undefined)} onSave={(value) => { appState.mutate((document) => { if (template) document.catalog.templates[document.catalog.templates.findIndex((entry) => entry.id === template.id)] = value; else document.catalog.templates.push(value) }); setEditingTemplateId(undefined) }} /> : null}
+  </>
 }
+
+function ReusableDialog({ open, value, onClose, onSave }: { open: boolean; value?: ReusableSubItem; onClose: () => void; onSave: (value: ReusableSubItem) => void }) {
+  const [kind, setKind] = useState<ReusableSubItem["kind"]>(value?.kind ?? "time")
+  const [timeMode, setTimeMode] = useState<"automatic" | "manual">(value?.kind === "travel" ? value.timeMode : "automatic")
+  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const { data, get, money } = formReader(event.currentTarget); const identity = value ? { id: value.id, createdAt: value.createdAt, updatedAt: new Date().toISOString() } : meta(); if (kind === "time") onSave({ ...identity, kind, description: get("description"), minutes: Number(get("minutes")) }); else if (kind === "expense") onSave({ ...identity, kind, description: get("description"), amount: Number(money("amount")).toFixed(2) }); else onSave({ ...identity, kind, description: get("description"), occurrences: Number(get("occurrences")), roundTrip: data.get("roundTrip") === "on", timeMode, ...(timeMode === "manual" ? { manualMinutesPerOccurrence: Number(get("manualMinutes")) } : {}) }) }
+  return <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}><DialogContent><form onSubmit={submit} className="contents"><DialogHeader><DialogTitle>{value ? "Modifica sottovoce" : "Nuova sottovoce"}</DialogTitle><DialogDescription>Il valore è un predefinito: ogni uso creerà una copia liberamente modificabile.</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel htmlFor="catalog-kind">Tipo</FieldLabel><NativeSelect id="catalog-kind" value={kind} onChange={(event) => setKind(event.target.value as ReusableSubItem["kind"])} disabled={Boolean(value)}><NativeSelectOption value="time">Tempo</NativeSelectOption><NativeSelectOption value="expense">Spesa</NativeSelectOption><NativeSelectOption value="travel">Trasferta</NativeSelectOption></NativeSelect></Field><Field><FieldLabel htmlFor="catalog-description">Descrizione</FieldLabel><Input id="catalog-description" name="description" defaultValue={value?.description} autoFocus required /></Field>{kind === "time" ? <Field><FieldLabel htmlFor="catalog-minutes">Durata</FieldLabel><InputGroup><InputGroupInput id="catalog-minutes" name="minutes" type="number" defaultValue={value?.kind === "time" ? value.minutes : 30} min={1} step={1} required /><InputGroupAddon align="inline-end"><InputGroupText>min</InputGroupText></InputGroupAddon></InputGroup></Field> : null}{kind === "expense" ? <Field><FieldLabel htmlFor="catalog-amount">Importo</FieldLabel><InputGroup><InputGroupAddon><InputGroupText>€</InputGroupText></InputGroupAddon><InputGroupInput id="catalog-amount" name="amount" defaultValue={value?.kind === "expense" ? moneyInputValue(value.amount) : "0,00"} required /></InputGroup></Field> : null}{kind === "travel" ? <><Field><FieldLabel htmlFor="catalog-occurrences">Occorrenze</FieldLabel><Input id="catalog-occurrences" name="occurrences" type="number" defaultValue={value?.kind === "travel" ? value.occurrences : 1} min={1} step={1} required /></Field><Field><FieldLabel htmlFor="catalog-time-mode">Calcolo del tempo</FieldLabel><NativeSelect id="catalog-time-mode" value={timeMode} onChange={(event) => setTimeMode(event.target.value as typeof timeMode)}><NativeSelectOption value="automatic">Automatico</NativeSelectOption><NativeSelectOption value="manual">Manuale</NativeSelectOption></NativeSelect></Field>{timeMode === "manual" ? <Field><FieldLabel htmlFor="catalog-manual">Minuti per occorrenza</FieldLabel><Input id="catalog-manual" name="manualMinutes" type="number" defaultValue={value?.kind === "travel" ? value.manualMinutesPerOccurrence ?? 30 : 30} min={1} step={1} required /></Field> : null}<Field orientation="horizontal"><Checkbox id="catalog-roundtrip" name="roundTrip" defaultChecked={value?.kind === "travel" ? value.roundTrip : true} /><FieldLabel htmlFor="catalog-roundtrip">Andata e ritorno</FieldLabel></Field></> : null}</FieldGroup><DialogFooter><Button type="button" variant="outline" onClick={onClose}>Annulla</Button><Button type="submit">{value ? "Aggiorna" : "Crea sottovoce"}</Button></DialogFooter></form></DialogContent></Dialog>
+}
+
+function TemplateEditor({ source, appState, onClose, onSave }: { source?: Template; appState: AppState; onClose: () => void; onSave: (template: Template) => void }) {
+  const [draft, setDraft] = useState<Template>(() => source ? structuredClone(source) : { ...meta(), name: "Nuovo template", items: [{ ...meta(), name: "Nuova voce", subItems: [], variantGroups: [] }] })
+  const [baseEditor, setBaseEditor] = useState<{ itemIndex: number; subIndex?: number }>()
+  const [definitionEditor, setDefinitionEditor] = useState<{ itemIndex: number; groupIndex: number; optionIndex: number; definitionIndex?: number }>()
+  const updateDraft = (mutate: (next: Template) => void) => setDraft((current) => { const next = structuredClone(current); mutate(next); return next })
+  const save = () => {
+    if (!draft.name.trim() || !draft.items.length || draft.items.some((item) => !item.name.trim())) { appState.setError({ code: "VALIDATION", message: "Nome del template e nomi delle voci sono obbligatori." }); return }
+    for (const item of draft.items) {
+      const valid = validateVariantGroups(item.variantGroups)
+      if (!valid.ok) { appState.setError(valid.error); return }
+      const hasWork = item.subItems.some((sub) => sub.kind === "time" || sub.kind === "travel") || item.variantGroups.some((group) => group.options.some((option) => option.subItems.some((sub) => sub.kind === "time" || sub.kind === "travel")))
+      if (!hasWork) { appState.setError({ code: "VALIDATION", field: "template.items", message: `La voce “${item.name}” deve includere almeno una sottovoce Tempo o Trasferta, di base o in una variante.` }); return }
+    }
+    onSave({ ...draft, name: draft.name.trim(), updatedAt: new Date().toISOString() })
+  }
+  const baseValue = baseEditor ? draft.items[baseEditor.itemIndex]?.subItems[baseEditor.subIndex ?? -1] : undefined
+  const definitionValue = definitionEditor ? draft.items[definitionEditor.itemIndex]?.variantGroups[definitionEditor.groupIndex]?.options[definitionEditor.optionIndex]?.subItems[definitionEditor.definitionIndex ?? -1] : undefined
+  return <><Sheet open onOpenChange={(open) => { if (!open) onClose() }}><SheetContent side="right" className="!w-[900px] !max-w-[94vw] sm:!max-w-[900px]"><SheetHeader><SheetTitle>{source ? `Modifica ${source.name}` : "Nuovo template"}</SheetTitle><SheetDescription>Il Catalogo è il modello riutilizzabile. Le copie già inserite nei preventivi resteranno invariate.</SheetDescription></SheetHeader><ScrollArea className="min-h-0 flex-1 overflow-x-hidden px-4"><div className="space-y-5 pb-6"><Alert><AlertTitle>Copie indipendenti</AlertTitle><AlertDescription>Le modifiche qui valgono solo per inserimenti futuri; non aggiornano i preventivi esistenti.</AlertDescription></Alert><Field><FieldLabel htmlFor="template-name">Nome template</FieldLabel><Input id="template-name" value={draft.name} onChange={(event) => updateDraft((next) => { next.name = event.target.value })} /></Field><div className="space-y-4">{draft.items.map((item, itemIndex) => <div key={item.id} className="rounded-lg border"><div className="flex items-center gap-2 border-b p-4"><Input value={item.name} onChange={(event) => updateDraft((next) => { next.items[itemIndex]!.name = event.target.value })} aria-label="Nome voce template" /><Button size="icon-sm" variant="ghost" disabled={draft.items.length === 1} onClick={() => updateDraft((next) => { next.items.splice(itemIndex, 1) })}><Trash2 /></Button></div><div className="space-y-4 p-4"><TemplateBaseItems item={item} onEdit={(subIndex) => setBaseEditor({ itemIndex, subIndex })} onAdd={() => setBaseEditor({ itemIndex })} /><TemplateVariants item={item} onChange={(groups) => updateDraft((next) => { next.items[itemIndex]!.variantGroups = groups })} onDefinition={(groupIndex, optionIndex, definitionIndex) => setDefinitionEditor({ itemIndex, groupIndex, optionIndex, definitionIndex })} /></div></div>)}<Button variant="outline" onClick={() => updateDraft((next) => { next.items.push({ ...meta(), name: `Voce ${next.items.length + 1}`, subItems: [], variantGroups: [] }) })}><Plus />Aggiungi voce</Button></div></div></ScrollArea><SheetFooter className="flex-row justify-end"><Button variant="outline" onClick={onClose}>Annulla</Button><Button onClick={save}>Salva modifiche al Catalogo</Button></SheetFooter></SheetContent></Sheet>
+    <ReusableDialog open={Boolean(baseEditor)} value={baseValue} onClose={() => setBaseEditor(undefined)} onSave={(value) => { if (!baseEditor) return; updateDraft((next) => { const subs = next.items[baseEditor.itemIndex]!.subItems; if (baseEditor.subIndex === undefined) subs.push(value); else subs[baseEditor.subIndex] = value }); setBaseEditor(undefined) }} />
+    {definitionEditor ? <DefinitionDialog value={definitionValue} onClose={() => setDefinitionEditor(undefined)} onSave={(value) => { updateDraft((next) => { const subs = next.items[definitionEditor.itemIndex]!.variantGroups[definitionEditor.groupIndex]!.options[definitionEditor.optionIndex]!.subItems; if (definitionEditor.definitionIndex === undefined) subs.push(value); else subs[definitionEditor.definitionIndex] = value }); setDefinitionEditor(undefined) }} onDelete={definitionEditor.definitionIndex === undefined ? undefined : () => { updateDraft((next) => next.items[definitionEditor.itemIndex]!.variantGroups[definitionEditor.groupIndex]!.options[definitionEditor.optionIndex]!.subItems.splice(definitionEditor.definitionIndex!, 1)); setDefinitionEditor(undefined) }} /> : null}
+  </>
+}
+
+function TemplateBaseItems({ item, onEdit, onAdd }: { item: Template["items"][number]; onEdit: (index: number) => void; onAdd: () => void }) { return <div><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium">Sottovoci base</p><Button size="sm" variant="outline" onClick={onAdd}><Plus />Aggiungi</Button></div>{item.subItems.length ? <div className="space-y-1">{item.subItems.map((sub, index) => <button type="button" key={sub.id} className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-muted/50" onClick={() => onEdit(index)}><span><KindBadge kind={sub.kind} /> <span className="ml-2">{sub.description}</span></span><span className="text-muted-foreground">{sub.kind === "time" ? `${sub.minutes} min` : sub.kind === "expense" ? eur(sub.amount) : `${sub.occurrences} occ.`}</span></button>)}</div> : <p className="text-sm text-muted-foreground">Nessuna sottovoce base.</p>}</div> }
+
+function TemplateVariants({ item, onChange, onDefinition }: { item: Template["items"][number]; onChange: (groups: Template["items"][number]["variantGroups"]) => void; onDefinition: (groupIndex: number, optionIndex: number, definitionIndex?: number) => void }) {
+  const update = (mutate: (groups: Template["items"][number]["variantGroups"]) => void) => { const groups = structuredClone(item.variantGroups); mutate(groups); onChange(groups) }
+  const addGroup = () => update((groups) => { const option: VariantOption = { ...meta(), name: "Opzione 1", subItems: [] }; groups.push({ ...meta(), name: `Variante ${groups.length + 1}`, options: [option], defaultOptionId: option.id }) })
+  return <div className="space-y-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">Varianti</p><Button size="sm" variant="outline" onClick={addGroup}><Plus />Nuovo gruppo</Button></div>{item.variantGroups.map((group, groupIndex) => <div key={group.id} className="rounded-lg bg-muted/20 p-3"><div className="grid grid-cols-[1fr_220px_auto] gap-2"><Input value={group.name} onChange={(event) => update((groups) => { groups[groupIndex]!.name = event.target.value })} aria-label="Nome gruppo variante" /><NativeSelect value={group.defaultOptionId ?? ""} onChange={(event) => update((groups) => { groups[groupIndex]!.defaultOptionId = event.target.value || undefined })}><NativeSelectOption value="">Nessun default</NativeSelectOption>{group.options.map((option) => <NativeSelectOption key={option.id} value={option.id}>{option.name}</NativeSelectOption>)}</NativeSelect><Button size="icon-sm" variant="ghost" onClick={() => update((groups) => groups.splice(groupIndex, 1))}><Trash2 /></Button></div><div className="mt-3 space-y-2">{group.options.map((option, optionIndex) => <div key={option.id} className="rounded-md border bg-card p-3"><div className="flex gap-2"><Input value={option.name} onChange={(event) => update((groups) => { groups[groupIndex]!.options[optionIndex]!.name = event.target.value })} aria-label="Nome opzione" /><Button size="icon-sm" variant="ghost" disabled={group.options.length === 1} onClick={() => update((groups) => groups[groupIndex]!.options.splice(optionIndex, 1))}><Trash2 /></Button></div><div className="mt-2 flex flex-wrap gap-1">{option.subItems.map((definition, definitionIndex) => <Button key={`${definition.kind}-${definitionIndex}`} size="sm" variant="outline" onClick={() => onDefinition(groupIndex, optionIndex, definitionIndex)}><KindIcon kind={definition.kind} />{definition.description}</Button>)}<Button size="sm" variant="ghost" onClick={() => onDefinition(groupIndex, optionIndex)}><Plus />Sottovoce</Button></div></div>)}<Button size="sm" variant="ghost" onClick={() => update((groups) => groups[groupIndex]!.options.push({ ...meta(), name: `Opzione ${groups[groupIndex]!.options.length + 1}`, subItems: [] }))}><Plus />Aggiungi opzione</Button></div></div>)}</div>
+}
+
+function RowMenu({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) { return <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Azioni per ${label}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onEdit}>Apri e modifica</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={onDelete}>Elimina</DropdownMenuItem></DropdownMenuContent></DropdownMenu> }
+function KindIcon({ kind }: { kind: "time" | "expense" | "travel" }) { const Icon = kind === "time" ? Clock3 : kind === "expense" ? ReceiptText : MapPin; return <Icon /> }
+function KindBadge({ kind }: { kind: "time" | "expense" | "travel" }) { const Icon = kind === "time" ? Clock3 : kind === "expense" ? ReceiptText : MapPin; return <Badge variant="outline"><Icon />{kind === "time" ? "Tempo" : kind === "expense" ? "Spesa" : "Trasferta"}</Badge> }
+function Empty({ title, description, onAction }: { title: string; description: string; onAction: () => void }) { return <div className="grid min-h-56 place-items-center rounded-lg border border-dashed text-center"><div><BookOpen className="mx-auto size-8 text-muted-foreground" /><p className="mt-3 font-medium">{title}</p><p className="mt-1 text-sm text-muted-foreground">{description}</p><Button className="mt-4" size="sm" onClick={onAction}><Plus />Crea ora</Button></div></div> }
