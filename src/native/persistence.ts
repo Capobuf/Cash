@@ -3,7 +3,7 @@ import { access, copyFile, open, readFile, rename, rm, stat } from 'node:fs/prom
 import { basename, dirname, extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { CURRENT_SCHEMA_VERSION, err, ok, type CashDocument, type Result } from '../domain/model';
-import { cashDocumentSchema, documentHeaderSchema, parseDocument } from '../domain/schema';
+import { cashDocumentSchema, documentHeaderSchema, parseDocument, validationErrorFromIssues } from '../domain/schema';
 
 export interface ConcurrencyToken { documentId: string; revision: number; fingerprint: string }
 export interface ArchiveSession { path: string; document?: CashDocument; token: ConcurrencyToken; readOnly: boolean; headerOnly?: true }
@@ -47,7 +47,7 @@ export async function openArchive(path: string): Promise<Result<ArchiveSession>>
     if (header.schemaVersion < CURRENT_SCHEMA_VERSION)
       return err({ code: 'MIGRATION_REQUIRED', source: 'archive', message: `Lo schema ${header.schemaVersion} richiede una migrazione esplicita con backup.`, action: 'Aggiornare l’archivio dopo conferma.' });
     const parsed = cashDocumentSchema.safeParse(raw.value);
-    if (!parsed.success) return err({ code: 'VALIDATION', source: 'archive', message: 'Struttura archivio non valida.', details: parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`) });
+    if (!parsed.success) return err(validationErrorFromIssues(parsed.error.issues));
     return ok({ path, document: parsed.data, token, readOnly: false });
   } catch (cause) {
     return err({ code: 'IO', source: 'archive', message: 'Impossibile aprire l’archivio.', details: [String(cause)] });
@@ -122,7 +122,9 @@ export async function createArchive(path: string, document: CashDocument): Promi
   try {
     try { await access(path, constants.F_OK); return err({ code: 'CONFLICT', source: 'archive', message: 'Nel percorso scelto esiste già un file.' }); }
     catch { /* expected */ }
-    const normalized = parseDocument({ ...document, schemaVersion: CURRENT_SCHEMA_VERSION, revision: 1 });
+    const parsed=cashDocumentSchema.safeParse({ ...document, schemaVersion: CURRENT_SCHEMA_VERSION, revision: 1 });
+    if(!parsed.success)return err(validationErrorFromIssues(parsed.error.issues));
+    const normalized=parsed.data;
     const bytes = encode(normalized);
     const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
     const handle = await open(temp, 'wx');
@@ -156,8 +158,10 @@ async function saveArchiveNow(path: string, document: CashDocument, token: Concu
     if (header.data.documentId !== token.documentId || header.data.revision !== token.revision || diskFingerprint !== token.fingerprint)
       return err({ code: 'CONFLICT', source: 'archive', message: 'Archivio modificato esternamente: salvataggio bloccato.', action: 'Salvare una copia di recupero oppure scartare e ricaricare.' });
 
-    const next = parseDocument({ ...structuredClone(document), documentId: token.documentId,
+    const parsed=cashDocumentSchema.safeParse({ ...structuredClone(document), documentId: token.documentId,
       revision: token.revision + 1, updatedAt: new Date().toISOString() });
+    if(!parsed.success)return err(validationErrorFromIssues(parsed.error.issues));
+    const next=parsed.data;
     const nextBytes = encode(next);
     await copyFile(path, backupPathFor(path));
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);

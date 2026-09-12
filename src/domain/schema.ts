@@ -1,6 +1,31 @@
 import { z } from 'zod';
 import Decimal from 'decimal.js';
-import { CURRENT_SCHEMA_VERSION, type CashDocument } from './model';
+import { CURRENT_SCHEMA_VERSION, type CashDocument, type CashError } from './model';
+
+type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
+const pathLabels:Record<string,string>={
+  vehicles:'Veicoli',businessCosts:'Costi aziendali',sites:'Sedi',profiles:'Profili',quotes:'Preventivi',localClients:'Clienti',catalog:'Catalogo',settings:'Impostazioni',
+  name:'nome',displayName:'denominazione',category:'categoria',description:'descrizione',address:'indirizzo',consumption:'consumo',annualKm:'km annui',
+  annualInsurance:'assicurazione annua',annualTax:'bollo annuo',annualMaintenance:'manutenzione annua',monthlyAmount:'importo mensile',
+  revenueTarget:'fatturato obiettivo',specificAnnualExpenses:'spese specifiche annue',contributionCeiling:'massimale contributivo',
+  ordinaryThreshold:'soglia ordinaria',cessationThreshold:'soglia di cessazione',year:'anno',fiscal:'parametri fiscali',capacity:'capacità lavorativa',
+};
+
+const issueLocation = (path: PropertyKey[]): string => path.map((part,index)=>{
+  if(typeof part==='number')return `${part+1}`;
+  const label=pathLabels[String(part)]??String(part);
+  return index===0?label:`${label}`;
+}).join(' · ');
+
+export function validationErrorFromIssues(issues: readonly ValidationIssue[]): CashError {
+  const details=issues.slice(0,8).map(issue=>{
+    const location=issueLocation(issue.path);
+    const message=issue.code==='too_small'&&['name','displayName','category','description','address'].includes(String(issue.path.at(-1)))
+      ? 'campo obbligatorio' : issue.message;
+    return location?`${location}: ${message}`:message;
+  });
+  return {code:'VALIDATION',source:'archive',message:'Alcuni dati non sono validi.',action:'Correggi i campi indicati: le modifiche non valide non verranno salvate.',details};
+}
 
 const uuid = z.string().uuid();
 const iso = z.string().datetime({ offset: true });
