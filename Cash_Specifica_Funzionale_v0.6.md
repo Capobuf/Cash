@@ -4,7 +4,7 @@
 
 *Specifica canonica consolidata - v0.6*
 
-*8 settembre 2026*
+*13 settembre 2026*
 
 | **Voce** | **Valore** |
 | --- | --- |
@@ -149,6 +149,14 @@ Cash deve aiutare a rispondere almeno a queste domande:
 
 **INV-013 -** Cash non avvia né richiede un server applicativo, un database server o un servizio in ascolto su una porta locale.
 
+**INV-014 -** OpenRouteService è l'unico servizio esterno previsto per ricerca e geocodifica degli indirizzi, geocodifica inversa e calcolo di distanza stradale e tempo di viaggio stimato. Cash non seleziona provider alternativi e non applica fallback automatici.
+
+**INV-015 -** Può esistere al massimo una Sede di partenza predefinita globale e un solo Veicolo predefinito. Sono valori di precompilazione delle nuove Trasferte, non fallback, e non modificano Trasferte o preventivi già salvati.
+
+**INV-016 -** Una Trasferta viene creata soltanto su azione dell'utente o perché presente in un template scelto. Cliente e Sede del preventivo non generano automaticamente Trasferte.
+
+**INV-017 -** Se l'utente modifica l'indirizzo o le coordinate di una Sede dopo una ricerca, le coordinate precedentemente associate non possono continuare a essere usate come se rappresentassero il nuovo valore. Prima di un nuovo calcolo automatico è necessario eseguire nuovamente **Cerca**.
+
 ## 3. Perimetro funzionale
 
 | **Area** | **Funzione prevista** |
@@ -159,13 +167,14 @@ Cash deve aiutare a rispondere almeno a queste domande:
 | Disponibilità lavorativa | Calcolo di giorni e ore disponibili e del valore medio da generare. |
 | Inflazione | Rivalutazione informativa di un prezzo storico/riferimento in fase di preventivazione. |
 | Veicoli | Calcolo del costo chilometrico con consumo, carburante e costi annuali essenziali. |
-| Sedi | Luoghi riutilizzabili gestiti localmente in Cash, mostrati come sottogruppo del cliente quando associati oppure come Altre sedi per fornitori, laboratorio, magazzini e luoghi indipendenti, con distanza in km dalla sede/laboratorio di riferimento. |
-| Trasferte | Sede selezionata, distanza derivata dai km della Sede, A/R, veicolo, occorrenze e tempo automatico o manuale. |
+| Sedi | Luoghi riutilizzabili gestiti localmente in Cash, associabili a un Cliente oppure raccolti nelle Altre sedi, con indirizzo quando disponibile e coordinate utilizzabili per il routing. Una Sede può essere scelta come Sede di partenza predefinita globale. |
+| Trasferte | Sottovoci aggiunte solo quando necessarie, con partenza, destinazione, A/R, veicolo, Occorrenze previste, distanza e tempo calcolabili esplicitamente tramite OpenRouteService oppure inseribili/modificabili manualmente. |
 | Clienti | Elenco recuperato in tempo reale da Fatture in Cloud quando l'integrazione è attiva; nessuna anagrafica cliente duplicata in Cash. Snapshot dei dati essenziali nel preventivo. |
 | Catalogo | Sottovoci riutilizzabili e template composti da una o più voci principali. |
 | Preventivi | Composizione manuale o da template, personalizzazione completa e analisi economica per voce e complessiva. Nessuno stato o workflow commerciale. |
 | Provvigioni | Tracciamento di un eventuale importo accessorio fuori dal corpo e dai calcoli del preventivo. |
 | Fatture in Cloud | Integrazione interamente facoltativa, attivabile e configurabile dalle Impostazioni; consente ricerca clienti ed esportazione/raggruppamento delle voci usando il prodotto “Consulenza”. |
+| OpenRouteService | Unico servizio esterno per ricerca di indirizzi, geocodifica, geocodifica inversa, distanza stradale e tempo di viaggio stimato; configurato nelle Impostazioni già dedicate alle integrazioni o alle API. |
 | Utente | Uso monoutente. Autenticazione, ruoli e permessi non sono requisiti funzionali dell'MVP. |
 | Persistenza | Un solo file dati JSON scelto dall'utente, con revisioni, salvataggio atomico e copia di sicurezza dell'ultima versione valida. |
 | Multi-postazione | Uso sequenziale dello stesso file tramite Google Drive for Desktop in modalità mirroring. |
@@ -345,6 +354,8 @@ La manutenzione media può includere pneumatici, tagliandi, riparazioni e altri 
 
 > **Costo veicolo/km:** Costo carburante/km + Quota costi annuali/km
 
+Tra i Veicoli esistenti l'utente può selezionare un solo **Veicolo predefinito**. L'azione è integrata nella gestione dei Veicoli già esistente; impostarne uno nuovo sostituisce quello precedente. Il Veicolo predefinito viene proposto nelle nuove sottovoci Trasferta e resta modificabile nella singola Trasferta. Se non è stato configurato, Cash non sceglie arbitrariamente un Veicolo.
+
 Il prezzo del carburante deriva esclusivamente dai prezzi medi MIMIT per regione o provincia autonoma, rete non autostradale. Per il calcolo automatico sono supportati Benzina e Gasolio con modalità SELF, GPL e Metano con modalità SERVITO, cioè le combinazioni pubblicate dal dataset ufficiale. La regione/provincia autonoma di riferimento è un'impostazione obbligatoria globale. Cash usa il dato giornaliero più recente effettivamente pubblicato dal MIMIT e salva nello snapshot valore, unità, territorio, rete, modalità, data di riferimento del prezzo e data/ora di acquisizione. La data mostrata dalla fonte, non la data del dispositivo, determina quale dato è il più recente.
 
 Per i consumi espressi in litri ogni 100 km:
@@ -357,37 +368,49 @@ Per alimentazioni con unità diverse, il veicolo deve dichiarare esplicitamente 
 
 Una trasferta appartiene sempre a una voce principale del preventivo. Non esistono trasferte direttamente a livello di preventivo.
 
-La Trasferta non modella una partenza e una destinazione separate. Fa riferimento a una sola Sede salvata in Cash. La distanza della singola tratta deriva dai km configurati sulla Sede, che rappresentano la distanza di sola andata dalla sede/laboratorio di riferimento dell'utente.
+Cash non crea automaticamente una Trasferta quando il preventivo possiede un Cliente o una Sede: il lavoro può essere svolto da remoto. Una Trasferta viene aggiunta soltanto quando necessaria, direttamente dall'utente oppure come sottovoce di un template scelto. Una stessa voce e uno stesso preventivo possono contenere più Trasferte.
 
 | **Campo** | **Comportamento** |
 | --- | --- |
-| Sede | Luogo salvato in Cash usato dalla trasferta. Se il preventivo ha una Sede, questa viene proposta come valore predefinito; l'utente può cambiarla per la singola trasferta. |
-| Andata/ritorno | Se attivo, la distanza di sola andata configurata sulla Sede viene raddoppiata. |
-| Veicolo | Veicolo usato per il costo chilometrico. |
-| Occorrenze previste | Numero di volte in cui si prevede di effettuare quella trasferta; default 1. |
-| Tempo di viaggio | Calcolato dalla distanza della Sede e dalla velocità media configurata oppure sovrascritto manualmente. |
+| Partenza | Sede da cui parte la singola Trasferta. Se disponibile, Cash propone la Sede di partenza predefinita globale; l'utente può cambiarla. |
+| Destinazione | Sede verso cui è diretta la singola Trasferta. Se il preventivo ha una Sede, Cash la propone; l'utente può cambiarla. |
+| Andata e ritorno | Inizialmente attivo. Se attivo, distanza e tempo della singola tratta restituiti da OpenRouteService vengono raddoppiati una sola volta. |
+| Veicolo | Veicolo usato per il costo chilometrico. Se disponibile, Cash propone il Veicolo predefinito; l'utente può cambiarlo. |
+| Occorrenze previste | Numero di volte in cui si prevede di effettuare la Trasferta; valore iniziale 1. |
+| Distanza A/R | Distanza applicata alla singola occorrenza quando A/R è attivo; altrimenti rappresenta la singola tratta. È precompilabile tramite OpenRouteService e liberamente modificabile. |
+| Tempo di viaggio A/R | Tempo applicato alla singola occorrenza quando A/R è attivo; altrimenti rappresenta la singola tratta. È precompilabile tramite OpenRouteService e liberamente modificabile. |
 
-La Trasferta non contiene campi Partenza, Destinazione o Distanza manuale. Se la Sede non dispone della distanza necessaria, il calcolo non può procedere e Cash deve mostrare un errore.
+Partenza, Destinazione e Veicolo restano campi della singola Trasferta. Non esiste una Sede di partenza predefinita specifica del preventivo e il preventivo non aggiunge un secondo livello di configurazione del punto di partenza.
 
-Cash non usa servizi di routing, mappe, traffico o geolocalizzazione per calcolare distanza o tempo di viaggio.
+Le precompilazioni sono applicate soltanto alla creazione della nuova sottovoce. L'assenza di una Sede di partenza predefinita, di una Sede del preventivo o di un Veicolo predefinito lascia vuoto il relativo campo; Cash non usa valori arbitrari come fallback.
 
-### 9.3 Calcolo automatico del tempo di viaggio
+### 9.3 Calcolo del percorso e modifiche manuali
 
-L'utente configura una velocità media di trasferta in km/h. Cash non assume una velocità predefinita se l'utente non l'ha configurata.
+L'utente avvia il routing tramite l'azione esplicita **Calcola percorso**. Per procedere servono Partenza e Destinazione con coordinate utilizzabili, una Basic API key OpenRouteService valida e, per il calcolo economico, un Veicolo selezionato. Se manca un requisito, Cash indica esattamente quale elemento impedisce il calcolo.
 
-> **Distanza singola tratta:** Distanza in km configurata sulla Sede
+OpenRouteService calcola una sola tratta dalla Partenza alla Destinazione e restituisce distanza stradale e tempo di viaggio stimato. Se **Andata e ritorno** è attivo, Cash raddoppia entrambi i valori restituiti senza richiedere un secondo calcolo del ritorno. Questa approssimazione è intenzionale; Cash non calcola separatamente il ritorno e non confronta itinerari alternativi.
 
-> **Distanza effettiva:** Distanza della Sede × (2 se A/R, altrimenti 1) × Occorrenze previste
+I risultati compilano i valori della singola occorrenza:
 
-> **Tempo automatico complessivo:** Distanza effettiva / Velocità media di trasferta
+- **Distanza A/R** e **Tempo di viaggio A/R** quando Andata e ritorno è attivo;
 
-> **Costo trasferta complessivo:** Distanza effettiva × Costo veicolo/km
+- distanza e tempo della singola tratta quando Andata e ritorno non è attivo.
 
-L'utente può sostituire il tempo calcolato di una singola occorrenza con un valore manuale. Il valore manuale rappresenta il tempo complessivo di una singola occorrenza della trasferta così configurata, incluso l'eventuale A/R. Il numero di occorrenze moltiplica poi il tempo manuale. L'override è una scelta esplicita dell'utente e non un fallback.
+> **Distanza per occorrenza:** distanza della singola tratta restituita da OpenRouteService × (2 se A/R, altrimenti 1)
 
-> **Tempo manuale complessivo:** Tempo manuale di una singola occorrenza × Occorrenze previste
+> **Tempo per occorrenza:** tempo della singola tratta restituito da OpenRouteService × (2 se A/R, altrimenti 1)
 
-Se la velocità media non è configurata, Cash non deve inventare un valore: il calcolo automatico del tempo non è disponibile. L'utente può configurare la velocità o inserire esplicitamente il tempo manuale.
+> **Distanza complessiva:** Distanza per occorrenza × Occorrenze previste
+
+> **Tempo complessivo:** Tempo per occorrenza × Occorrenze previste
+
+> **Costo complessivo Trasferta:** Distanza complessiva × Costo veicolo/km
+
+Quando A/R è attivo, Distanza per occorrenza e Tempo per occorrenza contengono già il raddoppio della singola tratta; le formule complessive non applicano un secondo raddoppio. Il costo complessivo entra una sola volta nelle Spese previste della voce.
+
+Distanza e tempo restano liberamente modificabili per includere traffico prevedibile, parcheggio, attese, deviazioni o altri margini prudenziali. Dopo una modifica manuale i due valori sono indipendenti: modificare la distanza non ricalcola il tempo, modificare il tempo non ricalcola la distanza e Cash non richiama automaticamente OpenRouteService.
+
+L'azione esplicita **Ricalcola percorso** richiama OpenRouteService. Se sta per sostituire distanza o tempo modificati manualmente, Cash chiede conferma prima di applicare i nuovi valori. Ai calcoli economici partecipano sempre i valori finali presenti nella Trasferta, indipendentemente dalla loro origine.
 
 ### 9.4 Più trasferte e trasferte condivise
 
@@ -411,26 +434,38 @@ L'esportazione richiede uno snapshot cliente proveniente dalla stessa azienda Fa
 
 ### 10.2 Sedi
 
-Le Sedi sono gestite esclusivamente in Cash e non vengono importate da Fatture in Cloud. Sono un sottogruppo logico del relativo cliente, ma non vengono espanse nella tabella principale dei Clienti: sono consultabili nel dettaglio e creabili rapidamente dal menu azioni della riga. Cash mantiene inoltre il gruppo separato **Altre sedi**, destinato a fornitori, laboratorio, magazzini e qualunque altro luogo utile non associato a un cliente. Non viene introdotta un'entità separata “Fornitore”.
+Le Sedi sono gestite esclusivamente in Cash e non vengono importate da Fatture in Cloud. Una Sede può essere associata a un Cliente oppure non essere associata a nessun Cliente. Le Sedi associate sono un sottogruppo logico del relativo Cliente, consultabile nel dettaglio e creabile rapidamente dal menu azioni della riga; le Sedi non associate sono gestite nel gruppo separato **Altre sedi**.
+
+Una Sede nelle Altre sedi può rappresentare, senza tipi obbligatori o nuove entità, un laboratorio, un ufficio, un'abitazione, un fornitore o un altro punto operativo. Non viene introdotta un'entità separata per questi luoghi.
 
 | **Campo sede** | **Descrizione** |
 | --- | --- |
 | Nome | Etichetta leggibile della Sede. |
-| Indirizzo | Indirizzo del luogo. |
+| Indirizzo | Indirizzo del luogo, quando disponibile. |
 | Cliente associato | Opzionale. Riferimento Fatture in Cloud con azienda, identificativo e denominazione leggibile. Se assente, la Sede appartiene al gruppo Altre sedi. |
-| Distanza | Distanza in km dalla sede/laboratorio di riferimento dell'utente, riferita alla sola andata. Necessaria quando la Sede viene usata per un calcolo di Trasferta. |
+| Coordinate | Coordinate utilizzabili per il routing, ottenute da una ricerca o inserite esplicitamente dall'utente nel formato indicato dall'interfaccia. |
 
-La sede/laboratorio di riferimento è implicita nel significato della distanza e non viene modellata come partenza della Trasferta. Il riferimento cliente salvato su una Sede serve soltanto a ricerca e proposta. Se punta a Fatture in Cloud conserva un riferimento leggibile, ma non diventa una cache utilizzabile per operazioni live.
+Nel flusso di creazione o modifica della Sede l'utente può inserire un indirizzo oppure coordinate esplicite e avvia la ricerca con il comando **Cerca**. Cash non effettua ricerche automatiche a ogni carattere e non usa una mappa per selezionare o verificare la Sede.
+
+Se è stato inserito un indirizzo, Cash interroga OpenRouteService, mostra i risultati disponibili e richiede all'utente di scegliere quello corretto. Se esistono più corrispondenze non seleziona automaticamente la prima. Dopo la scelta conserva l'indirizzo selezionato e le coordinate restituite.
+
+Se sono state inserite coordinate valide, Cash può usarle direttamente per il routing e può chiedere a OpenRouteService un indirizzo leggibile tramite geocodifica inversa. La mancanza di un indirizzo leggibile non rende inutilizzabili coordinate valide inserite esplicitamente dall'utente.
+
+La Sede non possiede uno stato permanente **Indirizzo verificato**. Se l'utente modifica indirizzo o coordinate dopo una ricerca, le coordinate precedentemente associate vengono invalidate rispetto al nuovo valore e non possono essere usate per un nuovo calcolo automatico finché l'utente non esegue nuovamente **Cerca**. Le coordinate esplicite valide confermate dalla ricerca restano utilizzabili anche senza indirizzo leggibile.
+
+Il riferimento Cliente salvato su una Sede serve soltanto a ricerca e proposta. Se punta a Fatture in Cloud conserva un riferimento leggibile, ma non diventa una cache utilizzabile per operazioni live.
 
 Quando una Sede viene utilizzata in un preventivo o in una Trasferta, i valori usati vengono salvati nello snapshot. Modifiche successive alla Sede non alterano automaticamente i preventivi esistenti.
 
+Tra tutte le Sedi esistenti, incluse le Altre sedi, l'utente può scegliere una sola **Sede di partenza predefinita** globale mediante l'azione **Imposta come partenza predefinita**. Durante la configurazione iniziale può non essercene nessuna; impostarne una nuova sostituisce quella precedente. La scelta è concettualmente un unico riferimento globale alla Sede selezionata e non un insieme di flag indipendenti. Cambiare la Sede globale non modifica preventivi o Trasferte già salvati.
+
 ### 10.3 Sede del preventivo e Sede della trasferta
 
-Un preventivo può specificare una Sede principale. Questa rappresenta il luogo principale a cui si riferisce il preventivo e viene salvata nello snapshot del preventivo.
+Un preventivo può specificare una Sede principale, normalmente scelta tra le Sedi del Cliente selezionato oppure tra le Altre sedi. Questa rappresenta il luogo principale a cui si riferisce il preventivo e viene salvata nello snapshot del preventivo.
 
-Quando viene inserita una Trasferta, se il preventivo ha una Sede questa viene proposta automaticamente come Sede della Trasferta. L'utente può sostituirla con qualsiasi altra Sede salvata in Cash, incluse le Altre sedi. La modifica vale solo per quella Trasferta e non modifica la Sede principale del preventivo.
+Quando viene inserita una Trasferta, Cash può proporre come Partenza la Sede di partenza predefinita globale e come Destinazione la Sede principale del preventivo. L'utente può sostituire entrambe con qualsiasi Sede salvata in Cash, incluse le Altre sedi. La modifica vale solo per quella Trasferta e non modifica la Sede principale del preventivo o la Sede di partenza predefinita globale.
 
-Se il preventivo non ha una Sede, Cash non ne assume una: la Sede della Trasferta deve essere scelta esplicitamente.
+Se il preventivo non ha una Sede, Cash non assume una Destinazione. Se non esiste una Sede di partenza predefinita globale, Cash non assume una Partenza. Non esiste una Sede di partenza configurabile sul preventivo.
 
 ## 11. Catalogo e template
 
@@ -492,7 +527,7 @@ Il salvataggio di una o più voci crea sempre un nuovo template. Non può aggior
 
 Per ogni voce salvata vengono copiati nome, eventuale prezzo di riferimento con mese/anno, sottovoci normali e gruppi di varianti con tutte le opzioni e il relativo default. Prima del salvataggio un'anteprima mostra cosa verrà copiato. Le modifiche manuali alle sottovoci normali vengono incluse; quelle apportate alle sottovoci generate dall'opzione selezionata vengono applicate alla definizione di tale opzione soltanto dopo conferma esplicita. L'opzione selezionata nel preventivo non diventa silenziosamente il nuovo default. Non vengono copiati cliente, Sede principale del preventivo, prezzo scelto, provvigione, risultati derivati, valori economici o dinamici dello snapshot né riferimenti di esportazione.
 
-Una Trasferta salvata come sottovoce riutilizzabile o dentro un template conserva A/R, occorrenze e modalità automatica/manuale; se la modalità è manuale conserva anche i minuti per singola occorrenza. Non conserva Sede, distanza, veicolo, costo chilometrico, prezzo carburante o tempo automatico derivato. Quando viene inserita nel preventivo, Cash propone la Sede principale del preventivo; se assente, richiede una scelta esplicita. Il veicolo deve essere scelto esplicitamente.
+Una Trasferta salvata come sottovoce riutilizzabile o dentro un template conserva A/R, Occorrenze previste ed eventuali valori manuali di distanza o tempo configurati come predefiniti. Non conserva Partenza, Destinazione, coordinate, Veicolo, costo chilometrico, prezzo carburante o risultati derivati da OpenRouteService. Quando viene inserita nel preventivo, Cash può proporre la Sede di partenza predefinita globale, la Sede principale del preventivo e il Veicolo predefinito; i campi restano modificabili e quelli privi di un valore configurato restano vuoti.
 
 ### 11.5 Copie indipendenti e nessuna propagazione
 
@@ -518,7 +553,7 @@ Il Tempo stimato della voce principale non è un input manuale: è sempre deriva
 | --- | --- | --- |
 | Tempo | Descrizione, durata | Aumenta il tempo stimato della voce. |
 | Spesa | Descrizione, importo | Aumenta le spese previste della voce. |
-| Trasferta | Sede, A/R, veicolo, occorrenze, tempo automatico o manuale | Aumenta sia il tempo stimato sia le spese previste. La distanza deriva dalla Sede. |
+| Trasferta | Partenza, Destinazione, A/R, Veicolo, Occorrenze previste, distanza e tempo per occorrenza | Aumenta il tempo stimato con il Tempo complessivo e le spese previste con il Costo complessivo della Trasferta. Distanza e tempo possono essere precompilati esplicitamente tramite OpenRouteService o inseriti/modificati manualmente. |
 
 ### 12.3 Significato della durata
 
@@ -595,6 +630,8 @@ Sottovoci aggiunte o modificate manualmente ma non appartenenti al gruppo intere
 
 > **Valore teorico:** Valore del tempo + Spese previste
 
+Per ogni Trasferta, il Tempo complessivo è il Tempo per occorrenza × Occorrenze previste e il Costo complessivo è Distanza per occorrenza × Occorrenze previste × Costo veicolo/km. Distanza e tempo per occorrenza includono già l'eventuale raddoppio A/R. Il Tempo complessivo e il Costo complessivo di ciascuna Trasferta entrano nelle rispettive somme una sola volta.
+
 Il Tempo stimato è sempre un risultato derivato e non può essere sovrascritto direttamente sulla voce principale. Una voce è valida solo se il Tempo stimato risultante è maggiore di zero.
 
 Il valore teorico è il risultato bottom-up della stima. Non deve essere presentato come “prezzo corretto” o “prezzo obbligatorio”.
@@ -613,7 +650,7 @@ Cash usa aritmetica decimale, non numeri binari a virgola mobile, per tutti i va
 | Consumi | Massimo 2 decimali nell'unità dichiarata. |
 | Percentuali e coefficienti inseriti | Massimo 4 decimali percentuali; visualizzazione senza zeri finali inutili. |
 | Durate manuali | Minuti interi positivi. |
-| Tempo automatico di Trasferta | Calcolato sul totale della Trasferta e arrotondato al minuto intero più vicino, metà verso l'alto. |
+| Tempo di Trasferta | Conservato per singola occorrenza in minuti interi positivi; un valore restituito da OpenRouteService viene arrotondato al minuto intero più vicino, metà verso l'alto, dopo l'eventuale raddoppio A/R. |
 | Costo veicolo/km | Conservato e mostrato con 6 decimali. |
 | Componenti monetarie derivate | Arrotondate al centesimo, metà verso l'alto, prima di essere sommate nei totali mostrati. |
 | Resa e scostamento | Calcolati sui valori monetari e temporali persistiti; mostrati rispettivamente con 2 decimali €/h e 2 decimali percentuali. |
@@ -712,7 +749,7 @@ Tra i dati che devono restare associati al preventivo rientrano, quando utilizza
 
 - Nome e indirizzo della Sede principale del preventivo.
 
-- Per le Trasferte: Sede utilizzata, nome/indirizzo e distanza in km usata nel calcolo.
+- Per le Trasferte: Sede di Partenza e Sede di Destinazione utilizzate, relativi nomi, indirizzi e coordinate utilizzate.
 
 - Valore medio da generare utilizzato.
 
@@ -720,11 +757,11 @@ Tra i dati che devono restare associati al preventivo rientrano, quando utilizza
 
 - Profilo economico e fiscale annuale da cui deriva il Valore medio da generare, identificato da anno e revisione.
 
-- Costo veicolo/km utilizzato nelle Trasferte.
+- Veicolo e Costo veicolo/km utilizzati nelle Trasferte.
 
 - Dato carburante MIMIT usato: carburante, modalità, territorio, rete, prezzo, data del dato e data/ora di acquisizione.
 
-- A/R, numero di occorrenze, modalità automatica/manuale e tempi delle Trasferte.
+- Indicazione A/R, Distanza applicata per occorrenza, Tempo applicato per occorrenza, Occorrenze previste e risultati economici derivati delle Trasferte.
 
 - Dati ISTAT usati per la rivalutazione: periodi, indici FOI, basi, coefficienti di raccordo, data/ora di acquisizione e risultato.
 
@@ -744,15 +781,11 @@ L'azione aggiorna esclusivamente i valori generali/dinamici pertinenti agli elem
 
 - Costo chilometrico corrente del veicolo usato nelle Trasferte.
 
-- Distanza corrente configurata sulla stessa Sede utilizzata da ciascuna Trasferta.
-
-- Tempo di Trasferta originariamente calcolato in automatico, usando distanza corrente della Sede e velocità media di trasferta corrente.
-
 - Rivalutazione per inflazione.
 
-L'azione non modifica automaticamente cliente, nome/indirizzo della Sede nello snapshot, struttura delle voci/sottovoci, varianti, sottovoci Tempo inserite manualmente, Spese inserite manualmente, A/R, numero di occorrenze, veicolo selezionato o prezzo scelto.
+L'azione non richiama OpenRouteService e non modifica Partenza, Destinazione, nomi, indirizzi o coordinate delle Sedi nello snapshot, A/R, Distanza per occorrenza, Tempo per occorrenza, Occorrenze previste, Veicolo selezionato, struttura delle voci/sottovoci, varianti, sottovoci Tempo, Spese o Prezzo scelto.
 
-Se una Trasferta usa un override manuale del tempo, l'aggiornamento può aggiornare distanza e costo della Trasferta ma non modifica il tempo manuale. Sedi e veicoli vengono ritrovati esclusivamente tramite il loro UUID di origine: se l'origine non esiste più, l'aggiornamento fallisce invece di associare un elemento omonimo.
+L'eventuale aggiornamento del Costo veicolo/km ricalcola il Costo complessivo della Trasferta usando la Distanza per occorrenza già salvata, senza sostituirla. Il percorso, la distanza e il tempo vengono aggiornati soltanto tramite **Ricalcola percorso**. Sedi e veicoli vengono ritrovati esclusivamente tramite il loro UUID di origine: se l'origine necessaria non esiste più, l'aggiornamento fallisce invece di associare un elemento omonimo.
 
 L'aggiornamento crea una nuova revisione dello snapshot e conserva nel preventivo la data/ora dell'operazione. Non mantiene una cronologia completa delle versioni del preventivo: la copia di sicurezza del file dati protegge l'ultima revisione precedente dell'intero archivio.
 
@@ -851,11 +884,13 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **7.** Configurare regione/provincia autonoma di riferimento ed eventuali veicoli; Cash deriva la modalità MIMIT supportata dal carburante.
 
-**8.** Configurare la velocità media di trasferta se si vuole il calcolo automatico del tempo di viaggio.
+**8.** Se utile, impostare un Veicolo come predefinito nella gestione dei Veicoli; in assenza di una scelta Cash non ne assume uno.
 
-**9.** Con Fatture in Cloud attivo, recuperare i Clienti e creare sotto ciascuno le Sedi riutilizzabili necessarie; creare nel gruppo Altre sedi fornitori, laboratorio, magazzini o altri luoghi indipendenti, indicando quando serve la distanza di sola andata dalla sede/laboratorio di riferimento.
+**9.** Creare le Sedi riutilizzabili associate ai Clienti e, nel gruppo Altre sedi, laboratorio, ufficio, abitazione, fornitori o altri punti operativi; usare **Cerca** su indirizzo o coordinate per acquisire coordinate utilizzabili e, se utile, impostare una Sede come Sede di partenza predefinita globale.
 
-**10.** Lasciare Fatture in Cloud disattivato oppure, soltanto se desiderato, completare la procedura guidata in **Impostazioni → Integrazioni**. La configurazione non è richiesta per terminare l'avvio né per usare le funzioni locali.
+**10.** Inserire la Basic API key di OpenRouteService nelle Impostazioni già dedicate alle integrazioni o alle API e usare **Verifica connessione** prima delle funzioni di ricerca o routing.
+
+**11.** Lasciare Fatture in Cloud disattivato oppure, soltanto se desiderato, completare la procedura guidata in **Impostazioni → Integrazioni**. La configurazione non è richiesta per terminare l'avvio né per usare le funzioni locali diverse da quelle che dipendono dal servizio.
 
 ### 21.2 Creazione del catalogo
 
@@ -881,23 +916,25 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **5.** Aggiungere o modificare liberamente sottovoci Tempo, Spesa e Trasferta.
 
-**6.** Per ogni Trasferta, usare la Sede del preventivo proposta da Cash oppure selezionare un'altra Sede; configurare A/R, veicolo, occorrenze ed eventuale override manuale del tempo. La distanza deriva dalla Sede.
+**6.** Per ogni Trasferta aggiunta, confermare o modificare Partenza, Destinazione, Veicolo, Andata e ritorno e Occorrenze previste. Cash può proporre la Sede di partenza predefinita globale, la Sede del preventivo, il Veicolo predefinito, A/R attivo e 1 occorrenza, senza creare automaticamente la Trasferta.
 
-**7.** Verificare che ogni voce principale contenga almeno una sottovoce che produca tempo.
+**7.** Usare **Calcola percorso** per precompilare Distanza A/R e Tempo di viaggio A/R tramite OpenRouteService oppure inserirli/modificarli manualmente; correggere gli eventuali requisiti mancanti indicati da Cash.
 
-**8.** Visualizzare tempo, spese, valore teorico, eventuale prezzo storico e rivalutato.
+**8.** Verificare che ogni voce principale contenga almeno una sottovoce che produca tempo.
 
-**9.** Impostare il prezzo finale scelto.
+**9.** Visualizzare tempo, spese, valore teorico, eventuale prezzo storico e rivalutato.
 
-**10.** Visualizzare resa, scostamento e tempo massimo coerente per voce e per preventivo complessivo.
+**10.** Impostare il prezzo finale scelto.
 
-**11.** Registrare, se presente, la provvigione fuori dal corpo del preventivo.
+**11.** Visualizzare resa, scostamento e tempo massimo coerente per voce e per preventivo complessivo.
 
-**12.** Eventualmente salvare una sottovoce o una o più voci come nuovo contenuto del catalogo.
+**12.** Registrare, se presente, la provvigione fuori dal corpo del preventivo.
 
-**13.** Se l'integrazione è attiva, eventualmente raggruppare/esportare le voci verso Fatture in Cloud usando il cliente remoto selezionato.
+**13.** Eventualmente salvare una sottovoce o una o più voci come nuovo contenuto del catalogo.
 
-**14.** Verificare l'indicatore “Salvato” prima di chiudere Cash o cambiare postazione.
+**14.** Se l'integrazione è attiva, eventualmente raggruppare/esportare le voci verso Fatture in Cloud usando il cliente remoto selezionato.
+
+**15.** Verificare l'indicatore “Salvato” prima di chiudere Cash o cambiare postazione.
 
 ### 21.4 Riapertura di un preventivo
 
@@ -909,7 +946,9 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **4.** Consentire l'azione esplicita “Aggiorna con valori correnti”.
 
-**5.** Eseguire l'aggiornamento in modo atomico: se un dato necessario non è disponibile, non modificare nulla.
+**5.** Consentire **Ricalcola percorso** sulla singola Trasferta e chiedere conferma se sostituisce distanza o tempo modificati manualmente.
+
+**6.** Eseguire “Aggiorna con valori correnti” in modo atomico: se un dato necessario non è disponibile, non modificare nulla; l'azione non richiama OpenRouteService e non sostituisce distanza o tempo.
 
 ### 21.5 Passaggio a un'altra postazione
 
@@ -935,12 +974,12 @@ Il modello seguente descrive concetti funzionali e relazioni, senza imporre tabe
 
 | **Concetto** | **Contenuto / relazione principale** |
 | --- | --- |
-| Profilo economico | Anno, revisione, fatturato obiettivo, Spese specifiche annue previste, profilo fiscale forfettario configurato e confermato, disponibilità lavorativa, festività locali e velocità media di trasferta. |
+| Profilo economico | Anno, revisione, fatturato obiettivo, Spese specifiche annue previste, profilo fiscale forfettario configurato e confermato, disponibilità lavorativa e festività locali. |
 | Costo aziendale | Categoria, descrizione, importo mensile. |
-| Veicolo | Carburante, modalità MIMIT derivata, consumo con unità, km annui medi, assicurazione, bollo, manutenzione e costo chilometrico derivato. |
+| Veicolo | Carburante, modalità MIMIT derivata, consumo con unità, km annui medi, assicurazione, bollo, manutenzione e costo chilometrico derivato; uno dei Veicoli esistenti può essere il Veicolo predefinito globale. |
 | Cliente Fatture in Cloud | Entità recuperata live con identificativi di azienda e cliente, denominazione/ragione sociale e partita IVA disponibile; non viene persistita come anagrafica autonoma. |
 | Snapshot cliente | Sorgente `fatture_in_cloud`, identificativi di azienda e cliente, denominazione/ragione sociale e partita IVA disponibile; copia indipendente dall'origine. |
-| Sede | Luogo locale riutilizzabile con nome, indirizzo, cliente Fatture in Cloud opzionale e distanza di sola andata dalla sede/laboratorio di riferimento; se associata è un sottogruppo del cliente, altrimenti appartiene ad Altre sedi. |
+| Sede | Luogo locale riutilizzabile con nome, Cliente opzionale, indirizzo quando disponibile e coordinate utilizzabili per il routing; se associata è un sottogruppo del Cliente, altrimenti appartiene ad Altre sedi. Una Sede esistente può essere la Sede di partenza predefinita globale. |
 | Catalogo | Contiene sottovoci riutilizzabili e template. |
 | Sottovoce catalogo | Tipo Tempo / Spesa / Trasferta con valori predefiniti pertinenti. |
 | Template | Contiene una o più voci principali riutilizzabili. |
@@ -949,6 +988,8 @@ Il modello seguente descrive concetti funzionali e relazioni, senza imporre tabe
 | Preventivo | Data, riferimento e snapshot del Profilo economico annuale, eventuale snapshot cliente, eventuale Sede principale, insieme di voci, eventuale provvigione e valori economici usati. Non ha stato commerciale. |
 | Voce preventivo | Copia indipendente di una voce template o voce creata manualmente; prezzo scelto, risultati di calcolo e Tempo stimato derivato. |
 | Sottovoce preventivo | Elemento Tempo / Spesa / Trasferta, copiato o creato manualmente e modificabile liberamente nei limiti delle regole delle varianti. |
+| Trasferta | Sottovoce di una sola Voce preventivo con Partenza, Destinazione, A/R, Veicolo, Occorrenze previste, Distanza e Tempo per occorrenza e relativi risultati complessivi; i valori di percorso sono precompilabili tramite OpenRouteService o manuali. |
+| Configurazione OpenRouteService | Basic API key necessaria alle operazioni live di ricerca, geocodifica e routing; nelle Impostazioni è disponibile l'azione Verifica connessione. |
 | Configurazione Fatture in Cloud | Stato attivo/disattivo e riferimenti non segreti di azienda, prodotto e ultima verifica; il token resta fuori dal file dati. |
 | File dati | Versione schema, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, veicoli, Sedi, catalogo e preventivi. |
 | Riferimento esportazione | UUID del tentativo, azienda, data/ora, righe e impronta del payload, eventuale identificativo documento Fatture in Cloud ed esito da verificare; non è uno stato commerciale. |
@@ -963,9 +1004,13 @@ Relazione logica:
 
 - Preventivo → può avere una Sede principale.
 
-- Trasferta → usa una sola Sede; se il preventivo ha una Sede, questa viene proposta come default ma può essere cambiata.
+- Sede di partenza predefinita globale → può precompilare la Partenza di una nuova Trasferta, senza creare Trasferte e senza modificare quelle esistenti.
 
-- Sede → fornisce alla Trasferta la distanza di sola andata usata nel calcolo.
+- Veicolo predefinito → può precompilare il Veicolo di una nuova Trasferta, senza sostituire scelte già salvate.
+
+- Trasferta → usa una Sede come Partenza e una Sede come Destinazione; la Sede principale del preventivo può essere proposta come Destinazione.
+
+- Sedi con coordinate utilizzabili + OpenRouteService → precompilano distanza stradale e tempo di viaggio della Trasferta solo su azione esplicita dell'utente.
 
 - Catalogo → contiene Sottovoci riutilizzabili e Template.
 
@@ -1007,19 +1052,21 @@ Ogni entità persistente possiede un identificatore UUID immutabile, una data/or
 | Km annui veicolo | Devono essere maggiori di zero per distribuire i costi annuali sul costo/km. |
 | Carburante veicolo | Per il calcolo automatico deve appartenere alle combinazioni del dataset regionale MIMIT: Benzina/Gasolio SELF oppure GPL/Metano SERVITO. |
 | Consumo veicolo | Deve essere maggiore di zero e avere un'unità compatibile con il prezzo MIMIT richiesto. |
-| Velocità media di trasferta | Deve essere maggiore di zero per il calcolo automatico del tempo; se assente, nessuna velocità viene assunta. |
-| Distanza Sede | Non negativa; deve essere disponibile quando la Sede è usata per un calcolo di Trasferta. |
+| OpenRouteService | La Basic API key deve essere presente e valida per ricerca, geocodifica e routing. Una connessione non disponibile o una risposta non valida produce un errore esplicito. |
+| Coordinate Sede | Devono rispettare il formato indicato dall'interfaccia e rappresentare valori validi. Per il routing, Partenza e Destinazione devono avere coordinate utilizzabili e coerenti con l'ultimo valore cercato o esplicitamente confermato. |
 | Occorrenze trasferta | Intero positivo; default 1. |
-| Tempo manuale trasferta | Se utilizzato come override, deve essere maggiore di zero. |
+| Distanza Trasferta | Valore per occorrenza non negativo. Se non viene ottenuto tramite OpenRouteService deve essere inserito o modificato esplicitamente dall'utente. |
+| Tempo Trasferta | Valore per occorrenza maggiore di zero. Se non viene ottenuto tramite OpenRouteService deve essere inserito o modificato esplicitamente dall'utente. |
+| Veicolo Trasferta | Obbligatorio per calcolare il Costo complessivo della Trasferta; in assenza di un Veicolo predefinito deve essere scelto esplicitamente. |
 | Sottovoce Tempo | Durata maggiore di zero. Una sottovoce Tempo con durata zero non è valida. |
 | Voce principale | Deve contenere almeno una sottovoce che produca tempo e il Tempo stimato derivato deve essere maggiore di zero. |
 | Sottovoce Spesa | Importo non negativo. |
-| Contenuto di catalogo | I campi intrinseci devono essere validi. Una Trasferta riutilizzabile può omettere Sede e veicolo secondo la regola di copia, ma conserva una modalità temporale valida. |
+| Contenuto di catalogo | I campi intrinseci devono essere validi. Una Trasferta riutilizzabile omette Partenza, Destinazione, coordinate, Veicolo e risultati OpenRouteService secondo la regola di copia; può conservare A/R, Occorrenze previste ed eventuali valori manuali predefiniti. |
 | Template | Deve contenere almeno una voce; ogni voce deve contenere almeno una sottovoce Tempo o Trasferta. I riferimenti contestuali esclusi dalle Trasferte vengono richiesti dopo l'inserimento nel preventivo. Le modifiche alle copie non alterano l'origine e viceversa. |
 | Prezzo di riferimento | Non negativo; mese/anno obbligatorio se il prezzo è presente e non successivo all'ultimo mese FOI pubblicato. |
 | Prezzo scelto | Non negativo; può essere inferiore al valore teorico o alle spese. È obbligatorio per l'esportazione. |
 | Provvigione | Facoltativa; se presente, importo in euro non negativo. Non entra nei calcoli del preventivo. |
-| Sede | Nome e indirizzo non vuoti; distanza non negativa se presente. |
+| Sede | Nome non vuoto, Cliente facoltativo, indirizzo quando disponibile e coordinate valide utilizzabili per il routing. Una modifica a indirizzo o coordinate invalida l'associazione precedente e impedisce il routing finché non viene eseguito nuovamente **Cerca**. |
 | Cliente Fatture in Cloud | Deve provenire dall'azienda configurata; identificativo e denominazione sono obbligatori, la partita IVA è facoltativa. |
 | Costi annuali del veicolo | Assicurazione, bollo e manutenzione non negativi. La UI ricorda di non duplicarli nei Costi aziendali. |
 | Cambio variante | Un gruppo sostituisce solo le sottovoci prodotte dalle proprie opzioni; warning obbligatorio prima di perdere modifiche manuali su tali sottovoci. |
@@ -1040,14 +1087,21 @@ Esempi:
 | Fonte carburante non disponibile | Mostrare errore e rendere non disponibile il calcolo che richiede il dato. | Usare una copia locale precedente come se fosse il dato ufficiale corrente. |
 | Fatture in Cloud non disponibile | Mostrare errore per l'operazione live richiesta. | Mostrare una vecchia lista cache come se fosse corrente. |
 | Fatture in Cloud disattivato | Usare normalmente Sedi, profili, catalogo e preventivi senza cliente; spiegare perché elenco clienti, ricerca ed esportazione non sono disponibili. | Tentare chiamate remote o bloccare la preventivazione. |
-| Velocità media non configurata | Segnalare che il tempo automatico non è calcolabile; l'utente può inserire esplicitamente il tempo manuale. | Assumere automaticamente 50 km/h o altro valore. |
-| Distanza della Sede non disponibile | Mostrare errore per la Trasferta che richiede la distanza. | Assumere 0 km o una distanza precedente non appartenente allo snapshot. |
+| Basic API key OpenRouteService assente o non valida | Indicare che ricerca o routing richiedono una chiave valida e rimandare alle Impostazioni. | Usare un altro servizio o una chiave precedente non valida. |
+| Connessione OpenRouteService non disponibile | Mostrare l'errore per l'operazione richiesta; consentire l'inserimento manuale esplicito di distanza e tempo. | Usare distanza in linea d'aria, velocità media, un vecchio percorso o un provider alternativo. |
+| Indirizzo non trovato o ambiguo | Mostrare i risultati disponibili o l'assenza di risultati e richiedere una scelta esplicita. | Considerare valido automaticamente il primo risultato o inventare coordinate. |
+| Coordinate non valide o non più coerenti con il valore modificato | Evidenziare il campo e richiedere una nuova esecuzione di Cerca. | Riutilizzare silenziosamente coordinate precedenti o presunte. |
+| Sede priva di coordinate utilizzabili | Indicare quale Sede impedisce Calcola percorso. | Assumere coordinate o una distanza precedente. |
+| Percorso non calcolabile | Mostrare l'errore restituito per la tratta richiesta. | Inventare distanza o tempo, calcolare la linea d'aria o interrogare automaticamente un altro provider. |
+| Veicolo necessario ma non selezionato | Richiedere la selezione di un Veicolo per calcolare il costo. | Scegliere arbitrariamente un Veicolo non configurato come predefinito. |
 | Dato non valido | Mostrare l'errore sul dato. | Sostituirlo con un default non scelto dall'utente. |
 | File dati non leggibile | Bloccare l'apertura e offrire la selezione esplicita della copia di sicurezza. | Caricare automaticamente la copia di sicurezza o dati locali. |
 | Revisione cambiata su disco | Bloccare il salvataggio e offrire una copia di recupero delle modifiche locali. | Sovrascrivere o fondere automaticamente. |
 | Profilo fiscale di un nuovo anno non confermato | Bloccare i calcoli dipendenti e chiedere la conferma dei parametri. | Riutilizzare silenziosamente l'anno precedente. |
 
-Non sono fallback: valori predefiniti esplicitamente configurati, snapshot storici del preventivo, modifiche manuali e override espliciti.
+Non sono fallback: la Sede di partenza predefinita globale e il Veicolo predefinito esplicitamente configurati come precompilazioni, gli snapshot storici del preventivo e l'inserimento o la modifica manuale esplicita di distanza e tempo. Nessuna precompilazione autorizza Cash a inventare un dato mancante o a sostituire una scelta già salvata.
+
+Gli errori di routing devono essere comprensibili e distinguere almeno: Basic API key assente o non valida, connessione non disponibile, indirizzo non trovato, coordinate non valide, Sede priva di coordinate utilizzabili, percorso non calcolabile e Veicolo necessario ma non selezionato.
 
 ### 23.2 Aggiornamenti atomici
 
@@ -1063,7 +1117,7 @@ L'autenticazione applicativa non è un requisito dell'MVP. Cash opera in un cont
 
 ### 23.4 Modifica ed eliminazione di dati già usati
 
-La modifica di profili, costi, veicoli, Sedi, sottovoci di catalogo o template vale soltanto per utilizzi futuri. I preventivi esistenti restano invariati finché l'utente non modifica direttamente il preventivo o esegue “Aggiorna con valori correnti”. Le modifiche ai clienti vengono effettuate in Fatture in Cloud e non alterano gli snapshot esistenti.
+La modifica di profili, costi, Veicoli, Sedi, Sede di partenza predefinita globale, Veicolo predefinito, sottovoci di catalogo o template vale soltanto per utilizzi futuri. I preventivi esistenti restano invariati finché l'utente non modifica direttamente il preventivo o esegue “Aggiorna con valori correnti” per i soli valori ammessi dalla sezione 19.2. Distanza e tempo della Trasferta cambiano soltanto per modifica manuale o tramite **Ricalcola percorso**. Le modifiche ai Clienti vengono effettuate in Fatture in Cloud e non alterano gli snapshot esistenti.
 
 L'eliminazione è consentita quando non lascia riferimenti vivi invalidi. Se l'elemento è usato da template o configurazioni correnti, Cash elenca i riferimenti e blocca l'eliminazione. Gli snapshot dei preventivi non sono riferimenti vivi: conservano copie autonome e non impediscono l'eliminazione dell'origine.
 
@@ -1083,9 +1137,9 @@ Il frontend può essere sviluppato come un'unica applicazione HTML/JavaScript se
 
 ### 24.2 Rete e funzionamento offline
 
-L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT e, se l'integrazione è attiva, Fatture in Cloud; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Google Drive viene usato tramite il normale filesystem sincronizzato da Drive for Desktop; Cash non richiede Google Drive API né OAuth Google.
+L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT, OpenRouteService e, se l'integrazione è attiva, Fatture in Cloud; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Google Drive viene usato tramite il normale filesystem sincronizzato da Drive for Desktop; Cash non richiede Google Drive API né OAuth Google.
 
-Senza connessione internet l'utente può aprire e modificare profili, Sedi, catalogo e preventivi già salvati. Sono bloccate, con errore esplicito, le sole operazioni che richiedono dati live: acquisizione di nuovi indici FOI o prezzi carburante e, quando il modulo è attivo, caricamento/ricerca clienti, verifica prodotto ed esportazione Fatture in Cloud. Gli snapshot esistenti restano consultabili e ricalcolabili con i propri dati storici.
+Senza connessione internet l'utente può aprire e modificare profili, Sedi, catalogo e preventivi già salvati. Sono bloccate, con errore esplicito, le sole operazioni che richiedono dati live: acquisizione di nuovi indici FOI o prezzi carburante, ricerca/geocodifica di Sedi e Calcola/Ricalcola percorso tramite OpenRouteService e, quando il modulo è attivo, caricamento/ricerca clienti, verifica prodotto ed esportazione Fatture in Cloud. Gli snapshot esistenti restano consultabili e ricalcolabili con i propri dati storici; distanza e tempo possono essere inseriti manualmente su scelta esplicita dell'utente.
 
 ### 24.3 Aggiornamenti del client e compatibilità dati
 
@@ -1168,13 +1222,14 @@ La singola postazione può conservare localmente soltanto:
 - percorso dell'ultimo file aperto;
 - dimensione e posizione della finestra e preferenze puramente visive;
 - token Fatture in Cloud nel gestore credenziali del sistema operativo;
+- Basic API key OpenRouteService;
 - identificativo casuale della postazione usato nei messaggi diagnostici.
 
 Nessun dato economico, cliente, catalogo o preventivo può esistere soltanto in una cache locale dopo che la UI indica `Salvato`.
 
 ## 26. Impostazioni
 
-Le impostazioni esistono solo per preferenze o dati realmente variabili. Sono divise fra condivise nel file dati e locali alla postazione. Le aree principali sono **Profilo fiscale**, **Pianificazione annuale**, **Trasferte e carburanti**, **Clienti** e **Integrazioni**.
+Le impostazioni esistono solo per preferenze o dati realmente variabili. Sono divise fra condivise nel file dati e locali alla postazione. Le aree principali sono **Profilo fiscale**, **Pianificazione annuale**, **Trasferte e carburanti**, **Clienti** e **Integrazioni**. OpenRouteService usa il contesto già destinato alle integrazioni o alle API; non viene creato un nuovo modulo, menu o pagina principale Trasferte.
 
 ### 26.1 Profilo fiscale
 
@@ -1202,8 +1257,9 @@ La selezione della fase evidenzia l'aliquota effettiva. In fase agevolata compar
 | Ferie e malattia/imprevisti | Giorni interi non negativi. |
 | Percentuale dedicabile ai lavori | Maggiore di 0% e non superiore a 100%. |
 | Festività locali | Elenco facoltativo di date ricorrenti o specifiche per anno. |
-| Velocità media di trasferta | Opzionale; maggiore di zero se si usa il tempo automatico. |
 | Regione/provincia autonoma carburante | Obbligatoria per i calcoli che usano veicoli. |
+| Sede di partenza predefinita | Riferimento facoltativo a una sola Sede esistente, anche appartenente alle Altre sedi; impostarne una nuova sostituisce la precedente. |
+| Veicolo predefinito | Riferimento facoltativo a un solo Veicolo esistente; impostarne uno nuovo sostituisce il precedente. |
 | Integrazione Fatture in Cloud | `Disattivata` per impostazione iniziale oppure `Attiva`; non condiziona le funzioni locali. |
 | Azienda Fatture in Cloud | Identificativo e nome non segreti; richiesti soltanto per completare l'attivazione. |
 | Prodotto “Consulenza” | Identificativo e nome non segreti; richiesti soltanto per completare l'attivazione e verificati live prima dell'invio. |
@@ -1212,6 +1268,7 @@ La selezione della fase evidenzia l'aliquota effettiva. In fase agevolata compar
 | **Impostazione locale** | **Regola** |
 | --- | --- |
 | Token Fatture in Cloud | Facoltativo; richiesto sulla singola postazione soltanto per le funzioni live quando l'integrazione è attiva. Custodito nel gestore credenziali del sistema operativo, mai in Drive. |
+| Basic API key OpenRouteService | Inseribile nel contesto delle integrazioni o delle API; necessaria per ricerca, geocodifica, geocodifica inversa e routing. Lo stesso contesto offre l'azione **Verifica connessione**. |
 | Ultimo file dati | Solo scorciatoia di apertura; se manca viene chiesta una selezione. |
 | Preferenze finestra/tema | Non influenzano dati o calcoli. |
 
@@ -1231,6 +1288,8 @@ L'attivazione viene salvata come `Attiva` soltanto dopo il completamento riuscit
 ### 26.3 Clienti e Sedi
 
 La pagina recupera e cerca in una tabella i clienti dell'azienda Fatture in Cloud configurata. Il menu `…` permette l'aggiunta rapida di una Sede; il clic sulla riga apre tutte le informazioni FIC, chiaramente etichettate, e le informazioni Cash collegate, incluse Sedi e preventivi. Un gruppo separato **Altre sedi** nelle Impostazioni gestisce fornitori, laboratorio, magazzini e luoghi indipendenti. La modifica o eliminazione di un cliente avviene esclusivamente in Fatture in Cloud e non altera automaticamente Sedi o snapshot già salvati in Cash.
+
+La gestione delle Sedi consente di modificare indirizzo o coordinate, avviare **Cerca**, scegliere un risultato quando necessario e usare **Imposta come partenza predefinita**. La gestione dei Veicoli già presente nell'area Trasferte e carburanti consente analogamente di scegliere il Veicolo predefinito. Queste azioni non introducono una pagina principale Trasferte.
 
 Non sono configurabili: formule economiche, regola di snapshot, atomicità, divieto di fallback, precisione degli arrotondamenti, tipi di sottovoce, indipendenza delle copie e modello monoutente sequenziale.
 
@@ -1262,9 +1321,21 @@ Non sono configurabili: formule economiche, regola di snapshot, atomicità, divi
 
 - Ammortamento e svalutazione dei veicoli.
 
-- Servizi di routing, mappe, traffico o geolocalizzazione per le trasferte.
+- Mappe interattive e selezione della Sede tramite mappa.
 
-- Partenza/destinazione e calcolo di percorsi tra Sedi: la distanza è quella configurata sulla Sede rispetto alla sede/laboratorio di riferimento.
+- Visualizzazione cartografica del percorso.
+
+- Traffico in tempo reale.
+
+- Posizione GPS o geolocalizzazione del dispositivo, navigazione e istruzioni svolta per svolta.
+
+- Itinerari alternativi e ottimizzazione di percorsi.
+
+- Calcolo distinto del tragitto di ritorno.
+
+- Provider di routing diversi da OpenRouteService selezionati automaticamente.
+
+- Fallback automatici per geocodifica, distanza o tempo di viaggio.
 
 - Rule engine generico, scripting o formule arbitrarie sulle varianti.
 
@@ -1306,7 +1377,7 @@ Non sono configurabili: formule economiche, regola di snapshot, atomicità, divi
 
 Non rimangono decisioni funzionali o tecniche bloccanti per l'MVP.
 
-I seguenti sono dati di configurazione che l'utente deve fornire quando pertinenti, non decisioni di prodotto: parametri e conferma del profilo fiscale forfettario annuale, festività locale, regione/provincia autonoma per il carburante e percorso del file dati. Token, azienda e prodotto “Consulenza” sono richiesti soltanto se l'utente sceglie di attivare Fatture in Cloud.
+I seguenti sono dati di configurazione che l'utente deve fornire quando pertinenti, non decisioni di prodotto: parametri e conferma del profilo fiscale forfettario annuale, festività locale, regione/provincia autonoma per il carburante, Basic API key OpenRouteService e percorso del file dati. Sede di partenza predefinita e Veicolo predefinito restano scelte facoltative. Token, azienda e prodotto “Consulenza” sono richiesti soltanto se l'utente sceglie di attivare Fatture in Cloud.
 
 ## 29. Criteri di accettazione dell'MVP
 
@@ -1324,19 +1395,19 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **6.** Configurare almeno un veicolo e ricavarne il costo chilometrico usando il dato giornaliero MIMIT più recente pubblicato per territorio e carburante, derivando la modalità ufficiale SELF/SERVITO e mostrando la data di riferimento.
 
-**7.** Creare Sedi riutilizzabili con nome, indirizzo, cliente Fatture in Cloud opzionale e distanza di sola andata dalla sede/laboratorio di riferimento; mostrare le Sedi associate come sottogruppo del cliente e quelle indipendenti nel gruppo Altre sedi.
+**7.** Creare Sedi riutilizzabili con nome, Cliente opzionale, indirizzo quando disponibile e coordinate utilizzabili; mostrare le Sedi associate come sottogruppo del Cliente e quelle indipendenti nel gruppo Altre sedi, senza introdurre tipi obbligatori o entità separate per laboratorio, ufficio, abitazione, fornitore o altri punti operativi.
 
-**8.** Usare una Sede come riferimento della Trasferta senza modellare Partenza e Destinazione separate.
+**8.** Inserire la Basic API key OpenRouteService nel contesto esistente delle integrazioni o delle API, usare **Verifica connessione** e cercare una Sede tramite indirizzo o coordinate solo con **Cerca**, scegliendo esplicitamente fra più risultati, senza mappa, ricerca a ogni carattere o stato permanente Indirizzo verificato.
 
-**9.** Quando il preventivo ha una Sede, proporla come Sede della Trasferta e permettere all'utente di sostituirla per la singola Trasferta.
+**9.** Impostare al massimo una Sede di partenza predefinita globale, anche tra le Altre sedi, sostituirla con un'altra tramite **Imposta come partenza predefinita** e lasciare invariati preventivi e Trasferte già salvati; non introdurre una Sede di partenza del preventivo.
 
-**10.** Calcolare la distanza effettiva della Trasferta dai km della Sede, A/R e numero di occorrenze previste.
+**10.** Impostare al massimo un Veicolo predefinito nella gestione esistente dei Veicoli, usarlo solo per precompilare nuove Trasferte e non scegliere alcun Veicolo arbitrariamente quando manca il predefinito.
 
-**11.** Calcolare il tempo di Trasferta dalla velocità media configurata e permettere un override manuale per singola occorrenza.
+**11.** Aggiungere una Trasferta soltanto quando necessaria, direttamente o tramite template, mantenendola come sottovoce di una Voce e precompilando quando disponibili Partenza globale, Destinazione dalla Sede del preventivo, Veicolo predefinito, A/R attivo e 1 Occorrenza prevista, tutti modificabili.
 
-**12.** Calcolare il costo della Trasferta dalla distanza effettiva e dal costo veicolo/km.
+**12.** Con **Calcola percorso**, ottenere da OpenRouteService distanza stradale e tempo stimato della singola tratta, raddoppiarli una sola volta se A/R è attivo e calcolare Distanza complessiva, Tempo complessivo e Costo complessivo della Trasferta moltiplicando per le Occorrenze previste senza doppi conteggi.
 
-**13.** Non usare alcun servizio di routing, mappe, traffico o geolocalizzazione.
+**13.** Consentire modifiche manuali indipendenti di distanza e tempo senza richiamare automaticamente l'API; usare **Ricalcola percorso** solo su azione esplicita e con conferma prima di sostituire valori manuali, mostrando requisiti ed errori precisi senza fallback.
 
 **14.** Recuperare i clienti in tempo reale da Fatture in Cloud e permettere di salvare un preventivo senza cliente oppure con un cliente selezionato live; conservarne sorgente, identificativi e dati leggibili nello snapshot senza dipendere successivamente dall'origine.
 
@@ -1380,15 +1451,15 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **34.** Conservare gli input storici e il Profilo economico annuale del preventivo e non aggiornarli o sostituirli automaticamente.
 
-**35.** Offrire un'azione esplicita “Aggiorna con valori correnti” che aggiorni, quando pertinenti, valore medio da generare, costo veicolo/km, distanza corrente della Sede, tempo automatico di Trasferta e rivalutazione per inflazione.
+**35.** Offrire un'azione esplicita “Aggiorna con valori correnti” che aggiorni, quando pertinenti, valore medio da generare, costo veicolo/km e rivalutazione per inflazione, senza richiamare OpenRouteService né sostituire Partenza, Destinazione, coordinate, distanza o tempo delle Trasferte.
 
-**36.** Mantenere invariato il tempo di Trasferta quando è presente un override manuale.
+**36.** Conservare nello snapshot di ogni Trasferta Partenza, Destinazione, nomi, indirizzi, coordinate, A/R, distanza e tempo per occorrenza, Occorrenze previste, Veicolo, costo veicolo/km e risultati derivati; modificarne distanza o tempo soltanto manualmente o tramite **Ricalcola percorso**.
 
 **37.** Eseguire “Aggiorna con valori correnti” atomicamente: in caso di errore o dato necessario mancante, non modificare alcun valore del preventivo.
 
 **38.** Con integrazione attiva, mostrare l'anteprima e raggruppare/esportare le voci verso Fatture in Cloud usando cliente e prodotto “Consulenza” verificati nella stessa azienda, descrizioni modificabili e quantità 1, senza esportare automaticamente sottovoci, Spese o provvigione.
 
-**39.** In assenza di un dato o di una sorgente necessari, mostrare un errore esplicito senza utilizzare fallback automatici.
+**39.** In assenza di un dato o di una sorgente necessari, incluso il routing, mostrare un errore esplicito senza distanza in linea d'aria, velocità media, vecchi percorsi, provider alternativi, coordinate presunte, selezione automatica del primo risultato o valori inventati.
 
 **40.** Funzionare come client desktop monoutente con host nativo incorporato e interfaccia HTML/CSS/JavaScript, senza login Cash, server applicativo, servizio su porta locale, database server o proxy CORS.
 
@@ -1410,13 +1481,13 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **49.** Persistire il tentativo prima dell'invio, gestire un esito remoto o locale incerto senza ritentare automaticamente e avvertire prima di riesportare un preventivo già esportato o con esito da verificare.
 
-**50.** Salvare sempre come nuovo template il contenuto proveniente da un preventivo, tramite anteprima esplicita e copiando solo i dati definiti; le Trasferte riutilizzabili non contengono Sedi, veicoli o valori automatici derivati, ma conservano i minuti per occorrenza se manuali.
+**50.** Salvare sempre come nuovo template il contenuto proveniente da un preventivo, tramite anteprima esplicita e copiando solo i dati definiti; le Trasferte riutilizzabili non contengono Partenza, Destinazione, coordinate, Veicolo o risultati OpenRouteService, ma conservano A/R, Occorrenze previste ed eventuali valori manuali configurati come predefiniti.
 
 **51.** Applicare le regole di precisione e arrotondamento definite, producendo totali uguali alla somma dei componenti monetari visibili.
 
 **52.** Bloccare l'apertura in scrittura di uno schema dati più nuovo e migrare uno schema precedente soltanto con backup, conferma e operazione atomica.
 
-**53.** Consentire l'uso offline di profili, Sedi, catalogo, preventivi e snapshot cliente già salvati e bloccare selettivamente soltanto le operazioni che richiedono ISTAT, MIMIT o, se attivo, Fatture in Cloud.
+**53.** Consentire l'uso offline di profili, Sedi, catalogo, preventivi e snapshot cliente già salvati e bloccare selettivamente soltanto le operazioni che richiedono ISTAT, MIMIT, OpenRouteService o, se attivo, Fatture in Cloud, lasciando disponibile l'inserimento manuale esplicito di distanza e tempo.
 
 **54.** Non includere HTMX nell'MVP e non usarlo per simulare un backend, caricare file locali o aggirare i vincoli CORS.
 
@@ -1428,13 +1499,15 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 ## 30. Fonti normative e tecniche
 
-Verifica effettuata l'8 settembre 2026. Le fonti sono riferimenti di progettazione; il file dati salva sempre i valori effettivamente usati nei calcoli.
+Verifica effettuata il 13 settembre 2026. Le fonti sono riferimenti di progettazione; il file dati salva sempre i valori effettivamente usati nei calcoli.
 
 - **Fiscalità 2026:** INPS, [Circolare n. 8 del 3 febbraio 2026](https://www.inps.it/it/it/inps-comunica/atti/circolari-messaggi-e-normativa/dettaglio.circolari-e-messaggi.2026.02.circolare-numero-8-del-03-02-2026_15153.html), per aliquota e massimale della Gestione Separata; Agenzia delle Entrate, [quadro LM](https://infoprecompilata.agenziaentrate.gov.it/portale/quadro-lm) e [istruzioni Redditi PF 2026 - Fascicolo 3](https://infoprecompilata.agenziaentrate.gov.it/portale/documents/d/guest/pf3_istruzioni_2026.pdf), per regime forfettario, principio di cassa, coefficienti collegati al codice ATECO, soglie e imposta sostitutiva; ISTAT, [classificazione ATECO 2025](https://www.istat.it/classificazione/ateco-2025/), per il codice dell'attività. I parametri restano espliciti e devono essere confermati dall'utente per l'anno applicato.
 
 - **Inflazione:** ISTAT, [Indice dei prezzi al consumo per le rivalutazioni monetarie](https://www.istat.it/notizia/indice-dei-prezzi-per-le-rivalutazioni-monetarie/) e servizio [Rivalutazioni](https://www.istat.it/dati/calcolatori/rivalutazioni/), indice FOI generale nazionale senza tabacchi e coefficienti di raccordo ufficiali.
 
 - **Carburanti:** MIMIT, [Prezzi medi dei carburanti](https://www.mimit.gov.it/it/prezzo-medio-carburanti) e [Osservaprezzi carburanti](https://www.mimit.gov.it/it/mercato-e-consumatori/prezzi/mercati-dei-carburanti/osservatorio-carburanti).
+
+- **Ricerca indirizzi e routing:** documentazione ufficiale OpenRouteService per [geocodifica diretta e inversa](https://giscience.github.io/openrouteservice/api-reference/endpoints/geocoder/) e [calcolo delle direzioni](https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/). OpenRouteService è l'unico provider previsto da Cash per tali funzioni.
 
 - **Festività:** Presidenza del Consiglio dei ministri, [Festività e giornate nazionali](https://presidenza.governo.it/ufficio_cerimoniale/cerimoniale/giornate.html), e [Legge 8 ottobre 2025, n. 151](https://www.normattiva.it/atto/caricaDettaglioAtto?atto.codiceRedazionale=25G00153&atto.dataPubblicazioneGazzetta=2025-10-10&tipoDettaglio=multivigenza), in vigore dal 1° gennaio 2026 per il 4 ottobre.
 
@@ -1452,12 +1525,13 @@ Esempio: installazione e configurazione di un server, con altre attività nello 
 
 ### Sedi utilizzate
 
-| **Sede** | **Cliente associato** | **Distanza di sola andata** |
-| --- | --- | --- |
-| Fornitore ABC | Nessuno | 10 km |
-| Cliente Rossi - Sede centrale | Rossi S.r.l. | 35 km |
+| **Sede** | **Cliente associato** | **Indirizzo** | **Coordinate** |
+| --- | --- | --- | --- |
+| Laboratorio | Nessuno | Via Roma 1, Milano | Coordinate conservate dopo Cerca |
+| Fornitore ABC | Nessuno | Via Verdi 10, Milano | Coordinate conservate dopo Cerca |
+| Cliente Rossi - Sede centrale | Rossi S.r.l. | Via Manzoni 20, Monza | Coordinate conservate dopo Cerca |
 
-Il preventivo ha come Sede principale “Cliente Rossi - Sede centrale”. Quando viene inserita una Trasferta, Cash propone questa Sede; per il ritiro del server l'utente la sostituisce con “Fornitore ABC”.
+“Laboratorio” è la Sede di partenza predefinita globale e il preventivo ha come Sede principale “Cliente Rossi - Sede centrale”. Quando l'utente inserisce una Trasferta, Cash propone Laboratorio come Partenza e la Sede principale come Destinazione; per il ritiro del server l'utente sostituisce la Destinazione con “Fornitore ABC”.
 
 ### Voce 1 - Configurazione server
 
@@ -1466,12 +1540,12 @@ Il preventivo ha come Sede principale “Cliente Rossi - Sede centrale”. Quand
 | Gestione cliente | Tempo | 30 min |
 | Gestione fornitore | Tempo | 20 min |
 | Ritiro server dal fornitore | Tempo | 30 min |
-| Trasferta fornitore | Trasferta | Sede: Fornitore ABC; A/R; 1 occorrenza |
+| Trasferta fornitore | Trasferta | Laboratorio → Fornitore ABC; A/R; 1 occorrenza |
 | Preparazione server | Tempo | 30 min |
 | Configurazione sistema | Tempo | 2 h |
 | Inventariazione | Tempo | 15 min |
 | Etichette | Spesa | € 5 |
-| Trasferta cliente | Trasferta | Sede: Cliente Rossi - Sede centrale; A/R; 2 occorrenze previste |
+| Trasferta cliente | Trasferta | Laboratorio → Cliente Rossi - Sede centrale; A/R; 2 Occorrenze previste |
 | Installazione fisica | Tempo | 45 min |
 
 #### Varianti della voce
@@ -1487,7 +1561,7 @@ I due gruppi sono indipendenti e i loro contributi si sommano. Un cambio dell'op
 
 #### Trasferte e occorrenze
 
-La Trasferta verso il cliente usa i 35 km configurati sulla Sede. Con A/R e 2 occorrenze, la distanza effettiva è 35 × 2 × 2 = 140 km. Il tempo automatico deriva da questa distanza e dalla velocità media configurata; il costo deriva dalla distanza e dal costo veicolo/km.
+Per la singola tratta Laboratorio → Cliente Rossi - Sede centrale, OpenRouteService restituisce a titolo di esempio 35 km e 40 minuti. Con A/R attivo, Cash compila per una singola occorrenza Distanza A/R 70 km e Tempo di viaggio A/R 80 minuti. Con 2 Occorrenze previste, la Distanza complessiva è 70 × 2 = 140 km e il Tempo complessivo è 80 × 2 = 160 minuti. Il costo complessivo è 140 km × Costo veicolo/km: A/R è già incluso e non viene raddoppiato di nuovo.
 
 Le due occorrenze della trasferta cliente rappresentano una stima prudenziale. Se il lavoro viene completato con un solo accesso, Cash non consuntiva automaticamente la differenza.
 
@@ -1515,7 +1589,11 @@ Se il cliente acquista il server direttamente dal fornitore e il fornitore ricon
 
 → Preventivo → voci → sottovoci Tempo / Spesa / Trasferta
 
-→ Trasferte: Sede + distanza configurata sulla Sede + A/R + occorrenze + veicolo + tempo automatico/manuale
+→ Trasferte aggiunte quando necessarie: Partenza + Destinazione + A/R + Occorrenze previste + Veicolo
+
+→ Calcola percorso esplicito tramite OpenRouteService oppure inserimento/modifica manuale di distanza e tempo per occorrenza
+
+→ Distanza/tempo complessivi = valori per occorrenza già comprensivi dell'eventuale A/R × Occorrenze previste
 
 → Tempo stimato derivato dalle sottovoci + spese previste → valore teorico
 
