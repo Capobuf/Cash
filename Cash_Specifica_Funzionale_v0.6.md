@@ -471,6 +471,8 @@ Se il preventivo non ha una Sede, Cash non assume una Destinazione. Se non esist
 
 Il catalogo è il punto unico da cui recuperare contenuti riutilizzabili. Deve contenere sia sottovoci singole slegate da una voce principale, sia template composti da una o più voci principali con le relative sottovoci e varianti.
 
+I Template costituiscono il percorso principale del Catalogo; le sottovoci riutilizzabili restano disponibili come contenuto secondario, senza perdere alcuna capacità di creazione, modifica o riuso.
+
 ### 11.1 Sottovoci riutilizzabili
 
 L'utente può creare una sottovoce nel catalogo con i valori predefiniti pertinenti al tipo.
@@ -486,6 +488,8 @@ Quando una sottovoce viene usata in una voce del preventivo o dentro un template
 ### 11.2 Template
 
 Un template può contenere una o più voci principali. Un template con una sola voce copre il caso tipico “Configurazione server”; un template con più voci consente di riutilizzare un gruppo di lavori ricorrente.
+
+La creazione è progressiva: l'utente definisce prima nome del Template, Voci e normali attività con durata esplicita. Spese, Trasferte, prezzi di riferimento e Varianti vengono aggiunti solo quando servono. L'interfaccia non impone wizard o modalità semplice/avanzata e non persiste valori che l'utente non abbia scelto esplicitamente.
 
 Ogni voce contenuta nel template può avere:
 
@@ -894,15 +898,17 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 ### 21.2 Creazione del catalogo
 
-**1.** Creare eventuali sottovoci riutilizzabili con valori predefiniti.
+**1.** Aprire il Catalogo sulla raccolta dei Template e creare un template con una o più voci principali.
 
-**2.** Creare un template con una o più voci principali.
+**2.** Per ciascuna voce, aggiungere rapidamente le normali attività indicando descrizione e durata esplicita.
 
-**3.** Per ciascuna voce, aggiungere sottovoci dal catalogo o crearle direttamente.
+**3.** Quando necessario, aggiungere Spese, Trasferte o copie di sottovoci riutilizzabili.
 
 **4.** Impostare eventuale prezzo di riferimento e mese/anno.
 
-**5.** Creare eventuali gruppi di varianti, opzioni, sottovoci prodotte dalle opzioni ed eventuali default.
+**5.** Creare solo quando servono eventuali gruppi di varianti, opzioni, sottovoci prodotte dalle opzioni ed eventuali default; un'opzione “Nessuna” produce zero sottovoci e non un Tempo da zero minuti.
+
+**6.** Creare o modificare separatamente eventuali sottovoci riutilizzabili del Catalogo.
 
 ### 21.3 Creazione di un preventivo
 
@@ -910,7 +916,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **2.** Se necessario, selezionare una Sede principale del cliente o un'Altra sede; Cash ne conserva lo snapshot.
 
-**3.** Inserire un template dal catalogo oppure creare manualmente una o più voci.
+**3.** Se sono disponibili Template, favorirne l'inserimento come percorso ordinario; mantenere sempre disponibile la creazione manuale di una o più voci e usarla come percorso principale quando il Catalogo non contiene Template.
 
 **4.** Per i gruppi di varianti senza default, scegliere l'opzione richiesta.
 

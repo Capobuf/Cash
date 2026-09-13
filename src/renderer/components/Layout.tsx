@@ -37,7 +37,7 @@ const titles: Record<View, string> = {
 const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
   clients: "Clienti Fatture in Cloud e sedi correlate",
-  catalog: "Sottovoci e template riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
+  catalog: "Template e contenuti riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 
 export function GlobalError({ appState }: { appState: AppState }) {
