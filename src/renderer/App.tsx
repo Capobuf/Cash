@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { deleteLocalClient } from "../domain/clients"
 import { meta, type CashDocument, type Quote } from "../domain/model"
 import { copyProfileToYear } from "../domain/profiles"
 import { snapshotProfile } from "../domain/refresh"
@@ -76,16 +75,13 @@ export function App() {
   }
 
   const deleteEntity = (doc: CashDocument, target: DeleteTarget) => {
-    if (target.kind === "local-client") {
-      const result = deleteLocalClient(doc, target.id)
-      if (!result.ok) { appState.setError(result.error); return }
-      appState.mutate((document) => { document.localClients = result.value.localClients })
-      return
-    }
+    if (target.kind === "local-client") return
     if (target.kind === "profile") {
       const references = doc.quotes.filter((quote) => quote.profileId === target.id).map((quote) => `${quote.date} · ${quote.items.map((item) => item.name).join(", ") || "preventivo incompleto"}`)
       if (references.length) { appState.setError({ code: "CONFLICT", field: "profile", message: "Il profilo è ancora il riferimento corrente di uno o più preventivi.", details: references }); return }
     }
+    if (target.kind === "site" && doc.settings.defaultDepartureSiteId === target.id) { appState.setError({ code: "CONFLICT", message: "La Sede è la partenza predefinita.", action: "Scegli o rimuovi prima la partenza predefinita." }); return }
+    if (target.kind === "vehicle" && doc.settings.defaultVehicleId === target.id) { appState.setError({ code: "CONFLICT", message: "Il Veicolo è quello predefinito.", action: "Scegli o rimuovi prima il Veicolo predefinito." }); return }
     appState.mutate((document) => {
       if (target.kind === "cost") document.businessCosts = document.businessCosts.filter((entry) => entry.id !== target.id)
       else if (target.kind === "vehicle") document.vehicles = document.vehicles.filter((entry) => entry.id !== target.id)

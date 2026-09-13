@@ -8,7 +8,7 @@ import { cashDocumentSchema, documentHeaderSchema, parseDocument, validationErro
 
 export interface ConcurrencyToken { documentId: string; revision: number; fingerprint: string }
 export interface ArchiveSession { path: string; document?: CashDocument; token: ConcurrencyToken; readOnly: boolean; headerOnly?: true }
-export interface MigrationPreview { fromVersion: number; toVersion: number; changes: string[]; backupPath: string }
+export interface MigrationPreview { fromVersion: number; toVersion: number; changes: string[]; blockers: string[]; backupPath: string }
 
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const encode = (document: CashDocument): Buffer => Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8');
@@ -59,16 +59,19 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
   const inspection = await inspectArchive(path);
   if (!inspection.ok) return inspection;
   const fromVersion = inspection.value.header.schemaVersion;
-  if (fromVersion !== 1 && fromVersion !== 2)
-    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi 1 e 2.' });
+  if (fromVersion < 1 || fromVersion > 3)
+    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 3.' });
   const changes = fromVersion === 1 ? [
     'Aggiunge l’anagrafica Clienti locali vuota.',
     'Imposta Fatture in Cloud su Disattivata conservando i riferimenti non segreti.',
     'Aggiunge fase attività, aliquote 5%/15% e conferme ai profili; i profili diventano Da verificare.',
     'Marca come Fatture in Cloud i riferimenti cliente e gli snapshot esistenti.',
   ] : [];
-  changes.push('Converte automaticamente i consumi dei carburanti liquidi da l/100 km a km/l.');
-  return ok({ fromVersion, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes });
+  if(fromVersion<=2)changes.push('Converte automaticamente i consumi dei carburanti liquidi da l/100 km a km/l.');
+  changes.push('Rimuove velocità media e anagrafica clienti locale non previste dalla v0.6.', 'Introduce coordinate delle Sedi, default globali e Trasferte con Partenza/Destinazione.');
+  const bytes=await readFile(path);const raw=JSON.parse(bytes.toString('utf8')) as Record<string,unknown>;
+  const blockers=findV3Blockers(fromVersion===1?migrateV2Record(migrateV1(raw)):fromVersion===2?migrateV2Record(raw):raw);
+  return ok({ fromVersion, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes, blockers });
 }
 
 function migrateV1(raw: Record<string, unknown>): Record<string, unknown> {
@@ -100,14 +103,35 @@ function migrateV1(raw: Record<string, unknown>): Record<string, unknown> {
       fic: { enabled: false, ...(Object.keys(legacyReferences).length ? { legacyReferences } : {}) } } };
 }
 
-function migrateV2(raw: Record<string, unknown>): CashDocument {
+function migrateV2Record(raw: Record<string, unknown>): Record<string, unknown> {
   const vehicles = ((raw.vehicles ?? []) as Array<Record<string, unknown>>).map(vehicle => {
     if (vehicle.consumptionUnit !== 'l/100km') return vehicle;
     const consumption = new Decimal(100).div(String(vehicle.consumption))
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
     return { ...vehicle, consumption, consumptionUnit: 'km/l' };
   });
-  return parseDocument({ ...raw, schemaVersion: CURRENT_SCHEMA_VERSION, vehicles });
+  return { ...raw, schemaVersion: 3, vehicles };
+}
+
+function findV3Blockers(raw: Record<string, unknown>): string[] {
+  const blockers:string[]=[];
+  if(Array.isArray(raw.localClients)&&raw.localClients.length)blockers.push('L’archivio contiene Clienti locali, che non possono essere convertiti automaticamente in Clienti Fatture in Cloud.');
+  const sites=Array.isArray(raw.sites)?raw.sites as Array<Record<string,unknown>>:[];
+  if(sites.some(site=>site.oneWayKm!==undefined))blockers.push('Una o più Sedi contengono oneWayKm, che non identifica una coppia Partenza/Destinazione.');
+  if(sites.some(site=>(site.client as Record<string,unknown>|undefined)?.source==='local'))blockers.push('Una o più Sedi fanno riferimento a Clienti locali.');
+  const quotes=Array.isArray(raw.quotes)?raw.quotes as Array<Record<string,unknown>>:[];
+  if(quotes.some(quote=>(quote.client as Record<string,unknown>|undefined)?.source==='local'))blockers.push('Uno o più preventivi contengono snapshot di Clienti locali.');
+  const hasTravel=quotes.some(quote=>Array.isArray(quote.items)&&(quote.items as Array<Record<string,unknown>>).some(item=>Array.isArray(item.subItems)&&(item.subItems as Array<Record<string,unknown>>).some(sub=>sub.kind==='travel')));
+  if(hasTravel)blockers.push('Una o più Trasferte usano il precedente modello a Sede singola/velocità media e non possono essere reinterpretate senza inventare dati.');
+  return blockers;
+}
+
+function migrateV3(raw: Record<string, unknown>): CashDocument {
+  const profiles=(raw.profiles as Array<Record<string,unknown>>??[]).map(profile=>({ ...profile, capacity:{...(profile.capacity as Record<string,unknown>),travelSpeedKmh:undefined} }));
+  const sites=(raw.sites as Array<Record<string,unknown>>??[]).map(({oneWayKm:_oneWayKm,...site})=>site);
+  const {localClients:_localClients,...withoutClients}=raw;
+  return parseDocument({ ...withoutClients, schemaVersion:CURRENT_SCHEMA_VERSION, profiles, sites,
+    settings:{...(raw.settings as Record<string,unknown>),defaultDepartureSiteId:undefined,defaultVehicleId:undefined} });
 }
 
 export async function migrateArchive(path: string): Promise<Result<ArchiveSession>> {
@@ -117,7 +141,9 @@ export async function migrateArchive(path: string): Promise<Result<ArchiveSessio
     const parsed = parseJson(before); if (!parsed.ok) return parsed;
     const preview = await previewMigration(path); if (!preview.ok) return preview;
     const raw = parsed.value as Record<string, unknown>;
-    const migrated = migrateV2(preview.value.fromVersion === 1 ? migrateV1(raw) : raw);
+    if(preview.value.blockers.length)return err({code:'MIGRATION_REQUIRED',source:'archive',message:'La migrazione automatica è bloccata per evitare una conversione arbitraria dei dati storici.',action:'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.',details:preview.value.blockers});
+    const v3=preview.value.fromVersion===1?migrateV2Record(migrateV1(raw)):preview.value.fromVersion===2?migrateV2Record(raw):raw;
+    const migrated = migrateV3(v3);
     await copyFile(path, preview.value.backupPath);
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
     const bytes = encode(migrated);

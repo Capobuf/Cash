@@ -449,7 +449,7 @@ Nel flusso di creazione o modifica della Sede l'utente può inserire un indirizz
 
 Se è stato inserito un indirizzo, Cash interroga OpenRouteService, mostra i risultati disponibili e richiede all'utente di scegliere quello corretto. Se esistono più corrispondenze non seleziona automaticamente la prima. Dopo la scelta conserva l'indirizzo selezionato e le coordinate restituite.
 
-Se sono state inserite coordinate valide, Cash può usarle direttamente per il routing e può chiedere a OpenRouteService un indirizzo leggibile tramite geocodifica inversa. La mancanza di un indirizzo leggibile non rende inutilizzabili coordinate valide inserite esplicitamente dall'utente.
+Se sono state inserite coordinate valide, Cash accetta nell'interfaccia il formato usato da Google Maps, **latitudine, longitudine**, lo converte internamente nell'ordine richiesto da OpenRouteService e può usarlo direttamente per il routing. Cash può inoltre chiedere a OpenRouteService un indirizzo leggibile tramite geocodifica inversa. La mancanza di un indirizzo leggibile non rende inutilizzabili coordinate valide inserite esplicitamente dall'utente.
 
 La Sede non possiede uno stato permanente **Indirizzo verificato**. Se l'utente modifica indirizzo o coordinate dopo una ricerca, le coordinate precedentemente associate vengono invalidate rispetto al nuovo valore e non possono essere usate per un nuovo calcolo automatico finché l'utente non esegue nuovamente **Cerca**. Le coordinate esplicite valide confermate dalla ricerca restano utilizzabili anche senza indirizzo leggibile.
 

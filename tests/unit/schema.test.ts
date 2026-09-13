@@ -2,17 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createBlankProfile, createEmptyDocument, createFiscalPreset2026, meta } from '../../src/domain/model';
 import { cashDocumentSchema } from '../../src/domain/schema';
 
-describe('schema archivio v3',()=>{
-  it('accetta un profilo vuoto non confermato ma rifiuta precisioni oltre i limiti',()=>{
-    const blank=createEmptyDocument();blank.profiles.push(createBlankProfile(2027));expect(cashDocumentSchema.safeParse(blank).success).toBe(true);
-    const invalid=structuredClone(blank);invalid.businessCosts.push({...meta(),category:'Software',description:'Servizio',monthlyAmount:'1.001'});
-    expect(cashDocumentSchema.safeParse(invalid).success).toBe(false);
-  });
-  it('rifiuta profili annuali duplicati, conferme fiscali mancanti e riferimenti locali orfani',()=>{
-    const document=createEmptyDocument();const profile=createFiscalPreset2026();profile.confirmed=true;document.profiles.push(profile,{...structuredClone(profile),...meta()});
-    document.sites.push({...meta(),name:'Cliente',address:'Via Roma',client:{source:'local',localClientId:meta().id,displayName:'Orfano'}});
-    const result=cashDocumentSchema.safeParse(document);expect(result.success).toBe(false);
-    if(!result.success)expect(result.error.issues.map(issue=>issue.message)).toEqual(expect.arrayContaining(['esiste già un profilo per questo anno','Cliente locale referenziato inesistente']));
-  });
+describe('schema archivio v4',()=>{
+  it('accetta coordinate risolte valide e rifiuta precisioni oltre i limiti',()=>{const document=createEmptyDocument();document.profiles.push(createBlankProfile(2027));document.sites.push({...meta(),name:'Studio',address:'Roma',location:{inputKind:'address',inputValue:'Roma',coordinates:{longitude:'12.4964',latitude:'41.9028'}}});expect(cashDocumentSchema.safeParse(document).success).toBe(true);const invalid=structuredClone(document);invalid.businessCosts.push({...meta(),category:'Software',description:'Servizio',monthlyAmount:'1.001'});expect(cashDocumentSchema.safeParse(invalid).success).toBe(false);});
+  it('rifiuta profili annuali duplicati e default orfani',()=>{const document=createEmptyDocument();const profile=createFiscalPreset2026();document.profiles.push(profile,{...structuredClone(profile),...meta()});document.settings.defaultDepartureSiteId=meta().id;document.settings.defaultVehicleId=meta().id;const result=cashDocumentSchema.safeParse(document);expect(result.success).toBe(false);if(!result.success)expect(result.error.issues.map(issue=>issue.message)).toEqual(expect.arrayContaining(['esiste già un profilo per questo anno','Sede di partenza predefinita inesistente','Veicolo predefinito inesistente']));});
+  it('rifiuta coordinate fuori intervallo',()=>{const document=createEmptyDocument();document.sites.push({...meta(),name:'Errata',location:{inputKind:'coordinates',inputValue:'200, 45',coordinates:{longitude:'200',latitude:'45'}}});expect(cashDocumentSchema.safeParse(document).success).toBe(false);});
   it('richiede configurazione completa quando Fatture in Cloud è attivo',()=>{const document=createEmptyDocument();document.settings.fic.enabled=true;expect(cashDocumentSchema.safeParse(document).success).toBe(false);});
 });

@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -6,13 +6,13 @@ export type DecimalString = string;
 export type CashErrorCode =
   | 'VALIDATION' | 'MISSING_DATA' | 'SOURCE_UNAVAILABLE' | 'SOURCE_INVALID'
   | 'CONFLICT' | 'SCHEMA_NEWER' | 'MIGRATION_REQUIRED' | 'CANCELLED'
-  | 'EXPORT_UNCERTAIN' | 'CREDENTIALS' | 'IO';
+  | 'EXPORT_UNCERTAIN' | 'CREDENTIALS' | 'AUTHENTICATION' | 'RATE_LIMIT' | 'IO';
 
 export interface CashError {
   code: CashErrorCode;
   message: string;
   field?: string;
-  source?: 'archive' | 'MIMIT' | 'ISTAT' | 'FattureInCloud' | 'credentials';
+  source?: 'archive' | 'MIMIT' | 'ISTAT' | 'FattureInCloud' | 'OpenRouteService' | 'credentials';
   action?: string;
   details?: string[];
 }
@@ -45,7 +45,6 @@ export interface CapacityParameters {
   unplannedDays: number;
   clientTimePercentage: DecimalString;
   localHolidays: LocalHoliday[];
-  travelSpeedKmh?: DecimalString;
 }
 
 export interface EconomicProfile extends EntityMeta {
@@ -77,27 +76,32 @@ export interface Vehicle extends EntityMeta {
   annualMaintenance: DecimalString;
 }
 
-export interface LocalClient extends EntityMeta { displayName: string; vatNumber?: string }
-export interface LocalClientRef { source: 'local'; localClientId: string; displayName: string }
 export interface FicClientRef { source: 'fatture_in_cloud'; companyId: string; clientId: string; displayName: string }
-export type ClientRef = LocalClientRef | FicClientRef;
-export interface LocalClientSnapshot extends LocalClientRef { vatNumber?: string }
 export interface FicClientSnapshot extends FicClientRef { vatNumber?: string }
 export interface FicClientDetailField { key: string; value: string }
 export interface FicClientDetails extends FicClientSnapshot { fields: FicClientDetailField[] }
-export type ClientSnapshot = LocalClientSnapshot | FicClientSnapshot;
+export type ClientSnapshot = FicClientSnapshot;
+export interface Coordinates { longitude: DecimalString; latitude: DecimalString }
+export interface ResolvedLocation {
+  coordinates: Coordinates;
+  inputKind: 'address' | 'coordinates';
+  inputValue: string;
+}
 export interface Site extends EntityMeta {
   name: string;
-  address: string;
-  client?: ClientRef;
-  oneWayKm?: DecimalString;
+  address?: string;
+  client?: FicClientRef;
+  location?: ResolvedLocation;
 }
 export interface SiteSnapshot {
   sourceId: string;
   name: string;
-  address: string;
-  oneWayKm?: DecimalString;
+  address?: string;
+  coordinates?: Coordinates;
 }
+
+export interface GeocodingResult { id: string; label: string; coordinates: Coordinates }
+export interface RouteResult { distanceMeters: DecimalString; durationSeconds: DecimalString }
 
 export interface FuelEvidence {
   fuel: Fuel;
@@ -132,17 +136,21 @@ export interface TimeSubItem extends BaseSubItem { kind: 'time'; minutes: number
 export interface ExpenseSubItem extends BaseSubItem { kind: 'expense'; amount: DecimalString }
 export interface TravelSubItem extends BaseSubItem {
   kind: 'travel';
-  site: SiteSnapshot;
-  vehicleId: string;
+  departure?: SiteSnapshot;
+  destination?: SiteSnapshot;
+  vehicleId?: string;
+  vehicleName?: string;
   roundTrip: boolean;
   occurrences: number;
-  timeMode: 'automatic' | 'manual';
-  manualMinutesPerOccurrence?: number;
-  totalMinutes: number;
-  totalDistanceKm: DecimalString;
-  vehicleCostPerKm: DecimalString;
-  totalCost: DecimalString;
-  fuelEvidence: FuelEvidence;
+  distanceKmPerOccurrence?: DecimalString;
+  travelMinutesPerOccurrence?: number;
+  distanceSource?: 'route' | 'manual';
+  durationSource?: 'route' | 'manual';
+  totalMinutes?: number;
+  totalDistanceKm?: DecimalString;
+  vehicleCostPerKm?: DecimalString;
+  totalCost?: DecimalString;
+  fuelEvidence?: FuelEvidence;
 }
 export type QuoteSubItem = TimeSubItem | ExpenseSubItem | TravelSubItem;
 
@@ -150,13 +158,13 @@ export type ReusableSubItem =
   | (EntityMeta & { kind: 'time'; description: string; minutes: number })
   | (EntityMeta & { kind: 'expense'; description: string; amount: DecimalString })
   | (EntityMeta & { kind: 'travel'; description: string; roundTrip: boolean; occurrences: number;
-      timeMode: 'automatic' | 'manual'; manualMinutesPerOccurrence?: number });
+      distanceKmPerOccurrence?: DecimalString; travelMinutesPerOccurrence?: number });
 
 export type SubItemDefinition =
   | { kind: 'time'; description: string; minutes: number }
   | { kind: 'expense'; description: string; amount: DecimalString }
   | { kind: 'travel'; description: string; roundTrip: boolean; occurrences: number;
-      timeMode: 'automatic' | 'manual'; manualMinutesPerOccurrence?: number };
+      distanceKmPerOccurrence?: DecimalString; travelMinutesPerOccurrence?: number };
 export interface VariantOption extends EntityMeta { name: string; subItems: SubItemDefinition[] }
 export interface VariantGroup extends EntityMeta {
   name: string;
@@ -222,6 +230,8 @@ export interface Quote extends EntityMeta {
 
 export interface SharedSettings {
   fuelTerritory?: string;
+  defaultDepartureSiteId?: string;
+  defaultVehicleId?: string;
   fic: {
     enabled: boolean;
     company?: { id: string; name: string };
@@ -251,7 +261,6 @@ export interface CashDocument {
   updatedAt: string;
   settings: SharedSettings;
   profiles: EconomicProfile[];
-  localClients: LocalClient[];
   businessCosts: BusinessCost[];
   vehicles: Vehicle[];
   sites: Site[];
@@ -274,7 +283,6 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   updatedAt: now,
   settings: { fic: { enabled: false } },
   profiles: [],
-  localClients: [],
   businessCosts: [],
   vehicles: [],
   sites: [],

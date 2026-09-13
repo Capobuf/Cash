@@ -2,6 +2,7 @@ import { useState } from "react"
 import { calculateTravel, calculateVehicleCost } from "../../domain/calculations"
 import { cloneTemplate, reusableFromQuoteSubItem, templateFromQuote } from "../../domain/catalog"
 import { buildExportLines, createPendingAttempt } from "../../domain/export"
+import { snapshotSite } from "../../domain/locations"
 import { meta, type CashDocument, type FicClientSnapshot, type Quote, type QuoteItem, type QuoteSubItem, type ReusableSubItem, type SubItemDefinition, type VariantGroup } from "../../domain/model"
 import { refreshQuote, snapshotProfile } from "../../domain/refresh"
 import { applyVariantSelections, changeVariant, validateVariantGroups } from "../../domain/variants"
@@ -10,19 +11,22 @@ import type { DeleteTarget } from "../types"
 
 export interface TravelInput {
   description: string
-  siteId: string
-  vehicleId: string
+  departureSiteId?: string
+  destinationSiteId?: string
+  vehicleId?: string
   roundTrip: boolean
   occurrences: number
-  timeMode: "automatic" | "manual"
-  manualMinutesPerOccurrence?: number
+  distanceKmPerOccurrence?: string
+  travelMinutesPerOccurrence?: number
+  distanceSource?: "route" | "manual"
+  durationSource?: "route" | "manual"
 }
 
 export type SimpleSubInput =
   | { kind: "time"; description: string; minutes: number }
   | { kind: "expense"; description: string; amount: string }
 
-interface TravelContext { siteId?: string; vehicleId?: string }
+interface TravelContext { siteId?: string; departureSiteId?: string; destinationSiteId?: string; vehicleId?: string }
 
 export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuoteId, requestDelete }: {
   doc: CashDocument
@@ -34,34 +38,46 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
   const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([])
   const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId)
 
-  const materializeTravel = async (definition: Extract<SubItemDefinition, { kind: "travel" }> | TravelInput, targetQuote: Quote, context?: TravelContext): Promise<QuoteSubItem | undefined> => {
-    const siteId = "siteId" in definition ? definition.siteId : context?.siteId
-    const vehicleId = "vehicleId" in definition ? definition.vehicleId : context?.vehicleId
-    const site = doc.sites.find((entry) => entry.id === siteId)
+  const materializeTravel = async (definition: Extract<SubItemDefinition, { kind: "travel" }> | TravelInput, targetQuote: Quote, context?: TravelContext, previous?: Extract<QuoteSubItem, { kind: "travel" }>): Promise<QuoteSubItem | undefined> => {
+    const direct = "departureSiteId" in definition ? definition : undefined
+    const departureId = direct?.departureSiteId || context?.departureSiteId || doc.settings.defaultDepartureSiteId
+    const destinationId = direct?.destinationSiteId || context?.destinationSiteId || context?.siteId || targetQuote.mainSite?.sourceId
+    const vehicleId = direct?.vehicleId || context?.vehicleId || doc.settings.defaultVehicleId
+    const departure = doc.sites.find((entry) => entry.id === departureId)
+    const destination = doc.sites.find((entry) => entry.id === destinationId)
     const vehicle = doc.vehicles.find((entry) => entry.id === vehicleId)
-    const profile = doc.profiles.find((entry) => entry.id === targetQuote.profileId)
-    if (!doc.settings.fuelTerritory || !site || !vehicle) {
-      appState.setError({ code: "MISSING_DATA", message: "La trasferta non può essere calcolata.", action: "Seleziona una Sede e un Veicolo e configura il territorio MIMIT." })
+    if (direct?.destinationSiteId && (!targetQuote.client || destination?.client?.companyId !== targetQuote.client.companyId || destination.client.clientId !== targetQuote.client.clientId)) {
+      appState.setError({ code: "VALIDATION", field: "destination", message: "La Destinazione deve essere una Sede del Cliente del Preventivo." })
       return undefined
     }
-    const fuel = await window.cash.mimit.latestFuelPrice({ territory: doc.settings.fuelTerritory, fuel: vehicle.fuel })
-    if (!fuel.ok) { appState.setError(fuel.error); return undefined }
-    const vehicleCost = calculateVehicleCost(vehicle, fuel.value)
-    if (!vehicleCost.ok) { appState.setError(vehicleCost.error); return undefined }
-    const manualMinutes = definition.timeMode === "manual" ? definition.manualMinutesPerOccurrence : undefined
-    const calculated = calculateTravel({
-      oneWayKm: site.oneWayKm, roundTrip: definition.roundTrip, occurrences: definition.occurrences,
-      vehicleCostPerKm: vehicleCost.value.costPerKm,
-      ...(manualMinutes ? { manualMinutesPerOccurrence: manualMinutes } : { speedKmh: profile?.capacity.travelSpeedKmh }),
-    })
-    if (!calculated.ok) { appState.setError(calculated.error); return undefined }
-    return {
-      ...meta(), kind: "travel", description: definition.description,
-      site: { sourceId: site.id, name: site.name, address: site.address, ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}) },
-      vehicleId: vehicle.id, roundTrip: definition.roundTrip, occurrences: definition.occurrences, timeMode: definition.timeMode,
-      ...(manualMinutes ? { manualMinutesPerOccurrence: manualMinutes } : {}),
-      ...calculated.value, vehicleCostPerKm: vehicleCost.value.costPerKm, fuelEvidence: fuel.value,
+    const distance = definition.distanceKmPerOccurrence
+    const minutes = definition.travelMinutesPerOccurrence
+    const travel: Extract<QuoteSubItem, { kind: "travel" }> = {
+      ...meta(), kind: "travel", description: definition.description.trim(),
+      ...(departure ? { departure: snapshotSite(departure) } : {}),
+      ...(destination ? { destination: snapshotSite(destination) } : {}),
+      ...(vehicle ? { vehicleId: vehicle.id, vehicleName: vehicle.name } : {}),
+      roundTrip: definition.roundTrip, occurrences: definition.occurrences,
+      ...(distance !== undefined ? { distanceKmPerOccurrence: distance, distanceSource: direct?.distanceSource ?? "manual" as const } : {}),
+      ...(minutes !== undefined ? { travelMinutesPerOccurrence: minutes, durationSource: direct?.durationSource ?? "manual" as const } : {}),
     }
+    if (distance === undefined && minutes === undefined) return travel
+    const totals = calculateTravel({ distanceKmPerOccurrence: distance, travelMinutesPerOccurrence: minutes, occurrences: definition.occurrences })
+    if (!totals.ok) { appState.setError(totals.error); return undefined }
+    const withTotals = { ...travel, ...totals.value }
+    if (!vehicle || distance === undefined) return withTotals
+    if (previous?.vehicleId === vehicle.id && previous.vehicleCostPerKm && previous.fuelEvidence) {
+      const calculated = calculateTravel({ distanceKmPerOccurrence: distance, travelMinutesPerOccurrence: minutes, occurrences: definition.occurrences, vehicleCostPerKm: previous.vehicleCostPerKm })
+      if (calculated.ok) return { ...withTotals, ...calculated.value, vehicleCostPerKm: previous.vehicleCostPerKm, fuelEvidence: previous.fuelEvidence }
+    }
+    if (!doc.settings.fuelTerritory) return withTotals
+    const fuel = await window.cash.mimit.latestFuelPrice({ territory: doc.settings.fuelTerritory, fuel: vehicle.fuel })
+    if (!fuel.ok) { appState.setError(fuel.error); return withTotals }
+    const vehicleCost = calculateVehicleCost(vehicle, fuel.value)
+    if (!vehicleCost.ok) { appState.setError(vehicleCost.error); return withTotals }
+    const calculated = calculateTravel({ distanceKmPerOccurrence: distance, travelMinutesPerOccurrence: minutes, occurrences: definition.occurrences, vehicleCostPerKm: vehicleCost.value.costPerKm })
+    if (!calculated.ok) { appState.setError(calculated.error); return withTotals }
+    return { ...withTotals, ...calculated.value, vehicleCostPerKm: vehicleCost.value.costPerKm, fuelEvidence: fuel.value }
   }
 
   const newQuote = () => {
@@ -85,7 +101,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     appState.mutate((document) => {
       const target = document.quotes.find((entry) => entry.id === quote.id)!
       target.date = date; target.profileId = profile?.id; target.profileSnapshot = snapshot?.ok ? snapshot.value : undefined
-      target.mainSite = site ? { sourceId: site.id, name: site.name, address: site.address, ...(site.oneWayKm !== undefined ? { oneWayKm: site.oneWayKm } : {}) } : undefined
+      target.mainSite = site ? snapshotSite(site) : undefined
       if (updates.commission !== undefined) target.commission = updates.commission ? Number(updates.commission).toFixed(2) : undefined
     })
     return "updated"
@@ -146,7 +162,8 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const saveTravel = async (itemId: string, input: TravelInput, subId?: string) => {
     if (!quote) return false
-    const built = await materializeTravel(input, quote)
+    const previous = quote.items.find((entry) => entry.id === itemId)?.subItems.find((entry) => entry.id === subId)
+    const built = await materializeTravel(input, quote, undefined, previous?.kind === "travel" ? previous : undefined)
     if (!built) return false
     appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
@@ -258,7 +275,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     if (!quote) return false
     const result = await refreshQuote(quote, {
       profileById: (id) => doc.profiles.find((entry) => entry.id === id), costs: doc.businessCosts,
-      siteById: (id) => doc.sites.find((entry) => entry.id === id), vehicleById: (id) => doc.vehicles.find((entry) => entry.id === id),
+      vehicleById: (id) => doc.vehicles.find((entry) => entry.id === id),
       fuel: (vehicle) => doc.settings.fuelTerritory ? window.cash.mimit.latestFuelPrice({ territory: doc.settings.fuelTerritory, fuel: vehicle.fuel }) : Promise.resolve({ ok: false, error: { code: "MISSING_DATA", field: "fuelTerritory", message: "Regione MIMIT non configurata." } }),
       foi: (amount, period) => window.cash.istat.revalue({ amount, fromPeriod: period }),
     })

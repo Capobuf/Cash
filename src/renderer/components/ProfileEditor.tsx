@@ -29,7 +29,7 @@ function draftFromForm(source: EconomicProfile, form: HTMLFormElement, localHoli
   Object.assign(draft.capacity, {
     hoursPerDay: get("hoursPerDay"), clientTimePercentage: get("clientTimePercentage"),
     vacationDays: Number(get("vacationDays")), unplannedDays: Number(get("unplannedDays")),
-    travelSpeedKmh: get("travelSpeedKmh") || undefined, localHolidays,
+    localHolidays,
   })
   Object.assign(draft.fiscal, {
     atecoCode: get("atecoCode"), profitabilityCoefficient: get("profitabilityCoefficient"), contributionRate: get("contributionRate"),
@@ -95,7 +95,6 @@ export function ProfileEditor({ profile, doc, appState, onCopy }: { profile: Eco
             <NumberField id="clientTimePercentage" label="Tempo dedicabile ai clienti" value={profile.capacity.clientTimePercentage} suffix="%" step={0.0001} max={100} />
             <NumberField id="vacationDays" label="Ferie" value={profile.capacity.vacationDays} suffix="giorni" step={1} />
             <NumberField id="unplannedDays" label="Malattia e imprevisti" value={profile.capacity.unplannedDays} suffix="giorni" step={1} />
-            <NumberField id="travelSpeedKmh" label="Velocità media trasferta" value={profile.capacity.travelSpeedKmh ?? ""} suffix="km/h" step={0.1} required={false} />
           </FieldGroup></Section>
           <div className="rounded-lg border"><div className="flex items-center justify-between border-b p-4"><div><p className="font-medium">Festività italiane e locali</p><p className="text-sm text-muted-foreground">Le festività nazionali sono incluse automaticamente; puoi aggiungere ricorrenze locali o date specifiche.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setHolidayIndex(null)}><CalendarPlus />Aggiungi festività locale</Button></div><Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Tipo</TableHead><TableHead>Data</TableHead><TableHead className="w-12" /></TableRow></TableHeader><TableBody>{nationalHolidays.map((holiday) => <TableRow key={`national-${holiday.date}`}><TableCell className="font-medium">{holiday.name}</TableCell><TableCell><Badge variant="outline">Nazionale</Badge></TableCell><TableCell>{holiday.date.split("-").reverse().join("/")}</TableCell><TableCell /></TableRow>)}{holidays.map((holiday, index) => <TableRow key={`${holiday.name}-${index}`}><TableCell className="font-medium">{holiday.name}</TableCell><TableCell>{holiday.kind === "recurring" ? "Locale ricorrente" : "Locale specifica"}</TableCell><TableCell>{holiday.kind === "recurring" ? `${String(holiday.day).padStart(2, "0")}/${String(holiday.month).padStart(2, "0")}` : holiday.date.split("-").reverse().join("/")}</TableCell><TableCell><DropdownMenu><DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={`Azioni per ${holiday.name}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setHolidayIndex(index)}>Modifica</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setHolidays((current) => current.filter((_, candidate) => candidate !== index))}>Elimina</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell></TableRow>)}</TableBody></Table></div>
           </TabsContent>

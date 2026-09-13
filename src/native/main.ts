@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { join } from 'node:path';
-import { createEmptyDocument, err, ok, type CashDocument, type Fuel } from '../domain/model';
+import { createEmptyDocument, err, ok, type CashDocument, type Coordinates, type Fuel, type Result } from '../domain/model';
 import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigration, restoreBackup, saveArchive, saveRecoveryCopy, type ArchiveSession, type ConcurrencyToken } from './persistence';
-import { deleteFicToken, hasFicToken, requireFicToken, setFicToken } from './credentials';
+import { deleteFicToken, hasFicToken, hasOrsApiKey, requireFicToken, requireOrsApiKey, setFicToken, setOrsApiKey } from './credentials';
 import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
 import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
@@ -10,6 +10,7 @@ import { IPC } from '../shared/ipc';
 import { requireActiveFic } from '../domain/integration';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from './fic-link';
 import { readPreferences, rememberArchive, setFicClientId } from './preferences';
+import { calculateRoute, reverseCoordinates, searchAddress, verifyConnection } from './integrations/openrouteservice';
 
 const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a'];
 
@@ -24,6 +25,11 @@ function activeFicCompany(companyId: string): boolean {
   return current?.document ? requireActiveFic(current.document.settings, companyId).ok : false;
 }
 const ficLinkServices:FicLinkServices={verify:verifyActivation,hasToken:hasFicToken,readToken:requireFicToken,writeToken:setFicToken,deleteToken:deleteFicToken,save:saveArchive};
+async function observedOrs<T>(operation: string, task: Promise<Result<T>>): Promise<Result<T>> {
+  const started = Date.now(); const result = await task;
+  if (!result.ok) console.warn('[OpenRouteService] request failed', { operation, code: result.error.code, milliseconds: Date.now() - started, diagnostic: result.error.details?.[0] });
+  return result;
+}
 async function selectOpen() {
   const choice = await dialog.showOpenDialog({ title: 'Apri archivio Cash', properties: ['openFile'], filters: [{ name: 'Archivio Cash', extensions: ['json'] }] });
   if (choice.canceled || !choice.filePaths[0]) return err({ code: 'CANCELLED', message: 'Apertura annullata.' });
@@ -31,6 +37,7 @@ async function selectOpen() {
   if (!result.ok && result.error.code === 'MIGRATION_REQUIRED') {
     const preview = await previewMigration(choice.filePaths[0]);
     if (!preview.ok) return preview;
+    if (preview.value.blockers.length) return err({ code: 'MIGRATION_REQUIRED', source: 'archive', message: 'Migrazione automatica bloccata per preservare i dati storici.', action: 'Apri l’archivio con la versione precedente e correggi i dati indicati.', details: preview.value.blockers });
     const confirmation = await dialog.showMessageBox({ type: 'warning', title: 'Migrazione archivio Cash',
       message: `Migrare lo schema ${preview.value.fromVersion} allo schema ${preview.value.toVersion}?`,
       detail: `${preview.value.changes.join('\n')}\n\nBackup: ${preview.value.backupPath}`,
@@ -82,6 +89,12 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.tokenSet, (_event, value: unknown) => setFicToken(typeof value === 'string' ? value : ''));
   ipcMain.handle(IPC.mimitFuel, (_event, input: { territory: string; fuel: Fuel }) => latestFuelPrice(input.territory, input.fuel));
   ipcMain.handle(IPC.foiRevalue, (_event, input: { amount: string; fromPeriod: string }) => revalueFoi(input.amount, input.fromPeriod));
+  ipcMain.handle(IPC.orsHasKey, () => hasOrsApiKey());
+  ipcMain.handle(IPC.orsSetKey, (_event, value: unknown) => setOrsApiKey(typeof value === 'string' ? value : ''));
+  ipcMain.handle(IPC.orsVerify, async () => { const key = await requireOrsApiKey(); return key.ok ? observedOrs('verify', verifyConnection(key.value)) : key; });
+  ipcMain.handle(IPC.orsSearch, async (_event, address: unknown) => { const key = await requireOrsApiKey(); return key.ok ? observedOrs('search-address', searchAddress(typeof address === 'string' ? address : '', key.value)) : key; });
+  ipcMain.handle(IPC.orsReverse, async (_event, coordinates: Coordinates) => { const key = await requireOrsApiKey(); return key.ok ? observedOrs('reverse-coordinates', reverseCoordinates(coordinates, key.value)) : key; });
+  ipcMain.handle(IPC.orsRoute, async (_event, input: { departure: Coordinates; destination: Coordinates }) => { const key = await requireOrsApiKey(); return key.ok ? observedOrs('route', calculateRoute(input.departure, input.destination, key.value)) : key; });
   ipcMain.handle(IPC.ficSetupInfo, async () => ({ clientId: (await readPreferences()).ficClientId?.trim() ?? '', requiredScopes: FIC_SCOPES }));
   ipcMain.handle(IPC.ficSetClientId, async (_event, value: unknown) => {
     const clientId = typeof value === 'string' ? value.trim() : '';

@@ -40,7 +40,8 @@ export function reusableFromQuoteSubItem(source: QuoteSubItem): ReusableSubItem 
   if (source.kind === 'time') return { ...meta(), kind:'time', description:source.description, minutes:source.minutes };
   if (source.kind === 'expense') return { ...meta(), kind:'expense', description:source.description, amount:source.amount };
   return { ...meta(), kind:'travel', description:source.description, roundTrip:source.roundTrip, occurrences:source.occurrences,
-    timeMode:source.timeMode, ...(source.timeMode==='manual'&&source.manualMinutesPerOccurrence?{manualMinutesPerOccurrence:source.manualMinutesPerOccurrence}:{}) };
+    ...(source.distanceSource==='manual'&&source.distanceKmPerOccurrence!==undefined?{distanceKmPerOccurrence:source.distanceKmPerOccurrence}:{}),
+    ...(source.durationSource==='manual'&&source.travelMinutesPerOccurrence!==undefined?{travelMinutesPerOccurrence:source.travelMinutesPerOccurrence}:{}) };
 }
 
 export function templateFromQuote(name: string, items: QuoteItem[]): Result<Template> {
@@ -71,6 +72,8 @@ export function findLiveReferences(document: CashDocument, entityId: string): st
     }
   }
   if (document.settings.fic.product?.id === entityId) refs.push('Impostazione prodotto Consulenza');
+  if (document.settings.defaultDepartureSiteId === entityId) refs.push('Sede di partenza predefinita');
+  if (document.settings.defaultVehicleId === entityId) refs.push('Veicolo predefinito');
   return refs;
 }
 

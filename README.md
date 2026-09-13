@@ -36,19 +36,20 @@ Ogni salvataggio valido incrementa la revisione, conserva la versione precedente
 revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
-Gli archivi schema 1 richiedono anteprima e conferma prima della migrazione allo schema 2. La migrazione
-crea prima il backup, imposta Fatture in Cloud su `Disattivata`, conserva gli eventuali riferimenti non
-segreti e non converte gli snapshot remoti in Clienti locali. Uno schema più nuovo viene aperto soltanto
-in lettura.
+Gli archivi schema 1–3 richiedono anteprima e conferma prima della migrazione allo schema 4. La migrazione
+automatica procede solo per trasformazioni deterministiche. Se trova Clienti locali, `oneWayKm` o
+Trasferte del modello precedente, si arresta senza scrivere e indica i dati da ricostruire esplicitamente.
+Uno schema più nuovo viene aperto soltanto in lettura.
 
 ## Uso offline e fonti live
 
-Senza rete restano disponibili profili, Clienti locali, Sedi, catalogo, template, preventivi, snapshot
-e calcoli storici. Falliscono soltanto le azioni che chiedono un dato corrente:
+Senza rete restano disponibili profili, Sedi, catalogo, template, preventivi, snapshot, modifica manuale
+delle Trasferte e calcoli storici. Falliscono soltanto le azioni che chiedono un dato corrente:
 
 - prezzo regionale carburante MIMIT;
 - indice mensile FOI ISTAT senza tabacchi;
 - ricerca, verifica prodotto ed esportazione Fatture in Cloud quando il modulo è attivo.
+- geocodifica, reverse geocoding e calcolo percorso OpenRouteService.
 
 Cash non usa cache o sorgenti alternative come valori correnti. Un errore della fonte è mostrato e non
 modifica parzialmente il preventivo.
@@ -68,8 +69,15 @@ Cloud prevalgono su quelli manuali; i campi non esposti restano da compilare. Og
 separatamente. Disattivare il modulo conserva configurazione e token; `Rimuovi collegamento` elimina il
 token locale e i riferimenti condivisi, senza modificare snapshot o esportazioni storiche.
 
-Per un preventivo con Cliente locale, l’esportazione richiede sempre la selezione live esplicita di un
-cliente remoto della stessa azienda. Non vengono effettuati abbinamenti o fusioni automatiche.
+I Clienti sono recuperati esclusivamente da Fatture in Cloud. Cash conserva soltanto riferimenti e
+snapshot necessari a Sedi e Preventivi; non mantiene un’anagrafica Cliente locale.
+
+## OpenRouteService
+
+La API key si configura in **Impostazioni → Integrazioni**, viene salvata nel Gestore credenziali di
+Windows e verificata con una richiesta reale. Le Sedi vengono localizzate solo tramite “Cerca”. Il
+percorso di una Trasferta viene calcolato solo tramite “Calcola percorso”; distanza e tempo restano
+modificabili e non sono aggiornati automaticamente.
 
 ## Pacchetto Windows
 

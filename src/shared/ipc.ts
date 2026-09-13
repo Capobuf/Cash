@@ -1,5 +1,5 @@
 import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
-import type { CashDocument, CashError, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, Result } from '../domain/model';
+import type { CashDocument, CashError, Coordinates, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, GeocodingResult, Result, RouteResult } from '../domain/model';
 
 export const IPC = {
   archiveCreate: 'cash:archive:create', archiveOpen: 'cash:archive:open', archiveOpenLast: 'cash:archive:open-last', archiveSave: 'cash:archive:save',
@@ -9,6 +9,7 @@ export const IPC = {
   ficProduct: 'cash:fic:product', ficExport: 'cash:fic:export', ficWizardCompanies: 'cash:fic:wizard-companies',
   ficWizardProducts: 'cash:fic:wizard-products', ficWizardActivate: 'cash:fic:wizard-activate', ficRemoveLink: 'cash:fic:remove-link',
   ficSetupInfo: 'cash:fic:setup-info', ficSetClientId: 'cash:fic:set-client-id',
+  orsHasKey: 'cash:ors:has-key', orsSetKey: 'cash:ors:set-key', orsVerify: 'cash:ors:verify', orsSearch: 'cash:ors:search', orsReverse: 'cash:ors:reverse', orsRoute: 'cash:ors:route',
   appExternal: 'cash:app:external', appArchiveReloaded: 'cash:app:archive-reloaded', appDirty: 'cash:app:dirty', appCloseRequested: 'cash:app:close-requested', appResolveClose: 'cash:app:resolve-close',
 } as const;
 
@@ -28,6 +29,14 @@ export interface CashNativeApi {
   };
   mimit: { latestFuelPrice(input: { territory: string; fuel: Fuel }): Promise<Result<FuelEvidence>> };
   istat: { revalue(input: { amount: string; fromPeriod: string }): Promise<Result<FoiEvidence>> };
+  ors: {
+    hasApiKey(): Promise<Result<boolean>>;
+    setApiKey(apiKey: string): Promise<Result<void>>;
+    verify(): Promise<Result<void>>;
+    searchAddress(address: string): Promise<Result<GeocodingResult[]>>;
+    reverseCoordinates(coordinates: Coordinates): Promise<Result<GeocodingResult[]>>;
+    route(input: { departure: Coordinates; destination: Coordinates }): Promise<Result<RouteResult>>;
+  };
   fic: {
     setupInfo(): Promise<{ clientId: string; requiredScopes: string[] }>;
     setClientId(clientId: string): Promise<Result<{ clientId: string }>>;

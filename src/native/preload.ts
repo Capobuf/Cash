@@ -17,6 +17,14 @@ const api: CashNativeApi = {
   },
   mimit: { latestFuelPrice: input => ipcRenderer.invoke(IPC.mimitFuel, input) },
   istat: { revalue: input => ipcRenderer.invoke(IPC.foiRevalue, input) },
+  ors: {
+    hasApiKey: () => ipcRenderer.invoke(IPC.orsHasKey),
+    setApiKey: apiKey => ipcRenderer.invoke(IPC.orsSetKey, apiKey),
+    verify: () => ipcRenderer.invoke(IPC.orsVerify),
+    searchAddress: address => ipcRenderer.invoke(IPC.orsSearch, address),
+    reverseCoordinates: coordinates => ipcRenderer.invoke(IPC.orsReverse, coordinates),
+    route: input => ipcRenderer.invoke(IPC.orsRoute, input),
+  },
   fic: {
     setupInfo: () => ipcRenderer.invoke(IPC.ficSetupInfo),
     setClientId: clientId => ipcRenderer.invoke(IPC.ficSetClientId, clientId),

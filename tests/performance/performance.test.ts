@@ -20,7 +20,7 @@ describe('obiettivi prestazionali MVP',()=>{
 
   it('valida e salva un archivio di almeno 10 MB in meno di un secondo',async()=>{
     const dir=await mkdtemp(join(tmpdir(),'cash-performance-'));const path=join(dir,'Cash.data.json');const document=createEmptyDocument();
-    document.localClients.push({...meta(),displayName:`Cliente ${'x'.repeat(10*1024*1024)}`});
+    document.businessCosts.push({...meta(),category:'Dati',description:`Archivio ${'x'.repeat(10*1024*1024)}`,monthlyAmount:'0.00'});
     const created=await createArchive(path,document);if(!created.ok)throw new Error(created.error.message);
     expect((await stat(path)).size).toBeGreaterThanOrEqual(10*1024*1024);
     const started=performance.now();const saved=await saveArchive(path,created.value.document!,created.value.token);const elapsed=performance.now()-started;
