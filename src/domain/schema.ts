@@ -162,7 +162,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
   localClients: z.array(z.object({ ...entity, displayName: z.string().trim().min(1), vatNumber: z.string().optional() })),
   businessCosts: z.array(z.object({ ...entity, category: z.string().min(1), description: z.string().min(1), monthlyAmount: moneyInput })),
   vehicles: z.array(z.object({ ...entity, name: z.string().min(1), fuel, consumption: positiveConsumption,
-    consumptionUnit: z.enum(['l/100km', 'kg/100km']), annualKm: boundedDecimal(1,'0',undefined,true), annualInsurance: moneyInput,
+    consumptionUnit: z.enum(['km/l', 'kg/100km']), annualKm: boundedDecimal(1,'0',undefined,true), annualInsurance: moneyInput,
     annualTax: moneyInput, annualMaintenance: moneyInput })),
   sites: z.array(z.object({ ...entity, name: z.string().min(1), address: z.string().min(1), client: clientRefSchema.optional(), oneWayKm: distance.optional() })),
   catalog: z.object({ subItems: z.array(reusableSubItemSchema), templates: z.array(templateSchema) }),

@@ -29,7 +29,7 @@ describe('coordinatore autosalvataggio',()=>{
     const cash={archive:{save},setDirty:vi.fn()} as unknown as Window['cash'];
     vi.stubGlobal('window',{cash,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout,prompt:vi.fn()});
     const appState=new AppState();appState.acceptNativeSession(session(createEmptyDocument()));
-    appState.mutate(document=>document.vehicles.push({...meta(),name:'',fuel:'Benzina',consumption:'6.00',consumptionUnit:'l/100km',annualKm:'10000',annualInsurance:'0.00',annualTax:'0.00',annualMaintenance:'0.00'}));
+    appState.mutate(document=>document.vehicles.push({...meta(),name:'',fuel:'Benzina',consumption:'16.67',consumptionUnit:'km/l',annualKm:'10000',annualInsurance:'0.00',annualTax:'0.00',annualMaintenance:'0.00'}));
     expect(appState.document?.vehicles).toHaveLength(0);
     expect(appState.error?.code).toBe('VALIDATION');
     expect(appState.error?.details).toContain('Veicoli · 1 · nome: campo obbligatorio');

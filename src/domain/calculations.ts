@@ -109,11 +109,13 @@ export function calculateVehicleCost(vehicle: Vehicle, evidence: FuelEvidence): 
   try {
     if (evidence.fuel !== vehicle.fuel || evidence.mode !== modeForFuel(vehicle.fuel))
       return fail('Il dato MIMIT non corrisponde a carburante e modalità del veicolo.', 'fuelEvidence');
-    const expectedUnit = vehicle.consumptionUnit === 'l/100km' ? 'EUR/l' : 'EUR/kg';
+    const expectedUnit = vehicle.consumptionUnit === 'km/l' ? 'EUR/l' : 'EUR/kg';
     if (evidence.priceUnit !== expectedUnit) return fail('Unità di consumo e prezzo carburante incompatibili.', 'consumptionUnit');
     const consumption = d(vehicle.consumption), annualKm = d(vehicle.annualKm);
     if (consumption.lte(0) || annualKm.lte(0)) return fail('Consumo e km annui devono essere positivi.', 'vehicle');
-    const fuel = consumption.div(100).mul(evidence.price);
+    const fuel = vehicle.consumptionUnit === 'km/l'
+      ? d(evidence.price).div(consumption)
+      : consumption.div(100).mul(evidence.price);
     const annual = d(vehicle.annualInsurance).plus(vehicle.annualTax).plus(vehicle.annualMaintenance);
     if (annual.lt(0)) return fail('I costi annuali del veicolo non possono essere negativi.', 'vehicle');
     const fixed = annual.div(annualKm);

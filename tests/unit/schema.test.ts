@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBlankProfile, createEmptyDocument, createFiscalPreset2026, meta } from '../../src/domain/model';
 import { cashDocumentSchema } from '../../src/domain/schema';
 
-describe('schema archivio v2',()=>{
+describe('schema archivio v3',()=>{
   it('accetta un profilo vuoto non confermato ma rifiuta precisioni oltre i limiti',()=>{
     const blank=createEmptyDocument();blank.profiles.push(createBlankProfile(2027));expect(cashDocumentSchema.safeParse(blank).success).toBe(true);
     const invalid=structuredClone(blank);invalid.businessCosts.push({...meta(),category:'Software',description:'Servizio',monthlyAmount:'1.001'});

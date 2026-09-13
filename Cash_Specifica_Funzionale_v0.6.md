@@ -159,9 +159,9 @@ Cash deve aiutare a rispondere almeno a queste domande:
 | Disponibilità lavorativa | Calcolo di giorni e ore disponibili e del valore medio da generare. |
 | Inflazione | Rivalutazione informativa di un prezzo storico/riferimento in fase di preventivazione. |
 | Veicoli | Calcolo del costo chilometrico con consumo, carburante e costi annuali essenziali. |
-| Sedi | Luoghi riutilizzabili gestiti localmente in Cash, opzionalmente associati a un cliente, con distanza in km dalla sede/laboratorio di riferimento. |
+| Sedi | Luoghi riutilizzabili gestiti localmente in Cash, mostrati come sottogruppo del cliente quando associati oppure come Altre sedi per fornitori, laboratorio, magazzini e luoghi indipendenti, con distanza in km dalla sede/laboratorio di riferimento. |
 | Trasferte | Sede selezionata, distanza derivata dai km della Sede, A/R, veicolo, occorrenze e tempo automatico o manuale. |
-| Clienti | Anagrafica locale minimale sempre disponibile; ricerca da Fatture in Cloud solo se l'integrazione è attivata. Snapshot dei dati essenziali nel preventivo. |
+| Clienti | Elenco recuperato in tempo reale da Fatture in Cloud quando l'integrazione è attiva; nessuna anagrafica cliente duplicata in Cash. Snapshot dei dati essenziali nel preventivo. |
 | Catalogo | Sottovoci riutilizzabili e template composti da una o più voci principali. |
 | Preventivi | Composizione manuale o da template, personalizzazione completa e analisi economica per voce e complessiva. Nessuno stato o workflow commerciale. |
 | Provvigioni | Tracciamento di un eventuale importo accessorio fuori dal corpo e dai calcoli del preventivo. |
@@ -401,35 +401,23 @@ Cash non crea giornate di lavoro, visite pianificate, probabilità, range di tra
 
 ### 10.1 Clienti
 
-Cash dispone sempre di un'anagrafica cliente locale minimale. Fatture in Cloud è una sorgente aggiuntiva facoltativa: la sua assenza o disattivazione non limita creazione, calcolo, salvataggio, riapertura o consultazione dei preventivi.
+Fatture in Cloud è l'unica sorgente dell'anagrafica clienti. Quando l'integrazione è attiva, la schermata **Clienti** recupera automaticamente l'elenco corrente dall'azienda configurata e lo presenta in tabella, permettendo di aggiornarlo o cercarlo in tempo reale. Cash non crea, modifica, elimina o mantiene una copia locale autonoma dei clienti.
 
-Ogni Cliente locale contiene:
+Il clic su una riga apre il dettaglio completo del cliente: Cash recupera il fieldset dettagliato corrente da Fatture in Cloud e mostra ogni informazione proveniente dal servizio con l'etichetta `FIC`. Nello stesso dettaglio mostra separatamente le informazioni dell'app collegate al cliente, incluse Sedi e preventivi. Il menu azioni `…` della riga consente almeno di aprire il dettaglio e aggiungere rapidamente una Sede associata.
 
-- UUID Cash immutabile.
+Ogni cliente recuperato espone almeno identificativo dell'azienda, identificativo cliente Fatture in Cloud, denominazione/ragione sociale e partita IVA quando disponibile. Il cliente resta facoltativo per salvare e calcolare un preventivo. Quando viene selezionato, Cash salva nello snapshot sorgente `fatture_in_cloud`, azienda, identificativo remoto, ragione sociale e partita IVA. Modifiche successive in Fatture in Cloud non alterano i preventivi esistenti.
 
-- Denominazione o ragione sociale obbligatoria.
-
-- Partita IVA facoltativa.
-
-L'utente può creare, modificare, cercare ed eliminare Clienti locali dalle schermate **Clienti** e **Impostazioni**. Questa gestione resta intenzionalmente minimale e non introduce contatti, trattative, attività, scadenze o altre funzioni CRM.
-
-Per facilitare il passaggio a un uso senza cloud, su un cliente o su uno snapshot Fatture in Cloud è disponibile l'azione esplicita **Copia come Cliente locale**. L'anteprima propone denominazione e partita IVA, segnala eventuali omonimi ma non li unisce automaticamente e crea un nuovo UUID solo dopo conferma. La copia non mantiene sincronizzazioni o collegamenti vivi con la fonte remota.
-
-Il cliente resta facoltativo per salvare e calcolare un preventivo. Quando viene selezionato un Cliente locale, Cash salva nello snapshot sorgente `locale`, UUID, denominazione e partita IVA. Quando l'integrazione è attiva l'utente può, in alternativa, eseguire una ricerca live e scegliere un cliente Fatture in Cloud; lo snapshot salva sorgente `fatture_in_cloud`, azienda, identificativo remoto, ragione sociale e partita IVA. Modifiche successive all'origine non alterano i preventivi esistenti.
-
-L'esportazione richiede uno snapshot cliente proveniente dalla stessa azienda Fatture in Cloud configurata. Se il preventivo usa un Cliente locale, Cash non tenta corrispondenze automatiche: prima dell'esportazione propone una selezione live esplicita e sostituisce lo snapshot del preventivo soltanto dopo conferma dell'utente. Il Cliente locale originario non viene modificato o collegato implicitamente.
-
-Se Fatture in Cloud non è disponibile durante una ricerca o un'esportazione richiesta dall'utente, Cash mostra un errore limitato a tale operazione. Non sostituisce la risposta con una lista cache considerata corrente. Clienti locali e snapshot già salvati restano pienamente utilizzabili.
+L'esportazione richiede uno snapshot cliente proveniente dalla stessa azienda Fatture in Cloud configurata. Se Fatture in Cloud non è disponibile durante il caricamento, una ricerca o un'esportazione richiesta dall'utente, Cash mostra un errore limitato a tale operazione. Non sostituisce la risposta con una lista cache considerata corrente. Gli snapshot già salvati nei preventivi restano leggibili e utilizzabili per i calcoli storici.
 
 ### 10.2 Sedi
 
-Le Sedi sono gestite esclusivamente in Cash e non fanno parte dell'integrazione con Fatture in Cloud. Una Sede è un luogo riutilizzabile: può rappresentare una sede cliente, un fornitore, il laboratorio, un magazzino o qualunque altro luogo utile. Non viene introdotta un'entità separata “Fornitore”.
+Le Sedi sono gestite esclusivamente in Cash e non vengono importate da Fatture in Cloud. Sono un sottogruppo logico del relativo cliente, ma non vengono espanse nella tabella principale dei Clienti: sono consultabili nel dettaglio e creabili rapidamente dal menu azioni della riga. Cash mantiene inoltre il gruppo separato **Altre sedi**, destinato a fornitori, laboratorio, magazzini e qualunque altro luogo utile non associato a un cliente. Non viene introdotta un'entità separata “Fornitore”.
 
 | **Campo sede** | **Descrizione** |
 | --- | --- |
 | Nome | Etichetta leggibile della Sede. |
 | Indirizzo | Indirizzo del luogo. |
-| Cliente associato | Opzionale. UUID di un Cliente locale oppure riferimento Fatture in Cloud con azienda, identificativo e denominazione leggibile; una Sede può esistere senza cliente. |
+| Cliente associato | Opzionale. Riferimento Fatture in Cloud con azienda, identificativo e denominazione leggibile. Se assente, la Sede appartiene al gruppo Altre sedi. |
 | Distanza | Distanza in km dalla sede/laboratorio di riferimento dell'utente, riferita alla sola andata. Necessaria quando la Sede viene usata per un calcolo di Trasferta. |
 
 La sede/laboratorio di riferimento è implicita nel significato della distanza e non viene modellata come partenza della Trasferta. Il riferimento cliente salvato su una Sede serve soltanto a ricerca e proposta. Se punta a Fatture in Cloud conserva un riferimento leggibile, ma non diventa una cache utilizzabile per operazioni live.
@@ -440,7 +428,7 @@ Quando una Sede viene utilizzata in un preventivo o in una Trasferta, i valori u
 
 Un preventivo può specificare una Sede principale. Questa rappresenta il luogo principale a cui si riferisce il preventivo e viene salvata nello snapshot del preventivo.
 
-Quando viene inserita una Trasferta, se il preventivo ha una Sede questa viene proposta automaticamente come Sede della Trasferta. L'utente può sostituirla con qualsiasi altra Sede salvata in Cash. La modifica vale solo per quella Trasferta e non modifica la Sede principale del preventivo.
+Quando viene inserita una Trasferta, se il preventivo ha una Sede questa viene proposta automaticamente come Sede della Trasferta. L'utente può sostituirla con qualsiasi altra Sede salvata in Cash, incluse le Altre sedi. La modifica vale solo per quella Trasferta e non modifica la Sede principale del preventivo.
 
 Se il preventivo non ha una Sede, Cash non ne assume una: la Sede della Trasferta deve essere scelta esplicitamente.
 
@@ -720,7 +708,7 @@ Un preventivo conserva gli input con cui è stato costruito. I dati generali o d
 
 Tra i dati che devono restare associati al preventivo rientrano, quando utilizzati:
 
-- Se selezionato, sorgente del cliente e relativi identificativi: UUID per un Cliente locale oppure azienda e identificativo per Fatture in Cloud; in entrambi i casi denominazione/ragione sociale e partita IVA disponibile.
+- Se selezionato, azienda e identificativo del cliente Fatture in Cloud, denominazione/ragione sociale e partita IVA disponibile.
 
 - Nome e indirizzo della Sede principale del preventivo.
 
@@ -804,13 +792,13 @@ Il token non viene scritto nel file dati né sincronizzato con Google Drive. Vie
 
 Il token manuale può essere revocato dall'utente. Una risposta di autenticazione o autorizzazione fallita produce un errore esplicito e richiede di correggere il collegamento; Cash non prova credenziali alternative.
 
-Disattivare l'interruttore sospende le funzioni live ma conserva configurazione non segreta e token locale, per consentire una successiva riattivazione. L'azione separata **Rimuovi collegamento**, protetta da conferma, elimina dalla postazione il token e dal file condiviso azienda, prodotto e metadati di verifica. Non modifica Clienti locali, preventivi o snapshot storici Fatture in Cloud.
+Disattivare l'interruttore sospende le funzioni live ma conserva configurazione non segreta e token locale, per consentire una successiva riattivazione. L'azione separata **Rimuovi collegamento**, protetta da conferma, elimina dalla postazione il token e dal file condiviso azienda, prodotto e metadati di verifica. Non modifica Sedi, preventivi o snapshot storici Fatture in Cloud.
 
 ### 20.2 Import cliente
 
-Soltanto con modulo `Attivo`, Cash interroga in tempo reale l'azienda configurata, permette di cercare e selezionare un cliente e copia nel preventivo sorgente, identificativo dell'azienda, identificativo cliente Fatture in Cloud, ragione sociale e partita IVA. Le Sedi non vengono importate e l'importazione non crea automaticamente un Cliente locale.
+Soltanto con modulo `Attivo`, Cash interroga in tempo reale l'azienda configurata, carica e permette di cercare e selezionare un cliente e copia nel preventivo sorgente, identificativo dell'azienda, identificativo cliente Fatture in Cloud, ragione sociale e partita IVA. Le Sedi non vengono importate: restano dati locali di Cash, organizzati sotto il cliente associato oppure nel gruppo Altre sedi.
 
-Cash non conserva una cache del catalogo clienti remoto come sorgente alternativa. Se il servizio non è raggiungibile, la sola ricerca live fallisce; l'anagrafica locale e i clienti già copiati nei preventivi rimangono disponibili.
+Cash non conserva una cache del catalogo clienti remoto come sorgente alternativa. Se il servizio non è raggiungibile, caricamento e ricerca live falliscono; le Sedi locali e gli snapshot cliente già salvati nei preventivi rimangono disponibili.
 
 ### 20.3 Prodotto “Consulenza”
 
@@ -865,7 +853,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **8.** Configurare la velocità media di trasferta se si vuole il calcolo automatico del tempo di viaggio.
 
-**9.** Creare i Clienti e le Sedi riutilizzabili necessarie e, quando serve, associare una Sede a un Cliente e indicarne la distanza di sola andata dalla sede/laboratorio di riferimento.
+**9.** Con Fatture in Cloud attivo, recuperare i Clienti e creare sotto ciascuno le Sedi riutilizzabili necessarie; creare nel gruppo Altre sedi fornitori, laboratorio, magazzini o altri luoghi indipendenti, indicando quando serve la distanza di sola andata dalla sede/laboratorio di riferimento.
 
 **10.** Lasciare Fatture in Cloud disattivato oppure, soltanto se desiderato, completare la procedura guidata in **Impostazioni → Integrazioni**. La configurazione non è richiesta per terminare l'avvio né per usare le funzioni locali.
 
@@ -883,9 +871,9 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 ### 21.3 Creazione di un preventivo
 
-**1.** Confermare la data proposta, selezionare o creare il Profilo economico annuale coerente e, facoltativamente, selezionare un Cliente locale. Se Fatture in Cloud è attivo si può invece cercare un cliente remoto. Cash ne copia sorgente, identificativi, denominazione e partita IVA nello snapshot; il cliente può essere omesso finché non viene richiesta un'esportazione.
+**1.** Confermare la data proposta, selezionare o creare il Profilo economico annuale coerente e, facoltativamente, selezionare un cliente recuperato da Fatture in Cloud. Cash ne copia sorgente, identificativi, denominazione e partita IVA nello snapshot; il cliente può essere omesso finché non viene richiesta un'esportazione.
 
-**2.** Se necessario, selezionare una Sede principale del preventivo; Cash ne conserva lo snapshot.
+**2.** Se necessario, selezionare una Sede principale del cliente o un'Altra sede; Cash ne conserva lo snapshot.
 
 **3.** Inserire un template dal catalogo oppure creare manualmente una o più voci.
 
@@ -907,7 +895,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **12.** Eventualmente salvare una sottovoce o una o più voci come nuovo contenuto del catalogo.
 
-**13.** Se l'integrazione è attiva, eventualmente raggruppare/esportare le voci verso Fatture in Cloud; se il cliente è locale, selezionare e confermare prima il corrispondente cliente remoto senza abbinamenti automatici.
+**13.** Se l'integrazione è attiva, eventualmente raggruppare/esportare le voci verso Fatture in Cloud usando il cliente remoto selezionato.
 
 **14.** Verificare l'indicatore “Salvato” prima di chiudere Cash o cambiare postazione.
 
@@ -950,9 +938,9 @@ Il modello seguente descrive concetti funzionali e relazioni, senza imporre tabe
 | Profilo economico | Anno, revisione, fatturato obiettivo, Spese specifiche annue previste, profilo fiscale forfettario configurato e confermato, disponibilità lavorativa, festività locali e velocità media di trasferta. |
 | Costo aziendale | Categoria, descrizione, importo mensile. |
 | Veicolo | Carburante, modalità MIMIT derivata, consumo con unità, km annui medi, assicurazione, bollo, manutenzione e costo chilometrico derivato. |
-| Cliente locale | UUID, denominazione/ragione sociale obbligatoria e partita IVA facoltativa; anagrafica minimale persistita nel file dati. |
-| Snapshot cliente | Sorgente `locale` o `fatture_in_cloud`, identificativi pertinenti, denominazione/ragione sociale e partita IVA disponibile; copia indipendente dall'origine. |
-| Sede | Luogo locale riutilizzabile con nome, indirizzo, cliente opzionale e distanza di sola andata dalla sede/laboratorio di riferimento. |
+| Cliente Fatture in Cloud | Entità recuperata live con identificativi di azienda e cliente, denominazione/ragione sociale e partita IVA disponibile; non viene persistita come anagrafica autonoma. |
+| Snapshot cliente | Sorgente `fatture_in_cloud`, identificativi di azienda e cliente, denominazione/ragione sociale e partita IVA disponibile; copia indipendente dall'origine. |
+| Sede | Luogo locale riutilizzabile con nome, indirizzo, cliente Fatture in Cloud opzionale e distanza di sola andata dalla sede/laboratorio di riferimento; se associata è un sottogruppo del cliente, altrimenti appartiene ad Altre sedi. |
 | Catalogo | Contiene sottovoci riutilizzabili e template. |
 | Sottovoce catalogo | Tipo Tempo / Spesa / Trasferta con valori predefiniti pertinenti. |
 | Template | Contiene una o più voci principali riutilizzabili. |
@@ -962,14 +950,16 @@ Il modello seguente descrive concetti funzionali e relazioni, senza imporre tabe
 | Voce preventivo | Copia indipendente di una voce template o voce creata manualmente; prezzo scelto, risultati di calcolo e Tempo stimato derivato. |
 | Sottovoce preventivo | Elemento Tempo / Spesa / Trasferta, copiato o creato manualmente e modificabile liberamente nei limiti delle regole delle varianti. |
 | Configurazione Fatture in Cloud | Stato attivo/disattivo e riferimenti non segreti di azienda, prodotto e ultima verifica; il token resta fuori dal file dati. |
-| File dati | Versione schema, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, Clienti locali, veicoli, Sedi, catalogo e preventivi. |
+| File dati | Versione schema, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, veicoli, Sedi, catalogo e preventivi. |
 | Riferimento esportazione | UUID del tentativo, azienda, data/ora, righe e impronta del payload, eventuale identificativo documento Fatture in Cloud ed esito da verificare; non è uno stato commerciale. |
 
 Relazione logica:
 
 - Profilo economico → determina Valore medio da generare.
 
-- Cliente locale o riferimento Fatture in Cloud → può avere zero o più Sedi locali associate in Cash; una Sede può anche non avere cliente.
+- Cliente Fatture in Cloud → può avere zero o più Sedi locali associate e mostrate come proprio sottogruppo in Cash.
+
+- Sede senza cliente → appartiene al gruppo Altre sedi e può rappresentare un fornitore, il laboratorio, un magazzino o un altro luogo indipendente.
 
 - Preventivo → può avere una Sede principale.
 
@@ -1030,7 +1020,7 @@ Ogni entità persistente possiede un identificatore UUID immutabile, una data/or
 | Prezzo scelto | Non negativo; può essere inferiore al valore teorico o alle spese. È obbligatorio per l'esportazione. |
 | Provvigione | Facoltativa; se presente, importo in euro non negativo. Non entra nei calcoli del preventivo. |
 | Sede | Nome e indirizzo non vuoti; distanza non negativa se presente. |
-| Cliente locale | Denominazione/ragione sociale non vuota; partita IVA facoltativa, ma validata formalmente se presente. |
+| Cliente Fatture in Cloud | Deve provenire dall'azienda configurata; identificativo e denominazione sono obbligatori, la partita IVA è facoltativa. |
 | Costi annuali del veicolo | Assicurazione, bollo e manutenzione non negativi. La UI ricorda di non duplicarli nei Costi aziendali. |
 | Cambio variante | Un gruppo sostituisce solo le sottovoci prodotte dalle proprie opzioni; warning obbligatorio prima di perdere modifiche manuali su tali sottovoci. |
 | Inflazione | Valore di confronto; non modifica automaticamente il prezzo scelto. |
@@ -1049,7 +1039,7 @@ Esempi:
 | --- | --- | --- |
 | Fonte carburante non disponibile | Mostrare errore e rendere non disponibile il calcolo che richiede il dato. | Usare una copia locale precedente come se fosse il dato ufficiale corrente. |
 | Fatture in Cloud non disponibile | Mostrare errore per l'operazione live richiesta. | Mostrare una vecchia lista cache come se fosse corrente. |
-| Fatture in Cloud disattivato | Usare normalmente Clienti locali e funzioni locali; spiegare perché ricerca ed esportazione non sono disponibili. | Tentare chiamate remote o bloccare la preventivazione. |
+| Fatture in Cloud disattivato | Usare normalmente Sedi, profili, catalogo e preventivi senza cliente; spiegare perché elenco clienti, ricerca ed esportazione non sono disponibili. | Tentare chiamate remote o bloccare la preventivazione. |
 | Velocità media non configurata | Segnalare che il tempo automatico non è calcolabile; l'utente può inserire esplicitamente il tempo manuale. | Assumere automaticamente 50 km/h o altro valore. |
 | Distanza della Sede non disponibile | Mostrare errore per la Trasferta che richiede la distanza. | Assumere 0 km o una distanza precedente non appartenente allo snapshot. |
 | Dato non valido | Mostrare l'errore sul dato. | Sostituirlo con un default non scelto dall'utente. |
@@ -1073,7 +1063,7 @@ L'autenticazione applicativa non è un requisito dell'MVP. Cash opera in un cont
 
 ### 23.4 Modifica ed eliminazione di dati già usati
 
-La modifica di profili, costi, Clienti locali, veicoli, Sedi, sottovoci di catalogo o template vale soltanto per utilizzi futuri. I preventivi esistenti restano invariati finché l'utente non modifica direttamente il preventivo o esegue “Aggiorna con valori correnti”.
+La modifica di profili, costi, veicoli, Sedi, sottovoci di catalogo o template vale soltanto per utilizzi futuri. I preventivi esistenti restano invariati finché l'utente non modifica direttamente il preventivo o esegue “Aggiorna con valori correnti”. Le modifiche ai clienti vengono effettuate in Fatture in Cloud e non alterano gli snapshot esistenti.
 
 L'eliminazione è consentita quando non lascia riferimenti vivi invalidi. Se l'elemento è usato da template o configurazioni correnti, Cash elenca i riferimenti e blocca l'eliminazione. Gli snapshot dei preventivi non sono riferimenti vivi: conservano copie autonome e non impediscono l'eliminazione dell'origine.
 
@@ -1095,13 +1085,13 @@ Il frontend può essere sviluppato come un'unica applicazione HTML/JavaScript se
 
 L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT e, se l'integrazione è attiva, Fatture in Cloud; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Google Drive viene usato tramite il normale filesystem sincronizzato da Drive for Desktop; Cash non richiede Google Drive API né OAuth Google.
 
-Senza connessione internet l'utente può aprire e modificare profili, Clienti locali, Sedi, catalogo e preventivi già salvati. Sono bloccate, con errore esplicito, le sole operazioni che richiedono dati live: acquisizione di nuovi indici FOI o prezzi carburante e, quando il modulo è attivo, ricerca clienti remoti, verifica prodotto ed esportazione Fatture in Cloud. Gli snapshot esistenti restano consultabili e ricalcolabili con i propri dati storici.
+Senza connessione internet l'utente può aprire e modificare profili, Sedi, catalogo e preventivi già salvati. Sono bloccate, con errore esplicito, le sole operazioni che richiedono dati live: acquisizione di nuovi indici FOI o prezzi carburante e, quando il modulo è attivo, caricamento/ricerca clienti, verifica prodotto ed esportazione Fatture in Cloud. Gli snapshot esistenti restano consultabili e ricalcolabili con i propri dati storici.
 
 ### 24.3 Aggiornamenti del client e compatibilità dati
 
 Ogni versione del client dichiara le versioni di schema dati che può leggere e scrivere. Se il file usa uno schema più nuovo, Cash lo apre in sola lettura e richiede l'aggiornamento del client. Se serve una migrazione da uno schema precedente, Cash mostra cosa verrà aggiornato, crea una copia di sicurezza e applica la migrazione atomicamente solo dopo conferma esplicita.
 
-Quando uno schema precedente non contiene lo stato esplicito dell'integrazione, la migrazione imposta Fatture in Cloud su `Disattivata` e conserva gli eventuali riferimenti non segreti esistenti per una futura riattivazione esplicita. Non trasforma automaticamente snapshot remoti in Clienti locali.
+Quando uno schema precedente non contiene lo stato esplicito dell'integrazione, la migrazione imposta Fatture in Cloud su `Disattivata` e conserva gli eventuali riferimenti non segreti esistenti per una futura riattivazione esplicita.
 
 Non è ammesso che due versioni diverse del client scrivano contemporaneamente lo stesso file.
 
@@ -1117,12 +1107,12 @@ Tutti i dati funzionali sono conservati in un unico file UTF-8 denominato per im
 - `createdAt` e `updatedAt` in ISO 8601 UTC;
 - impostazioni condivise;
 - profili economici e fiscali annuali;
-- costi aziendali, Clienti locali, veicoli e Sedi;
+- costi aziendali, veicoli e Sedi con gli eventuali riferimenti non segreti ai clienti Fatture in Cloud;
 - catalogo e template;
 - preventivi e relativi snapshot;
 - riferimenti non segreti alle esportazioni.
 
-Importi, aliquote, coefficienti, distanze e consumi sono serializzati come stringhe decimali con punto come separatore e unità definita dallo schema. Durate e occorrenze sono interi. Il file contiene l'anagrafica funzionale dei Clienti locali, ma non token, password, cache dell'anagrafica remota o copie nascoste di dati live.
+Importi, aliquote, coefficienti, distanze e consumi sono serializzati come stringhe decimali con punto come separatore e unità definita dallo schema. Durate e occorrenze sono interi. Il file non contiene un'anagrafica clienti duplicata, né token, password, cache dell'anagrafica remota o copie nascoste di dati live; conserva soltanto riferimenti e snapshot non segreti dove funzionalmente necessari.
 
 Il file dati è l'unica fonte canonica. All'avvio Cash apre l'ultimo percorso usato sulla postazione se ancora disponibile; in caso contrario chiede di selezionare esplicitamente il file o di crearne uno nuovo. Non crea automaticamente un archivio vuoto quando il file atteso manca.
 
@@ -1231,16 +1221,16 @@ La scheda dell'integrazione mostra sempre uno stato comprensibile:
 
 | **Stato** | **Significato** |
 | --- | --- |
-| Disattivata | Nessuna chiamata al servizio; Cash usa Clienti locali e non mostra azioni live. |
+| Disattivata | Nessuna chiamata al servizio; Cash non mostra elenco clienti né azioni live, mentre le funzioni locali e le Altre sedi restano disponibili. |
 | Richiede configurazione locale | Il file condiviso indica l'integrazione attiva, ma sulla postazione manca o non è valido il token. Le funzioni locali restano disponibili. |
 | Attiva | Token verificato sulla postazione, azienda e prodotto selezionati, permessi minimi presenti. |
 | Errore collegamento | L'ultima verifica è fallita; sono bloccate solo le funzioni live e viene mostrata l'azione correttiva. |
 
 L'attivazione viene salvata come `Attiva` soltanto dopo il completamento riuscito della procedura guidata; annullarla lascia la configurazione precedente invariata. Cambiare azienda invalida il prodotto selezionato e richiede una nuova selezione. Disattivare e rimuovere il collegamento hanno gli effetti distinti descritti nella sezione 20.1.
 
-### 26.3 Clienti locali
+### 26.3 Clienti e Sedi
 
-La pagina consente di creare, modificare, cercare ed eliminare l'anagrafica minimale. Un Cliente locale è condiviso nel file dati e non richiede internet né Fatture in Cloud. L'eliminazione non altera gli snapshot dei preventivi; se il Cliente è ancora referenziato direttamente da una Sede, Cash elenca le Sedi coinvolte e richiede prima di rimuovere o sostituire quei riferimenti vivi.
+La pagina recupera e cerca in una tabella i clienti dell'azienda Fatture in Cloud configurata. Il menu `…` permette l'aggiunta rapida di una Sede; il clic sulla riga apre tutte le informazioni FIC, chiaramente etichettate, e le informazioni Cash collegate, incluse Sedi e preventivi. Un gruppo separato **Altre sedi** nelle Impostazioni gestisce fornitori, laboratorio, magazzini e luoghi indipendenti. La modifica o eliminazione di un cliente avviene esclusivamente in Fatture in Cloud e non altera automaticamente Sedi o snapshot già salvati in Cash.
 
 Non sono configurabili: formule economiche, regola di snapshot, atomicità, divieto di fallback, precisione degli arrotondamenti, tipi di sottovoce, indipendenza delle copie e modello monoutente sequenziale.
 
@@ -1334,7 +1324,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **6.** Configurare almeno un veicolo e ricavarne il costo chilometrico usando il dato giornaliero MIMIT più recente pubblicato per territorio e carburante, derivando la modalità ufficiale SELF/SERVITO e mostrando la data di riferimento.
 
-**7.** Creare Sedi riutilizzabili con nome, indirizzo, cliente opzionale e distanza di sola andata dalla sede/laboratorio di riferimento.
+**7.** Creare Sedi riutilizzabili con nome, indirizzo, cliente Fatture in Cloud opzionale e distanza di sola andata dalla sede/laboratorio di riferimento; mostrare le Sedi associate come sottogruppo del cliente e quelle indipendenti nel gruppo Altre sedi.
 
 **8.** Usare una Sede come riferimento della Trasferta senza modellare Partenza e Destinazione separate.
 
@@ -1348,7 +1338,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **13.** Non usare alcun servizio di routing, mappe, traffico o geolocalizzazione.
 
-**14.** Permettere di salvare un preventivo senza cliente, con un Cliente locale oppure con un cliente selezionato live da Fatture in Cloud; conservarne sorgente, identificativi e dati leggibili nello snapshot senza dipendere successivamente dall'origine.
+**14.** Recuperare i clienti in tempo reale da Fatture in Cloud e permettere di salvare un preventivo senza cliente oppure con un cliente selezionato live; conservarne sorgente, identificativi e dati leggibili nello snapshot senza dipendere successivamente dall'origine.
 
 **15.** Gestire una Sede principale del preventivo e conservarne lo snapshot.
 
@@ -1396,7 +1386,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **37.** Eseguire “Aggiorna con valori correnti” atomicamente: in caso di errore o dato necessario mancante, non modificare alcun valore del preventivo.
 
-**38.** Con integrazione attiva, mostrare l'anteprima e raggruppare/esportare le voci verso Fatture in Cloud usando cliente remoto e prodotto “Consulenza” verificati nella stessa azienda, descrizioni modificabili e quantità 1, senza esportare automaticamente sottovoci, Spese o provvigione; per un Cliente locale richiedere una selezione remota esplicita senza abbinamenti automatici.
+**38.** Con integrazione attiva, mostrare l'anteprima e raggruppare/esportare le voci verso Fatture in Cloud usando cliente e prodotto “Consulenza” verificati nella stessa azienda, descrizioni modificabili e quantità 1, senza esportare automaticamente sottovoci, Spese o provvigione.
 
 **39.** In assenza di un dato o di una sorgente necessari, mostrare un errore esplicito senza utilizzare fallback automatici.
 
@@ -1404,7 +1394,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **41.** Non introdurre stati, workflow commerciale o numerazione propria dei preventivi; un preventivo salvato resta modificabile anche dopo l'esportazione.
 
-**42.** Conservare tutti i dati funzionali, inclusa l'anagrafica dei Clienti locali, in un unico file JSON UTF-8 versionato, senza credenziali o cache dell'anagrafica remota.
+**42.** Conservare tutti i dati funzionali locali in un unico file JSON UTF-8 versionato, senza duplicare l'anagrafica clienti Fatture in Cloud e senza credenziali o cache dell'anagrafica remota.
 
 **43.** Salvare automaticamente ogni operazione logica con scrittura temporanea, validazione, sostituzione atomica e incremento della revisione.
 
@@ -1426,15 +1416,15 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **52.** Bloccare l'apertura in scrittura di uno schema dati più nuovo e migrare uno schema precedente soltanto con backup, conferma e operazione atomica.
 
-**53.** Consentire l'uso offline di profili, Clienti locali, Sedi, catalogo e preventivi e bloccare selettivamente soltanto le operazioni che richiedono ISTAT, MIMIT o, se attivo, Fatture in Cloud.
+**53.** Consentire l'uso offline di profili, Sedi, catalogo, preventivi e snapshot cliente già salvati e bloccare selettivamente soltanto le operazioni che richiedono ISTAT, MIMIT o, se attivo, Fatture in Cloud.
 
 **54.** Non includere HTMX nell'MVP e non usarlo per simulare un backend, caricare file locali o aggirare i vincoli CORS.
 
-**55.** Avviare Cash con Fatture in Cloud disattivato, senza richiedere token, azienda o prodotto, e consentire in tale stato l'intero ciclo locale di creazione, calcolo, salvataggio, riapertura e modifica dei preventivi.
+**55.** Avviare Cash con Fatture in Cloud disattivato, senza richiedere token, azienda o prodotto, e consentire in tale stato il ciclo locale di creazione, calcolo, salvataggio, riapertura e modifica dei preventivi senza cliente; elenco e selezione clienti restano non disponibili fino all'attivazione.
 
 **56.** Consentire dalle Impostazioni di attivare Fatture in Cloud con una procedura guidata, visualizzare lo stato per postazione, disattivarlo senza perdere la configurazione e rimuovere esplicitamente collegamento e credenziali senza alterare i dati storici.
 
-**57.** Creare, cercare, modificare ed eliminare Clienti locali con denominazione obbligatoria e partita IVA facoltativa, anche copiando esplicitamente dati da uno snapshot Fatture in Cloud, senza unioni automatiche e rispettando riferimenti vivi delle Sedi e indipendenza degli snapshot dei preventivi.
+**57.** Recuperare e cercare in tabella i clienti dall'azienda Fatture in Cloud configurata, senza creare un'anagrafica locale duplicata; aprire al clic un dettaglio con campi cloud etichettati `FIC` e dati Cash collegati, consentire dal menu `…` l'aggiunta rapida di una Sede e mantenere separatamente le Altre sedi, rispettando l'indipendenza degli snapshot dei preventivi.
 
 ## 30. Fonti normative e tecniche
 

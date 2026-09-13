@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react"
 import { createLocalClient, updateLocalClient } from "../../domain/clients"
-import { meta, type BusinessCost, type CashDocument, type LocalClient, type Site, type Vehicle } from "../../domain/model"
+import { meta, type BusinessCost, type CashDocument, type FicClientSnapshot, type LocalClient, type Site, type Vehicle } from "../../domain/model"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -79,8 +79,7 @@ export function CostDialog({ open, onOpenChange, appState, cost }: DialogBasePro
   )
 }
 
-export function SiteDialog({ open, onOpenChange, appState, doc, site, onSaved }: DialogBaseProps & { appState: AppState; doc: CashDocument; site?: Site }) {
-  const [remotePreserved, setRemotePreserved] = useState(true)
+export function SiteDialog({ open, onOpenChange, appState, doc: _doc, site, fixedClient, onSaved }: DialogBaseProps & { appState: AppState; doc: CashDocument; site?: Site; fixedClient?: FicClientSnapshot }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const { get } = formReader(event.currentTarget)
@@ -90,13 +89,12 @@ export function SiteDialog({ open, onOpenChange, appState, doc, site, onSaved }:
       appState.setError({ code: "VALIDATION", message: "Nome, indirizzo o distanza della sede non sono validi.", action: "Correggi i campi indicati." })
       return
     }
-    const localClient = doc.localClients.find((client) => client.id === get("localClientId"))
     const id = site?.id ?? meta().id
     appState.mutate((document) => {
       const values = {
         name: get("name"), address: get("address"), oneWayKm: kmValue === undefined ? undefined : kmValue.toFixed(1),
-        client: localClient ? { source: "local" as const, localClientId: localClient.id, displayName: localClient.displayName }
-          : site?.client?.source === "fatture_in_cloud" && remotePreserved ? site.client : undefined,
+        client: fixedClient ? { source: "fatture_in_cloud" as const, companyId: fixedClient.companyId, clientId: fixedClient.clientId, displayName: fixedClient.displayName }
+          : undefined,
       }
       if (site) Object.assign(document.sites.find((entry) => entry.id === site.id)!, values, { updatedAt: new Date().toISOString() })
       else document.sites.push({ ...meta(), id, ...values })
@@ -111,7 +109,7 @@ export function SiteDialog({ open, onOpenChange, appState, doc, site, onSaved }:
         <Field><FieldLabel htmlFor="site-name">Nome</FieldLabel><Input id="site-name" name="name" defaultValue={site?.name} placeholder="Sede cliente" autoFocus required /></Field>
         <Field><FieldLabel htmlFor="site-address">Indirizzo</FieldLabel><Input id="site-address" name="address" defaultValue={site?.address} placeholder="Via, città" required /></Field>
         <Field><FieldLabel htmlFor="site-distance">Distanza sola andata</FieldLabel><InputGroup><InputGroupInput id="site-distance" name="oneWayKm" type="number" defaultValue={site?.oneWayKm} min={0} step={0.1} /><InputGroupAddon align="inline-end"><InputGroupText>km</InputGroupText></InputGroupAddon></InputGroup></Field>
-        <Field><FieldLabel htmlFor="site-client">Cliente locale associato</FieldLabel><NativeSelect id="site-client" name="localClientId" defaultValue={site?.client?.source === "local" ? site.client.localClientId : ""} onChange={() => setRemotePreserved(false)}><NativeSelectOption value="">Nessuno</NativeSelectOption>{doc.localClients.map((client) => <NativeSelectOption key={client.id} value={client.id}>{client.displayName}</NativeSelectOption>)}</NativeSelect>{site?.client?.source === "fatture_in_cloud" && remotePreserved ? <p className="text-xs text-muted-foreground">Resta associata a {site.client.displayName} (Fatture in Cloud) finché non scegli un valore diverso.</p> : null}</Field>
+        <Field><FieldLabel>Cliente</FieldLabel><div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">{fixedClient?.displayName ?? (site?.client?.source === "local" ? `${site.client.displayName} (dato locale esistente)` : "Nessuno — altra sede")}</div></Field>
       </FieldGroup>
       <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annulla</Button><Button type="submit">{site ? "Aggiorna sede" : "Crea sede"}</Button></DialogFooter>
     </form></DialogContent></Dialog>
@@ -119,7 +117,7 @@ export function SiteDialog({ open, onOpenChange, appState, doc, site, onSaved }:
 }
 
 const blankVehicle: Pick<Vehicle, "name" | "fuel" | "consumption" | "annualKm" | "annualInsurance" | "annualTax" | "annualMaintenance"> = {
-  name: "", fuel: "Benzina", consumption: "6.00", annualKm: "10000", annualInsurance: "0.00", annualTax: "0.00", annualMaintenance: "0.00",
+  name: "", fuel: "Benzina", consumption: "16.67", annualKm: "10000", annualInsurance: "0.00", annualTax: "0.00", annualMaintenance: "0.00",
 }
 
 export function VehicleDialog({ open, onOpenChange, appState, vehicle: existing, onSaved }: DialogBaseProps & { appState: AppState; vehicle?: Vehicle }) {
@@ -140,7 +138,7 @@ export function VehicleDialog({ open, onOpenChange, appState, vehicle: existing,
     }
     const values = {
       name: get("name"), fuel: get("fuel") as Vehicle["fuel"], consumption: get("consumption"),
-      consumptionUnit: get("fuel") === "Metano" ? "kg/100km" as const : "l/100km" as const,
+      consumptionUnit: get("fuel") === "Metano" ? "kg/100km" as const : "km/l" as const,
       annualKm: get("annualKm"), annualInsurance: annualInsurance.toFixed(2),
       annualTax: annualTax.toFixed(2), annualMaintenance: annualMaintenance.toFixed(2),
     }
@@ -157,7 +155,7 @@ export function VehicleDialog({ open, onOpenChange, appState, vehicle: existing,
       <FieldGroup className="grid grid-cols-2">
         <Field><FieldLabel htmlFor="vehicle-name">Nome</FieldLabel><Input id="vehicle-name" name="name" defaultValue={vehicle.name} placeholder="Auto principale" autoFocus required /></Field>
         <Field><FieldLabel htmlFor="vehicle-fuel">Carburante</FieldLabel><NativeSelect id="vehicle-fuel" name="fuel" value={fuel} onChange={(event) => setFuel(event.target.value as Vehicle["fuel"])}>{(["Benzina", "Gasolio", "GPL", "Metano"] as const).map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}</NativeSelect></Field>
-        <Field><FieldLabel htmlFor="vehicle-consumption">Consumo medio</FieldLabel><InputGroup><InputGroupInput id="vehicle-consumption" name="consumption" type="number" defaultValue={vehicle.consumption} min={0.01} step={0.01} required /><InputGroupAddon align="inline-end"><InputGroupText>{fuel === "Metano" ? "kg/100 km" : "l/100 km"}</InputGroupText></InputGroupAddon></InputGroup></Field>
+        <Field><FieldLabel htmlFor="vehicle-consumption">Consumo medio</FieldLabel><InputGroup><InputGroupInput id="vehicle-consumption" name="consumption" type="number" defaultValue={vehicle.consumption} min={0.01} step={0.01} required /><InputGroupAddon align="inline-end"><InputGroupText>{fuel === "Metano" ? "kg/100 km" : "km/l"}</InputGroupText></InputGroupAddon></InputGroup></Field>
         <Field><FieldLabel htmlFor="vehicle-km">Percorrenza annua</FieldLabel><InputGroup><InputGroupInput id="vehicle-km" name="annualKm" type="number" defaultValue={vehicle.annualKm} min={1} step={0.1} required /><InputGroupAddon align="inline-end"><InputGroupText>km</InputGroupText></InputGroupAddon></InputGroup></Field>
         {([['annualInsurance', 'Assicurazione annua', vehicle.annualInsurance], ['annualTax', 'Bollo annuo', vehicle.annualTax], ['annualMaintenance', 'Manutenzione annua', vehicle.annualMaintenance]] as const).map(([name, label, value]) => <Field key={name}><FieldLabel htmlFor={`vehicle-${name}`}>{label}</FieldLabel><InputGroup><InputGroupAddon><InputGroupText>€</InputGroupText></InputGroupAddon><InputGroupInput id={`vehicle-${name}`} name={name} defaultValue={moneyInputValue(value)} inputMode="decimal" required /></InputGroup></Field>)}
       </FieldGroup>

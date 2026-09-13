@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { err, ok, type ExportLine, type FicClientSnapshot, type FicTaxProfileSnapshot, type Result } from '../../domain/model';
+import { err, ok, type ExportLine, type FicClientDetails, type FicClientSnapshot, type FicTaxProfileSnapshot, type Result } from '../../domain/model';
 import { officialFetch } from './http';
 
 const BASE = 'https://api-v2.fattureincloud.it';
 const queryString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 const clientSchema = z.object({ id: z.union([z.string(), z.number()]), name: z.string().min(1), vat_number: z.string().nullish() });
+const clientDetailsSchema = clientSchema.loose();
 const productSummarySchema = z.object({ id: z.union([z.string(), z.number()]), name: z.string().min(1) });
 const vatSchema = z.object({ id: z.union([z.string(),z.number()]), value:z.number().nullish(), description:z.string().nullish() });
 const productSchema = productSummarySchema.extend({ default_vat: vatSchema.nullish() });
@@ -100,6 +101,35 @@ export async function searchClients(companyId: string, query: string, token: str
     return ok(clients.map(client => ({ source: 'fatture_in_cloud' as const, companyId, clientId: String(client.id), displayName: client.name,
       ...(client.vat_number ? { vatNumber: client.vat_number } : {}) })));
   } catch (cause) { return err({ code: 'SOURCE_INVALID', source: 'FattureInCloud', message: 'Risposta clienti non valida.', details: [String(cause)] }); }
+}
+
+function displayFicValue(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  if (typeof value === 'boolean') return value ? 'Sì' : 'No';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  try { return JSON.stringify(value); }
+  catch { return undefined; }
+}
+
+export async function getClientDetails(companyId: string, clientId: string, token: string,
+  fetcher: typeof fetch = fetch): Promise<Result<FicClientDetails>> {
+  const response = await ficFetch(`/c/${encodeURIComponent(companyId)}/entities/clients/${encodeURIComponent(clientId)}?fieldset=detailed`, token, {}, fetcher);
+  if (!response.ok) return response;
+  if (!response.value.ok) return response.value.status === 401 || response.value.status === 403
+    ? err({ code: 'CREDENTIALS', source: 'FattureInCloud', message: `Accesso al cliente negato (HTTP ${response.value.status}); verificare entity.clients:r.` })
+    : err({ code: 'SOURCE_UNAVAILABLE', source: 'FattureInCloud', message: `Dettaglio cliente non disponibile (HTTP ${response.value.status}).` });
+  try {
+    const json = await response.value.json() as { data?: unknown };
+    const client = clientDetailsSchema.parse(json.data);
+    const fields = Object.entries(client).flatMap(([key, raw]) => {
+      const value = displayFicValue(raw);
+      return value === undefined ? [] : [{ key, value }];
+    });
+    return ok({ source: 'fatture_in_cloud', companyId, clientId: String(client.id), displayName: client.name,
+      ...(client.vat_number ? { vatNumber: client.vat_number } : {}), fields });
+  } catch (cause) {
+    return err({ code: 'SOURCE_INVALID', source: 'FattureInCloud', message: 'Risposta dettaglio cliente non valida.', details: [String(cause)] });
+  }
 }
 
 export async function verifyProduct(companyId: string, productId: string, token: string, fetcher: typeof fetch = fetch,

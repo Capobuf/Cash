@@ -5,7 +5,7 @@ import { createFiscalPreset2026, meta, type FuelEvidence, type Quote, type Site,
 describe('snapshot e aggiornamento atomico',()=>{
   const profile=createFiscalPreset2026();Object.assign(profile,{confirmed:true,revenueTarget:'50000.00',specificAnnualExpenses:'1000.00'});profile.capacity.travelSpeedKmh='70';
   const site:Site={...meta(),name:'Cliente',address:'Via Roma',oneWayKm:'35.0'};
-  const vehicle:Vehicle={...meta(),name:'Auto',fuel:'Benzina',consumption:'5',consumptionUnit:'l/100km',annualKm:'10000',annualInsurance:'500',annualTax:'200',annualMaintenance:'300'};
+  const vehicle:Vehicle={...meta(),name:'Auto',fuel:'Benzina',consumption:'20',consumptionUnit:'km/l',annualKm:'10000',annualInsurance:'500',annualTax:'200',annualMaintenance:'300'};
   const fuel:FuelEvidence={fuel:'Benzina',mode:'SELF',territory:'Lazio',network:'NON_AUTOSTRADALE',price:'1.900',priceUnit:'EUR/l',referenceDate:'2026-09-07',acquiredAt:'2026-09-08T00:00:00.000Z'};
   const snap=snapshotProfile(profile,[]);if(!snap.ok)throw new Error('snapshot');
   const quote:Quote={...meta(),date:'2026-09-08',profileId:profile.id,profileSnapshot:snap.value,mainSite:{sourceId:site.id,name:site.name,address:site.address,oneWayKm:'30.0'},snapshotRevision:1,exportAttempts:[],items:[{...meta(),name:'Intervento',variantGroups:[],variantSelections:[],subItems:[{...meta(),kind:'travel',description:'Viaggio',site:{sourceId:site.id,name:site.name,address:site.address,oneWayKm:'30.0'},vehicleId:vehicle.id,roundTrip:true,occurrences:1,timeMode:'manual',manualMinutesPerOccurrence:80,totalMinutes:80,totalDistanceKm:'60.0',vehicleCostPerKm:'0.100000',totalCost:'6.00',fuelEvidence:fuel}]}]};

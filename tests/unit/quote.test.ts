@@ -3,7 +3,7 @@ import { calculateItem, calculateQuote, calculateTravel, calculateVehicleCost } 
 import { meta, type FuelEvidence, type QuoteItem, type Vehicle } from '../../src/domain/model';
 
 const evidence: FuelEvidence = { fuel:'Benzina',mode:'SELF',territory:'Lazio',network:'NON_AUTOSTRADALE',price:'1.900',priceUnit:'EUR/l',referenceDate:'2026-09-07',acquiredAt:'2026-09-08T10:00:00.000Z' };
-const vehicle: Vehicle = { ...meta(), name:'Auto',fuel:'Benzina',consumption:'5.00',consumptionUnit:'l/100km',annualKm:'10000',annualInsurance:'500',annualTax:'200',annualMaintenance:'300' };
+const vehicle: Vehicle = { ...meta(), name:'Auto',fuel:'Benzina',consumption:'20.00',consumptionUnit:'km/l',annualKm:'10000',annualInsurance:'500',annualTax:'200',annualMaintenance:'300' };
 
 describe('preventivo', () => {
   it('calcola costo veicolo e trasferta con arrotondamento', () => {

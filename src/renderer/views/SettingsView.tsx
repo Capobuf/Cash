@@ -76,7 +76,7 @@ export function SettingsView({ doc, appState, ficUi, activeProfileId, onEditProf
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="profiles">Profili annuali</TabsTrigger>
           <TabsTrigger value="planning">Pianificazione</TabsTrigger>
-          <TabsTrigger value="resources">Costi, trasferte e sedi</TabsTrigger>
+          <TabsTrigger value="resources">Costi, trasferte e altre sedi</TabsTrigger>
           <TabsTrigger value="integrations">Integrazioni</TabsTrigger>
           <TabsTrigger value="archive">Archivio</TabsTrigger>
         </TabsList>
@@ -100,7 +100,7 @@ export function SettingsView({ doc, appState, ficUi, activeProfileId, onEditProf
 
       <Dialog open={newProfileOpen} onOpenChange={setNewProfileOpen}><DialogContent><form onSubmit={(event) => { event.preventDefault(); createProfile(Number(new FormData(event.currentTarget).get("year"))) }} className="contents"><DialogHeader><DialogTitle>Nuovo profilo annuale</DialogTitle><DialogDescription>Il profilo nasce Da verificare e non abilita proiezioni fiscali finché non viene confermato.</DialogDescription></DialogHeader><Field><FieldLabel htmlFor="new-profile-year">Anno</FieldLabel><Input id="new-profile-year" name="year" type="number" defaultValue={new Date().getFullYear()} min={2000} max={2200} autoFocus required /></Field><DialogFooter><Button type="button" variant="outline" onClick={() => setNewProfileOpen(false)}>Annulla</Button><Button type="submit">Crea profilo</Button></DialogFooter></form></DialogContent></Dialog>
       <FicWizard open={wizardOpen} onOpenChange={setWizardOpen} appState={appState} ficUi={ficUi} />
-      <AlertDialog open={removeFicOpen} onOpenChange={setRemoveFicOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Rimuovere il collegamento?</AlertDialogTitle><AlertDialogDescription>Il token locale e la configurazione condivisa saranno rimossi. Clienti locali, preventivi e snapshot storici resteranno invariati.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void removeFic()}>Rimuovi collegamento</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={removeFicOpen} onOpenChange={setRemoveFicOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Rimuovere il collegamento?</AlertDialogTitle><AlertDialogDescription>Il token locale e la configurazione condivisa saranno rimossi. Sedi, preventivi e snapshot storici resteranno invariati.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void removeFic()}>Rimuovi collegamento</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </>
   )
 }

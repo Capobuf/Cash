@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -70,7 +70,7 @@ export interface Vehicle extends EntityMeta {
   name: string;
   fuel: Fuel;
   consumption: DecimalString;
-  consumptionUnit: 'l/100km' | 'kg/100km';
+  consumptionUnit: 'km/l' | 'kg/100km';
   annualKm: DecimalString;
   annualInsurance: DecimalString;
   annualTax: DecimalString;
@@ -83,6 +83,8 @@ export interface FicClientRef { source: 'fatture_in_cloud'; companyId: string; c
 export type ClientRef = LocalClientRef | FicClientRef;
 export interface LocalClientSnapshot extends LocalClientRef { vatNumber?: string }
 export interface FicClientSnapshot extends FicClientRef { vatNumber?: string }
+export interface FicClientDetailField { key: string; value: string }
+export interface FicClientDetails extends FicClientSnapshot { fields: FicClientDetailField[] }
 export type ClientSnapshot = LocalClientSnapshot | FicClientSnapshot;
 export interface Site extends EntityMeta {
   name: string;

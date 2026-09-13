@@ -36,7 +36,7 @@ const titles: Record<View, string> = {
 
 const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
-  clients: "Anagrafiche locali essenziali",
+  clients: "Clienti Fatture in Cloud e sedi correlate",
   catalog: "Sottovoci e template riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 

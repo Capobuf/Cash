@@ -93,7 +93,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const searchRemoteClients = async (query: string) => {
     const companyId = doc.settings.fic.company?.id
-    if (!doc.settings.fic.enabled || !companyId) { appState.setError({ code: "MISSING_DATA", source: "FattureInCloud", message: "Fatture in Cloud non è attivo.", action: "Completa la configurazione nelle Impostazioni oppure usa un Cliente locale." }); return }
+    if (!doc.settings.fic.enabled || !companyId) { appState.setError({ code: "MISSING_DATA", source: "FattureInCloud", message: "Fatture in Cloud non è attivo.", action: "Completa la configurazione nelle Impostazioni per recuperare i clienti." }); return }
     const result = await window.cash.fic.searchClients({ companyId, query })
     if (!result.ok) { appState.setError(result.error); return }
     setClientResults(result.value)

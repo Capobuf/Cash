@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { access, copyFile, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import Decimal from 'decimal.js';
 import { CURRENT_SCHEMA_VERSION, err, ok, type CashDocument, type Result } from '../domain/model';
 import { cashDocumentSchema, documentHeaderSchema, parseDocument, validationErrorFromIssues } from '../domain/schema';
 
@@ -57,17 +58,20 @@ export async function openArchive(path: string): Promise<Result<ArchiveSession>>
 export async function previewMigration(path: string): Promise<Result<MigrationPreview>> {
   const inspection = await inspectArchive(path);
   if (!inspection.ok) return inspection;
-  if (inspection.value.header.schemaVersion !== 1)
-    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto lo schema 1.' });
-  return ok({ fromVersion: 1, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes: [
+  const fromVersion = inspection.value.header.schemaVersion;
+  if (fromVersion !== 1 && fromVersion !== 2)
+    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi 1 e 2.' });
+  const changes = fromVersion === 1 ? [
     'Aggiunge l’anagrafica Clienti locali vuota.',
     'Imposta Fatture in Cloud su Disattivata conservando i riferimenti non segreti.',
     'Aggiunge fase attività, aliquote 5%/15% e conferme ai profili; i profili diventano Da verificare.',
     'Marca come Fatture in Cloud i riferimenti cliente e gli snapshot esistenti.',
-  ] });
+  ] : [];
+  changes.push('Converte automaticamente i consumi dei carburanti liquidi da l/100 km a km/l.');
+  return ok({ fromVersion, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes });
 }
 
-function migrateV1(raw: Record<string, unknown>): CashDocument {
+function migrateV1(raw: Record<string, unknown>): Record<string, unknown> {
   const settings = (raw.settings ?? {}) as Record<string, unknown>;
   const profiles = ((raw.profiles ?? []) as Array<Record<string, unknown>>).map(profile => {
     const fiscal = profile.fiscal as Record<string, unknown>;
@@ -91,9 +95,19 @@ function migrateV1(raw: Record<string, unknown>): CashDocument {
     ...(typeof settings.ficCompanyId === 'string' ? { companyId: settings.ficCompanyId } : {}),
     ...(typeof settings.ficConsultingProductId === 'string' ? { productId: settings.ficConsultingProductId } : {}),
   };
-  return parseDocument({ ...raw, schemaVersion: CURRENT_SCHEMA_VERSION, profiles, sites, quotes, localClients: [],
+  return { ...raw, schemaVersion: 2, profiles, sites, quotes, localClients: [],
     settings: { ...(typeof settings.fuelTerritory === 'string' ? { fuelTerritory: settings.fuelTerritory } : {}),
-      fic: { enabled: false, ...(Object.keys(legacyReferences).length ? { legacyReferences } : {}) } } });
+      fic: { enabled: false, ...(Object.keys(legacyReferences).length ? { legacyReferences } : {}) } } };
+}
+
+function migrateV2(raw: Record<string, unknown>): CashDocument {
+  const vehicles = ((raw.vehicles ?? []) as Array<Record<string, unknown>>).map(vehicle => {
+    if (vehicle.consumptionUnit !== 'l/100km') return vehicle;
+    const consumption = new Decimal(100).div(String(vehicle.consumption))
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+    return { ...vehicle, consumption, consumptionUnit: 'km/l' };
+  });
+  return parseDocument({ ...raw, schemaVersion: CURRENT_SCHEMA_VERSION, vehicles });
 }
 
 export async function migrateArchive(path: string): Promise<Result<ArchiveSession>> {
@@ -102,7 +116,8 @@ export async function migrateArchive(path: string): Promise<Result<ArchiveSessio
     const before = await readFile(path);
     const parsed = parseJson(before); if (!parsed.ok) return parsed;
     const preview = await previewMigration(path); if (!preview.ok) return preview;
-    const migrated = migrateV1(parsed.value as Record<string, unknown>);
+    const raw = parsed.value as Record<string, unknown>;
+    const migrated = migrateV2(preview.value.fromVersion === 1 ? migrateV1(raw) : raw);
     await copyFile(path, preview.value.backupPath);
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
     const bytes = encode(migrated);

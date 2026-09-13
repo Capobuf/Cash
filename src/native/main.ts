@@ -5,7 +5,7 @@ import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigr
 import { deleteFicToken, hasFicToken, requireFicToken, setFicToken } from './credentials';
 import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
-import { exportQuote, listCompanies, listConsultingProducts, searchClients, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
+import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
 import { IPC } from '../shared/ipc';
 import { requireActiveFic } from '../domain/integration';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from './fic-link';
@@ -112,6 +112,10 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.ficClients, async (_event, input: { companyId: string; query: string }) => {
     if (!activeFicCompany(input.companyId)) return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Integrazione Fatture in Cloud disattivata o azienda non configurata.' });
     const token = await requireFicToken(); return token.ok ? searchClients(input.companyId, input.query, token.value) : token;
+  });
+  ipcMain.handle(IPC.ficClientDetails, async (_event, input: { companyId: string; clientId: string }) => {
+    if (!activeFicCompany(input.companyId)) return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Integrazione Fatture in Cloud disattivata o azienda non configurata.' });
+    const token = await requireFicToken(); return token.ok ? getClientDetails(input.companyId, input.clientId, token.value) : token;
   });
   ipcMain.handle(IPC.ficProduct, async (_event, input: { companyId: string; productId: string }) => {
     if (!activeFicCompany(input.companyId) || current?.document?.settings.fic.product?.id !== input.productId)

@@ -1,7 +1,6 @@
 import { ArrowLeft, ChevronDown, CloudUpload, FilePlus2, Info, MoreHorizontal, Plus, RefreshCw, UserRound, Wrench } from "lucide-react"
 import { useState } from "react"
 import { calculateQuote } from "../../domain/calculations"
-import { createLocalClient, previewRemoteClientCopy, snapshotLocalClient } from "../../domain/clients"
 import type { CashDocument, QuoteItem } from "../../domain/model"
 import { Analysis } from "@/components/Analysis"
 import { CatalogPickerDialog, CustomerDialog, ExportDialog, InsertTemplateDialog, ItemNameDialog, SaveSubDialog, SaveTemplateDialog, SubItemDialog, VariantChangeDialog, VariantEditorSheet } from "@/components/QuoteDialogs"
@@ -35,7 +34,6 @@ type Overlay =
   | { kind: "insert-template" }
   | { kind: "save-template" }
   | { kind: "export" }
-  | { kind: "copy-client" }
 
 interface PendingQuoteUpdate { date?: string; profileId?: string; mainSiteId?: string; commission?: string }
 
@@ -61,15 +59,7 @@ export function QuotesView({ doc, appState, activeQuoteId, setActiveQuoteId, req
       const target = document.quotes.find((entry) => entry.id === quote.id)!
       if (typeof selection !== "string") target.client = selection
       else if (!selection) target.client = undefined
-      else { const client = document.localClients.find((entry) => entry.id === selection); if (client) target.client = snapshotLocalClient(client) }
     })
-  }
-  const copyRemoteClient = () => {
-    if (quote.client?.source !== "fatture_in_cloud") return
-    const created = createLocalClient(quote.client.displayName, quote.client.vatNumber)
-    if (!created.ok) { appState.setError(created.error); return }
-    appState.mutate((document) => document.localClients.push(created.value))
-    setOverlay(undefined)
   }
 
   const itemActions: QuoteItemActions = {
@@ -91,7 +81,6 @@ export function QuotesView({ doc, appState, activeQuoteId, setActiveQuoteId, req
     requestDelete,
   }
 
-  const remoteCopy = quote.client?.source === "fatture_in_cloud" ? previewRemoteClientCopy(quote.client, doc.localClients) : undefined
   const overlayItem = "itemId" in (overlay ?? {}) ? quote.items.find((item) => item.id === (overlay as { itemId: string }).itemId) : undefined
   const overlaySub = overlay?.kind === "sub" ? overlayItem?.subItems.find((sub) => sub.id === overlay.subId) : undefined
   const overlayGroup = overlay?.kind === "variant" || overlay?.kind === "variant-change" ? overlayItem?.variantGroups.find((group) => group.id === overlay.groupId) : undefined
@@ -110,14 +99,14 @@ export function QuotesView({ doc, appState, activeQuoteId, setActiveQuoteId, req
         <Field><FieldLabel htmlFor="quote-site">Sede principale</FieldLabel><NativeSelect id="quote-site" value={quote.mainSite?.sourceId ?? ""} onChange={(event) => setQuoteValue({ mainSiteId: event.target.value })}><NativeSelectOption value="">Nessuna</NativeSelectOption>{doc.sites.map((site) => <NativeSelectOption key={site.id} value={site.id}>{site.name}</NativeSelectOption>)}</NativeSelect></Field>
         <Field><FieldLabel htmlFor="quote-commission">Provvigione esterna</FieldLabel><InputGroup><InputGroupAddon><InputGroupText>€</InputGroupText></InputGroupAddon><InputGroupInput id="quote-commission" defaultValue={moneyInputValue(quote.commission ?? "")} inputMode="decimal" onBlur={(event) => setQuoteValue({ commission: decimalInputValue(event.target.value) })} /></InputGroup></Field>
       </CardContent></Card>
-      {quote.client?.source === "fatture_in_cloud" ? <Alert><AlertDescription className="flex items-center justify-between gap-4"><span>Cliente Fatture in Cloud: <strong>{quote.client.displayName}</strong>. La copia nel preventivo è indipendente dalla sorgente.</span><Button size="sm" variant="outline" onClick={() => setOverlay({ kind: "copy-client" })}>Copia come Cliente locale</Button></AlertDescription></Alert> : null}
+      {quote.client?.source === "fatture_in_cloud" ? <Alert><AlertDescription>Cliente Fatture in Cloud: <strong>{quote.client.displayName}</strong>. Lo snapshot nel preventivo resta indipendente dalla sorgente.</AlertDescription></Alert> : null}
 
       <div className="grid grid-cols-[minmax(0,1fr)_360px] items-start gap-4">
         <div className="space-y-3">{quote.items.length ? quote.items.map((item) => <QuoteItemCard key={item.id} item={item} hourly={hourly} doc={doc} actions={itemActions} />) : <Card><CardContent className="grid min-h-64 place-items-center text-center"><div><Wrench className="mx-auto size-9 text-muted-foreground" /><p className="mt-3 font-medium">Il preventivo è vuoto</p><p className="mt-1 text-sm text-muted-foreground">Crea una voce manuale o inserisci un template: puoi combinare i due approcci liberamente.</p><div className="mt-4 flex justify-center gap-2"><Button onClick={() => setOverlay({ kind: "item" })}><Plus />Aggiungi voce</Button><Button variant="outline" disabled={!doc.catalog.templates.length} onClick={() => setOverlay({ kind: "insert-template" })}>Inserisci template</Button></div></div></CardContent></Card>}</div>
         <aside className="sticky top-24 space-y-3"><Card><CardHeader><div><CardTitle>Analisi complessiva</CardTitle><CardDescription>La provvigione resta esclusa da questi calcoli.</CardDescription></div></CardHeader><CardContent>{total ? <Analysis value={total} /> : <Alert><AlertTitle>Analisi non disponibile</AlertTitle><AlertDescription>Associa un profilo confermato e calcolabile.</AlertDescription></Alert>}</CardContent></Card><Collapsible render={<Card />}><CollapsibleTrigger render={<Button variant="ghost" className="h-auto w-full justify-between p-4" />}><span className="flex items-center gap-2"><Info className="size-4" />Dettagli tecnici</span><ChevronDown /></CollapsibleTrigger><CollapsibleContent><CardContent className="space-y-2 border-t pt-4 text-xs text-muted-foreground"><p>Profilo: {quote.profileSnapshot ? `${quote.profileSnapshot.year} · rev. ${quote.profileSnapshot.revision}` : "non associato"}</p><p>Revisione snapshot: {quote.snapshotRevision}</p><p>{quote.snapshotUpdatedAt ? `Aggiornato: ${quote.snapshotUpdatedAt}` : "Snapshot mai aggiornato esplicitamente"}</p><p>Tentativi export: {quote.exportAttempts.length}</p></CardContent></CollapsibleContent></Collapsible></aside>
       </div>
 
-      {overlay?.kind === "customer" ? <CustomerDialog open onOpenChange={(open) => { if (!open) setOverlay(undefined) }} quote={quote} doc={doc} appState={appState} results={controller.clientResults} onSearch={controller.searchRemoteClients} onSelect={selectCustomer} /> : null}
+      {overlay?.kind === "customer" ? <CustomerDialog open onOpenChange={(open) => { if (!open) setOverlay(undefined) }} quote={quote} doc={doc} results={controller.clientResults} onSearch={controller.searchRemoteClients} onSelect={selectCustomer} /> : null}
       {overlay?.kind === "item" ? <ItemNameDialog open initial={overlay.item?.name} title={overlay.item ? "Rinomina voce" : "Nuova voce commerciale"} onOpenChange={(open) => { if (!open) setOverlay(undefined) }} onSave={(name) => { if (overlay.item) controller.renameItem(overlay.item.id, name); else controller.addItem(name); setOverlay(undefined) }} /> : null}
       {overlay?.kind === "sub" && overlayItem ? <SubItemDialog key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}`} sub={overlaySub} initialKind={overlay.initialKind} doc={doc} appState={appState} onClose={() => setOverlay(undefined)} onSaveSimple={(input) => controller.saveSimpleSub(overlay.itemId, input, overlay.subId)} onSaveTravel={(input) => controller.saveTravel(overlay.itemId, input, overlay.subId)} /> : null}
       {overlay?.kind === "catalog" ? <CatalogPickerDialog itemId={overlay.itemId} doc={doc} quote={quote} onClose={() => setOverlay(undefined)} onAdd={(item, context) => controller.addReusable(overlay.itemId, item, context)} /> : null}
@@ -127,7 +116,6 @@ export function QuotesView({ doc, appState, activeQuoteId, setActiveQuoteId, req
       {overlay?.kind === "insert-template" ? <InsertTemplateDialog doc={doc} quote={quote} onClose={() => setOverlay(undefined)} onInsert={controller.insertTemplate} /> : null}
       {overlay?.kind === "save-template" ? <SaveTemplateDialog quote={quote} onClose={() => setOverlay(undefined)} onSave={controller.saveTemplate} /> : null}
       {overlay?.kind === "export" ? <ExportDialog quote={quote} doc={doc} results={controller.clientResults} onSearch={controller.searchRemoteClients} onClose={() => setOverlay(undefined)} onExport={controller.performExport} /> : null}
-      <AlertDialog open={overlay?.kind === "copy-client"} onOpenChange={(open) => { if (!open) setOverlay(undefined) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Copiare come Cliente locale?</AlertDialogTitle><AlertDialogDescription>Verrà creato un nuovo cliente indipendente con denominazione e P.IVA correnti.{remoteCopy?.homonyms.length ? ` Esistono già ${remoteCopy.homonyms.length} omonimi: non verranno uniti.` : ""}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction onClick={copyRemoteClient}>Crea copia locale</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(pendingUpdate)} onOpenChange={(open) => { if (!open) setPendingUpdate(undefined) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Data e profilo appartengono ad anni diversi</AlertDialogTitle><AlertDialogDescription>Cash non cambia automaticamente il profilo. Puoi mantenere esplicitamente questa associazione senza modificare voci o prezzi scelti.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction onClick={() => { if (pendingUpdate) controller.updateQuote(pendingUpdate, true); setPendingUpdate(undefined) }}>Mantieni associazione</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
   )
