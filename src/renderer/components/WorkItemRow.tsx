@@ -47,15 +47,14 @@ export function WorkItemRow({
         </span>
         {note ? <span className="mt-0.5 block text-xs text-muted-foreground">{note}</span> : null}
       </span>
-      <span className="shrink-0 text-sm text-muted-foreground">{detail}</span>
       <span className="shrink-0 text-sm tabular-nums text-muted-foreground">{detail}</span>
     </>
   )
 
   return (
-    <div className={cn("flex min-h-12 items-center gap-3 rounded-lg border bg-card px-3 py-2", className)}>
+    <div className={cn("flex min-h-12 items-center gap-3 rounded-lg border bg-card px-3 py-2 transition-colors hover:border-input hover:bg-muted/20", className)}>
       {onClick ? (
-        <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-80" onClick={onClick}>
+        <button type="button" className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left" title={`Modifica ${description}`} onClick={onClick}>
           {content}
         </button>
       ) : (

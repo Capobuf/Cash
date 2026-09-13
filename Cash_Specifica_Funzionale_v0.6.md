@@ -316,6 +316,8 @@ L'inflazione viene utilizzata esclusivamente durante la preventivazione per aggi
 
 La fonte unica è l'indice ISTAT FOI generale nazionale al netto dei tabacchi. La granularità è mensile. Una voce può avere opzionalmente un prezzo di riferimento; se presente, richiede anche mese e anno del riferimento. Il periodo finale è l'ultimo mese pubblicato da ISTAT al momento del calcolo ed è sempre mostrato insieme alla data di acquisizione.
 
+Il prezzo di riferimento e il relativo periodo sono configurazione opzionale e secondaria della Voce. La normale interfaccia li mostra soltanto dopo un'azione esplicita dell'utente. Rimuovere il prezzo di riferimento rimuove anche il periodo e l'eventuale evidenza FOI associata; non è persistito uno stato parziale con solo importo o solo periodo.
+
 | **Dato** | **Comportamento** |
 | --- | --- |
 | Prezzo di riferimento | Valore storico o di riferimento associato alla voce. |
@@ -563,6 +565,8 @@ Il Tempo stimato della voce principale non è un input manuale: è sempre deriva
 
 La durata di una sottovoce Tempo è il tempo complessivo che l'utente attribuisce a quell'attività. Include eventuali attese, elaborazioni automatiche o tempi tecnici intermedi se l'utente li considera parte dell'attività.
 
+Nell'interfaccia la durata può essere inserita come minuti interi oppure usando ore e minuti nei formati `150`, `150m`, `2h`, `2h30m` o `2h 30m`, senza distinzione tra maiuscole e minuscole. Il valore canonico salvato resta un numero intero di minuti. Formati diversi o non validi producono un errore esplicito e non vengono interpretati tramite fallback.
+
 Cash non distingue tempo attivo, passivo o di attesa e non modella attività in parallelo. Se “Configurazione server” vale 1 ora e “Configurazione firewall” vale 30 minuti, il tempo stimato è 1 ora e 30 minuti anche se una parte delle due attività può essere svolta contemporaneamente.
 
 Il tempo stimato rappresenta quindi la somma del tempo attribuito alle attività, non il tempo cronologico minimo necessario per completare il lavoro.
@@ -616,9 +620,11 @@ Questo modello non richiede priorità tra gruppi: gruppi diversi non competono s
 
 Attività concettualmente autonome, come configurazione backup o monitoring, rimangono voci principali separate e non diventano semplici varianti della configurazione server.
 
-### 13.4 Modifica delle varianti nel preventivo
+### 13.4 Configurazione e uso delle varianti
 
-Dopo aver inserito una voce nel preventivo, l'utente può cambiare le varianti selezionate.
+I gruppi di varianti, le opzioni, i relativi contributi e l'eventuale default vengono creati e modificati esclusivamente nel Catalogo, all'interno delle Voci di un Template. Una Voce creata manualmente nel preventivo non può creare gruppi di varianti.
+
+Dopo aver inserito da Template una voce nel preventivo, l'utente può cambiare le varianti già definite e selezionate. Il preventivo usa la struttura copiata dal Template ma non offre azioni per modificarne gruppi, opzioni o contributi.
 
 Se il cambio di variante sostituisce o rimuove una sottovoce generata da quel gruppo che l'utente aveva modificato manualmente, Cash deve avvisare l'utente prima di applicare il cambiamento. Se l'utente conferma, prevale il nuovo risultato della variante.
 
@@ -918,7 +924,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **3.** Se sono disponibili Template, favorirne l'inserimento come percorso ordinario; mantenere sempre disponibile la creazione manuale di una o più voci e usarla come percorso principale quando il Catalogo non contiene Template.
 
-**4.** Per i gruppi di varianti senza default, scegliere l'opzione richiesta.
+**4.** Per i gruppi di varianti senza default, scegliere l'opzione richiesta. Le Varianti vengono configurate nel Catalogo, dentro i Template; nel preventivo è possibile soltanto scegliere o cambiare le opzioni dei gruppi già presenti nelle Voci inserite da Template.
 
 **5.** Aggiungere o modificare liberamente sottovoci Tempo, Spesa e Trasferta.
 
@@ -932,7 +938,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **10.** Impostare il prezzo finale scelto.
 
-**11.** Visualizzare resa, scostamento e tempo massimo coerente per voce e per preventivo complessivo.
+**11.** Visualizzare resa, scostamento e tempo massimo coerente nell'analisi economica complessiva del preventivo; nella normale vista della singola Voce mostrare Prezzo scelto, Valore teorico, Tempo e Spese.
 
 **12.** Registrare, se presente, la provvigione fuori dal corpo del preventivo.
 
@@ -1295,7 +1301,7 @@ L'attivazione viene salvata come `Attiva` soltanto dopo il completamento riuscit
 
 La pagina recupera e cerca in una tabella i clienti dell'azienda Fatture in Cloud configurata. Il menu `…` permette l'aggiunta rapida di una Sede; il clic sulla riga apre tutte le informazioni FIC, chiaramente etichettate, e le informazioni Cash collegate, incluse Sedi e preventivi. Un gruppo separato **Altre sedi** nelle Impostazioni gestisce fornitori, laboratorio, magazzini e luoghi indipendenti. La modifica o eliminazione di un cliente avviene esclusivamente in Fatture in Cloud e non altera automaticamente Sedi o snapshot già salvati in Cash.
 
-La gestione delle Sedi consente di modificare indirizzo o coordinate, avviare **Cerca**, scegliere un risultato quando necessario e usare **Imposta come partenza predefinita**. La gestione dei Veicoli già presente nell'area Trasferte e carburanti consente analogamente di scegliere il Veicolo predefinito. Queste azioni non introducono una pagina principale Trasferte.
+La gestione delle Sedi consente di modificare indirizzo o coordinate, avviare **Cerca** e scegliere un risultato quando necessario. Nell'area Costi, trasferte e altre sedi sono sempre visibili i selettori **Partenza predefinita** e **Veicolo predefinito**, entrambi impostabili anche su **Nessuno**. Queste impostazioni aggiornano gli unici riferimenti globali esistenti e non introducono una pagina principale Trasferte.
 
 Non sono configurabili: formule economiche, regola di snapshot, atomicità, divieto di fallback, precisione degli arrotondamenti, tipi di sottovoce, indipendenza delle copie e modello monoutente sequenziale.
 
@@ -1431,7 +1437,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **21.** Garantire l'indipendenza delle copie: nessuna propagazione automatica fra catalogo, template e preventivi.
 
-**22.** Gestire gruppi di varianti creati dall'utente, con zero/una opzione predefinita e richiesta esplicita quando il default manca.
+**22.** Gestire nel Catalogo, all'interno delle Voci dei Template, gruppi di varianti creati dall'utente, con zero/una opzione predefinita e richiesta esplicita quando il default manca; nel preventivo consentire soltanto la selezione delle opzioni già definite.
 
 **23.** Permettere a ciascuna opzione di produrre zero o più sottovoci e garantire che ogni gruppo gestisca esclusivamente le sottovoci prodotte dalle proprie opzioni.
 

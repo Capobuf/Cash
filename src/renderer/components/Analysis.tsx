@@ -14,7 +14,7 @@ export function Analysis({ value, chosenPrice, compact = false }: { value: Analy
         <Metric label="Prezzo scelto" value={eur(selected)} emphasized />
         <Metric label="Valore teorico" value={eur(value.theoreticalValue)} />
         <Metric label="Resa prevista" value={value.yieldPerHour !== undefined ? `${eur(value.yieldPerHour)}/h` : "—"} icon={Gauge} />
-        <Metric label="Scostamento" value={value.deviationPercent !== undefined ? `${value.deviationPercent}%` : "—"} badge={value.deviationPercent !== undefined ? (Number(value.deviationPercent) >= 0 ? "Sopra obiettivo" : "Sotto obiettivo") : undefined} />
+        <Metric label="Scostamento dall’obiettivo" value={value.deviationPercent !== undefined ? `${value.deviationPercent}%` : "—"} badge={value.deviationPercent !== undefined ? (Number(value.deviationPercent) >= 0 ? "Sopra obiettivo" : "Sotto obiettivo") : undefined} />
       </div>
       {!compact ? <div className="grid grid-cols-3 gap-2 rounded-lg border bg-muted/20 p-3">
         <Secondary icon={Clock3} label="Tempo" value={hours(value.minutes)} />

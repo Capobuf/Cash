@@ -3,9 +3,9 @@ import { calculateTravel, calculateVehicleCost } from "../../domain/calculations
 import { cloneTemplate, reusableFromQuoteSubItem, templateFromQuote } from "../../domain/catalog"
 import { buildExportLines, createPendingAttempt } from "../../domain/export"
 import { snapshotSite } from "../../domain/locations"
-import { meta, type CashDocument, type FicClientSnapshot, type Quote, type QuoteItem, type QuoteSubItem, type ReusableSubItem, type SubItemDefinition, type VariantGroup } from "../../domain/model"
+import { meta, type CashDocument, type FicClientSnapshot, type Quote, type QuoteItem, type QuoteSubItem, type ReusableSubItem, type SubItemDefinition } from "../../domain/model"
 import { refreshQuote, snapshotProfile } from "../../domain/refresh"
-import { applyVariantSelections, changeVariant, validateVariantGroups } from "../../domain/variants"
+import { applyVariantSelections, changeVariant } from "../../domain/variants"
 import type { AppState } from "../state"
 import type { DeleteTarget } from "../types"
 
@@ -125,13 +125,37 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     appState.mutate((document) => { const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!; item.name = name.trim(); item.updatedAt = new Date().toISOString() })
   }
 
-  const updatePrices = (itemId: string, chosenPrice: string, referenceAmount: string, referencePeriod: string) => {
-    if (!quote) return
+  const updateChosenPrice = (itemId: string, chosenPrice: string) => {
+    if (!quote) return false
+    const value = chosenPrice.trim()
+    if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      appState.setError({ code: "VALIDATION", field: "chosenPrice", message: "Il Prezzo scelto deve essere un importo non negativo." })
+      return false
+    }
     appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
-      item.chosenPrice = chosenPrice ? Number(chosenPrice).toFixed(2) : undefined
-      item.referencePrice = referenceAmount && referencePeriod ? { amount: Number(referenceAmount).toFixed(2), period: referencePeriod } : undefined
+      item.chosenPrice = value ? Number(value).toFixed(2) : undefined
     })
+    return true
+  }
+
+  const updateReferencePrice = (itemId: string, referenceAmount?: string, referencePeriod?: string) => {
+    if (!quote) return false
+    if (!referenceAmount && !referencePeriod) {
+      appState.mutate((document) => { delete document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.referencePrice })
+      return true
+    }
+    if (!referenceAmount || !referencePeriod || !Number.isFinite(Number(referenceAmount)) || Number(referenceAmount) < 0 || !/^\d{4}-\d{2}$/.test(referencePeriod)) {
+      appState.setError({ code: "VALIDATION", field: "referencePrice", message: "Completa importo e mese/anno del Prezzo di riferimento, oppure rimuovilo." })
+      return false
+    }
+    const normalizedAmount = Number(referenceAmount).toFixed(2)
+    appState.mutate((document) => {
+      const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
+      if (item.referencePrice?.amount === normalizedAmount && item.referencePrice.period === referencePeriod) return
+      item.referencePrice = { amount: normalizedAmount, period: referencePeriod }
+    })
+    return true
   }
 
   const saveSimpleSub = (itemId: string, input: SimpleSubInput, subId?: string) => {
@@ -200,26 +224,6 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     const queue: QuoteSubItem[] = []
     for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
     const result = changeVariant(item, groupId, optionId, force, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
-    if (!result.ok) { appState.setError(result.error); return false }
-    appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
-    return true
-  }
-
-  const saveVariantGroup = async (itemId: string, group: VariantGroup, selectedOptionId: string, context: TravelContext, force: boolean) => {
-    if (!quote) return false
-    const source = quote.items.find((entry) => entry.id === itemId)
-    if (!source) return false
-    const draft = structuredClone(source)
-    const index = draft.variantGroups.findIndex((entry) => entry.id === group.id)
-    if (index >= 0) draft.variantGroups[index] = group
-    else draft.variantGroups.push(group)
-    const validation = validateVariantGroups(draft.variantGroups)
-    if (!validation.ok) { appState.setError(validation.error); return false }
-    const option = group.options.find((entry) => entry.id === selectedOptionId)
-    if (!option) { appState.setError({ code: "MISSING_DATA", message: "Scegli l’opzione iniziale del gruppo variante." }); return false }
-    const queue: QuoteSubItem[] = []
-    for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
-    const result = changeVariant(draft, group.id, option.id, force, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
     if (!result.ok) { appState.setError(result.error); return false }
     appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
     return true
@@ -312,8 +316,8 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
   }
 
   return {
-    quote, clientResults, newQuote, updateQuote, searchRemoteClients, setClientResults, addItem, renameItem, updatePrices,
-    saveSimpleSub, saveTravel, addReusable, saveSubToCatalog, switchVariant, saveVariantGroup, insertTemplate,
+    quote, clientResults, newQuote, updateQuote, searchRemoteClients, setClientResults, addItem, renameItem, updateChosenPrice, updateReferencePrice,
+    saveSimpleSub, saveTravel, addReusable, saveSubToCatalog, switchVariant, insertTemplate,
     saveTemplate, performRefresh, performExport, requestDelete,
   }
 }

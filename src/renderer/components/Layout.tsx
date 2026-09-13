@@ -82,7 +82,6 @@ export function AppShell({ appState, view, onView, children }: {
   onView: (view: View) => void
   children: ReactNode
 }) {
-  const archiveName = (appState.session?.path ?? "").split(/[\\/]/).pop() ?? ""
   const statusCritical = appState.status.includes("Errore") || appState.status.includes("Conflitto") || appState.status === "Dati da correggere" || appState.status === "Sola lettura"
   const StatusIcon = appState.status === "Salvato" ? CheckCircle2 : appState.status === "Salvataggio" ? LoaderCircle : statusCritical ? CircleAlert : CloudCog
   return (
@@ -118,11 +117,10 @@ export function AppShell({ appState, view, onView, children }: {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-6 border-b bg-background/95 px-8 py-3 backdrop-blur">
+        <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3 backdrop-blur 2xl:px-8">
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{descriptions[view]}</p>
             <h1 className="text-xl font-semibold tracking-tight">{titles[view]}</h1>
-            {archiveName ? <p className="max-w-lg truncate text-xs text-muted-foreground" title={appState.session?.path}>{archiveName}</p> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Badge variant={statusCritical ? "destructive" : "outline"} role="status" className="gap-1.5"><StatusIcon className={appState.status === "Salvataggio" ? "animate-spin" : undefined} />{appState.status}</Badge>

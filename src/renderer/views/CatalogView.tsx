@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { cloneReusableSubItem } from "../../domain/catalog"
+import { parseDuration } from "../../domain/duration"
 import {
   meta,
   type CashDocument,
@@ -34,11 +35,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { decimalInputValue, eur, formReader, moneyInputValue } from "@/lib/format"
+import { decimalInputValue, eur, formReader, hours, moneyInputValue } from "@/lib/format"
 import type { AppState } from "../state"
 import type { DeleteTarget } from "../types"
 
@@ -708,17 +709,24 @@ function ReusableDialog({
   onDelete?: () => void
 }) {
   const [kind, setKind] = useState<Kind>(value?.kind ?? initialKind ?? "time")
+  const [durationError, setDurationError] = useState<string>()
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const { data, get, money } = formReader(event.currentTarget)
     const identity = value
       ? { id: value.id, createdAt: value.createdAt, updatedAt: new Date().toISOString() }
       : meta()
-    if (kind === "time") onSave({ ...identity, kind, description: get("description"), minutes: Number(get("minutes")) })
+    if (kind === "time") {
+      const duration = parseDuration(get("minutes"))
+      if (!duration.ok) { setDurationError(duration.error.message); return }
+      onSave({ ...identity, kind, description: get("description"), minutes: duration.value })
+    }
     else if (kind === "expense") onSave({ ...identity, kind, description: get("description"), amount: Number(money("amount")).toFixed(2) })
     else {
       const distance = get("distance")
       const minutes = get("travelMinutes")
+      const duration = minutes ? parseDuration(minutes) : undefined
+      if (duration && !duration.ok) { setDurationError(duration.error.message); return }
       onSave({
         ...identity,
         kind,
@@ -726,7 +734,7 @@ function ReusableDialog({
         occurrences: Number(get("occurrences")),
         roundTrip: data.get("roundTrip") === "on",
         ...(distance ? { distanceKmPerOccurrence: Number(distance.replace(",", ".")).toFixed(1) } : {}),
-        ...(minutes ? { travelMinutesPerOccurrence: Number(minutes) } : {}),
+        ...(duration?.ok ? { travelMinutesPerOccurrence: duration.value } : {}),
       })
     }
   }
@@ -744,7 +752,7 @@ function ReusableDialog({
             {!lockKind && !value ? (
               <Field>
                 <FieldLabel htmlFor="catalog-kind">Tipo</FieldLabel>
-                <NativeSelect id="catalog-kind" value={kind} onChange={(event) => setKind(event.target.value as Kind)}>
+                <NativeSelect id="catalog-kind" value={kind} onChange={(event) => { setKind(event.target.value as Kind); setDurationError(undefined) }}>
                   <NativeSelectOption value="time">Attività</NativeSelectOption>
                   <NativeSelectOption value="expense">Spesa</NativeSelectOption>
                   <NativeSelectOption value="travel">Trasferta</NativeSelectOption>
@@ -758,7 +766,8 @@ function ReusableDialog({
             {kind === "time" ? (
               <Field>
                 <FieldLabel htmlFor="catalog-minutes">Durata</FieldLabel>
-                <Input id="catalog-minutes" name="minutes" type="number" defaultValue={value?.kind === "time" ? value.minutes : ""} placeholder="Minuti" min={1} step={1} required />
+                <Input id="catalog-minutes" name="minutes" defaultValue={value?.kind === "time" ? hours(value.minutes) : ""} placeholder="es. 2h 30m" onChange={() => setDurationError(undefined)} required />
+                {durationError ? <FieldDescription className="text-destructive">{durationError}</FieldDescription> : <FieldDescription>Puoi usare minuti oppure ore e minuti.</FieldDescription>}
               </Field>
             ) : null}
             {kind === "expense" ? (
@@ -779,8 +788,9 @@ function ReusableDialog({
                     <Input id="catalog-distance" name="distance" defaultValue={value?.kind === "travel" ? value.distanceKmPerOccurrence : ""} inputMode="decimal" />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="catalog-travel-minutes">Minuti manuali/occ.</FieldLabel>
-                    <Input id="catalog-travel-minutes" name="travelMinutes" type="number" defaultValue={value?.kind === "travel" ? value.travelMinutesPerOccurrence : ""} min={1} />
+                    <FieldLabel htmlFor="catalog-travel-minutes">Tempo manuale/occ.</FieldLabel>
+                    <Input id="catalog-travel-minutes" name="travelMinutes" defaultValue={value?.kind === "travel" && value.travelMinutesPerOccurrence !== undefined ? hours(value.travelMinutesPerOccurrence) : ""} placeholder="es. 45m" onChange={() => setDurationError(undefined)} />
+                    {durationError ? <FieldDescription className="text-destructive">{durationError}</FieldDescription> : null}
                   </Field>
                 </div>
                 <Field orientation="horizontal">
@@ -845,17 +855,17 @@ function optionEffect(option: VariantOption): string {
   if (!option.subItems.length) return "Nessun contributo"
   if (option.subItems.length === 1) return definitionDetail(option.subItems[0]!)
   const time = option.subItems.filter((item) => item.kind === "time").reduce((sum, item) => sum + item.minutes, 0)
-  return time > 0 ? `${option.subItems.length} elementi · ${time} min` : `${option.subItems.length} elementi`
+  return time > 0 ? `${option.subItems.length} elementi · ${hours(time)}` : `${option.subItems.length} elementi`
 }
 
 function definitionDetail(item: SubItemDefinition): string {
-  if (item.kind === "time") return `${item.minutes} min`
+  if (item.kind === "time") return hours(item.minutes)
   if (item.kind === "expense") return eur(item.amount)
   return `${item.occurrences} ${item.occurrences === 1 ? "occorrenza" : "occorrenze"}`
 }
 
 function reusableDetail(item: ReusableSubItem): string {
-  if (item.kind === "time") return `${item.minutes} min`
+  if (item.kind === "time") return hours(item.minutes)
   if (item.kind === "expense") return eur(item.amount)
   return `${item.roundTrip ? "A/R" : "Solo andata"} · ${item.occurrences} ${item.occurrences === 1 ? "occorrenza" : "occorrenze"}`
 }

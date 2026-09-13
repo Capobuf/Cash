@@ -37,14 +37,14 @@ export function DashboardView({ doc, appState, onEditProfile, onOpenQuote, onNew
 
       {!profile ? <Alert><AlertTriangle /><AlertTitle>Configurazione iniziale incompleta</AlertTitle><AlertDescription className="flex items-center justify-between gap-4"><span>Crea il profilo annuale per ottenere valore medio, capacità e proiezioni.</span><Button size="sm" onClick={() => { const created = createFiscalPreset2026(); appState.mutate((document) => document.profiles.push(created)); onEditProfile(created.id) }}>Crea profilo 2026</Button></AlertDescription></Alert> : null}
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Metric icon={WalletCards} label="Valore medio da generare" value={values ? `${eur(values.hourlyTarget)}/h` : "—"} note="Riferimento, non tariffa obbligatoria" primary />
         <Metric icon={CalendarDays} label="Fatturato obiettivo" value={profile ? eur(profile.revenueTarget) : "—"} note={profile ? `Profilo ${profile.year} · rev. ${profile.revision}` : "Profilo non configurato"} />
         <Metric icon={CheckCircle2} label="Netto fiscale stimato" value={eur(values?.fiscalNet)} note="Stima interna non contabile" />
         <Metric icon={Clock3} label="Capacità cliente" value={values ? hours(values.availableClientMinutes) : "—"} note={values ? `${values.availableDays} giorni disponibili` : "Richiede un profilo confermato"} />
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(320px,.65fr)] gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.65fr)]">
         <Card><CardHeader><div><CardTitle>Preventivi recenti</CardTitle><CardDescription>Riprendi rapidamente il lavoro dove lo avevi lasciato.</CardDescription></div><CardAction><Button variant="outline" onClick={onNewQuote}><FilePlus2 />Nuovo</Button></CardAction></CardHeader><CardContent>
           {doc.quotes.length ? <Table><TableHeader><TableRow><TableHead>Preventivo</TableHead><TableHead>Cliente</TableHead><TableHead>Data</TableHead><TableHead className="text-right">Voci</TableHead><TableHead className="w-24" /></TableRow></TableHeader><TableBody>{doc.quotes.slice(-6).reverse().map((quote) => <TableRow key={quote.id}><TableCell className="font-medium">{quote.items.map((item) => item.name).join(", ") || "Preventivo incompleto"}</TableCell><TableCell className="text-muted-foreground">{quote.client?.displayName ?? "Nessun cliente"}</TableCell><TableCell>{dateIt(quote.date)}</TableCell><TableCell className="text-right tabular-nums">{quote.items.length}</TableCell><TableCell><Button size="sm" variant="ghost" onClick={() => onOpenQuote(quote.id)}>Apri <ArrowRight /></Button></TableCell></TableRow>)}</TableBody></Table> : <div className="grid min-h-52 place-items-center rounded-lg border border-dashed text-center"><div><p className="font-medium">Nessun preventivo</p><p className="mt-1 text-sm text-muted-foreground">Il primo preventivo può partire vuoto o da un template.</p><Button className="mt-4" size="sm" onClick={onNewQuote}>Crea il primo preventivo</Button></div></div>}
         </CardContent></Card>

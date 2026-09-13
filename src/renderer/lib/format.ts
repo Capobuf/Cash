@@ -19,9 +19,16 @@ export const dateIt = (value: string): string =>
   }).format(new Date(`${value.slice(0, 10)}T00:00:00`))
 
 export const hours = (minutes?: number): string =>
-  minutes === undefined ? "—" : `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  minutes === undefined
+    ? "—"
+    : minutes < 60
+      ? `${minutes}m`
+      : minutes % 60 === 0
+        ? `${minutes / 60}h`
+        : `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 
 export const moneyInputValue = (value: unknown): string => {
+  if (String(value ?? "").trim() === "") return ""
   const parsed = Number(value)
   return Number.isFinite(parsed)
     ? new Intl.NumberFormat("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parsed)
