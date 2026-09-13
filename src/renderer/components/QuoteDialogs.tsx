@@ -1,6 +1,7 @@
 import { Check, ChevronRight, MapPin, Plus, Search } from "lucide-react"
 import { useMemo, useState, type FormEvent } from "react"
 import { buildExportLines, needsRepeatWarning } from "../../domain/export"
+import { templateRequiresTravel } from "../../domain/catalog"
 import { routeValuesRequireOverwriteConfirmation, valuesFromRoute } from "../../domain/calculations"
 import { parseDuration } from "../../domain/duration"
 import { siteHasUsableLocation } from "../../domain/locations"
@@ -133,7 +134,7 @@ export function DefinitionDialog({ value, initialKind, lockKind = false, onClose
       onSave({ kind, description: get("description"), roundTrip: data.get("roundTrip") === "on", occurrences: Number(get("occurrences")), ...(distance ? { distanceKmPerOccurrence: Number(distance.replace(",", ".")).toFixed(1) } : {}), ...(duration?.ok ? { travelMinutesPerOccurrence: duration.value } : {}) })
     }
   }
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent><form onSubmit={submit} className="contents"><DialogHeader><DialogTitle>{value ? "Modifica effetto" : kind === "time" ? "Aggiungi tempo" : "Aggiungi effetto"}</DialogTitle>{kind === "travel" ? <DialogDescription>Sedi, Veicolo e percorso verranno scelti quando il Template sarà usato.</DialogDescription> : null}</DialogHeader><FieldGroup>{!lockKind && !value ? <Field><FieldLabel htmlFor="definition-kind">Tipo</FieldLabel><NativeSelect id="definition-kind" value={kind} onChange={(event) => { setKind(event.target.value as SubItemDefinition["kind"]); setDurationError(undefined) }}><NativeSelectOption value="time">Tempo</NativeSelectOption><NativeSelectOption value="expense">Spesa</NativeSelectOption><NativeSelectOption value="travel">Trasferta</NativeSelectOption></NativeSelect></Field> : null}<Field><FieldLabel htmlFor="definition-description">Descrizione</FieldLabel><Input id="definition-description" name="description" defaultValue={value?.description} autoFocus required /></Field>{kind === "time" ? <Field><FieldLabel htmlFor="definition-minutes">Durata</FieldLabel><Input id="definition-minutes" name="minutes" defaultValue={value?.kind === "time" ? hours(value.minutes) : ""} placeholder="es. 2h 30m" onChange={() => setDurationError(undefined)} required />{durationError ? <FieldDescription className="text-destructive">{durationError}</FieldDescription> : <FieldDescription>Puoi usare minuti oppure ore e minuti.</FieldDescription>}</Field> : null}{kind === "expense" ? <Field><FieldLabel htmlFor="definition-amount">Importo</FieldLabel><Input id="definition-amount" name="amount" defaultValue={value?.kind === "expense" ? moneyInputValue(value.amount) : ""} required /></Field> : null}{kind === "travel" ? <><Field><FieldLabel htmlFor="definition-occurrences">Occorrenze</FieldLabel><Input id="definition-occurrences" name="occurrences" type="number" defaultValue={value?.kind === "travel" ? value.occurrences : 1} min={1} required /></Field><div className="grid gap-3 sm:grid-cols-2"><Field><FieldLabel htmlFor="definition-distance">Distanza manuale/occ.</FieldLabel><Input id="definition-distance" name="distance" defaultValue={value?.kind === "travel" ? value.distanceKmPerOccurrence : ""} inputMode="decimal" /></Field><Field><FieldLabel htmlFor="definition-travel-minutes">Tempo manuale/occ.</FieldLabel><Input id="definition-travel-minutes" name="travelMinutes" defaultValue={value?.kind === "travel" && value.travelMinutesPerOccurrence !== undefined ? hours(value.travelMinutesPerOccurrence) : ""} placeholder="es. 45m" onChange={() => setDurationError(undefined)} />{durationError ? <FieldDescription className="text-destructive">{durationError}</FieldDescription> : null}</Field></div><Field orientation="horizontal"><Checkbox id="definition-roundtrip" name="roundTrip" defaultChecked={value?.kind === "travel" ? value.roundTrip : true} /><FieldLabel htmlFor="definition-roundtrip">Andata e ritorno</FieldLabel></Field></> : null}</FieldGroup><DialogFooter>{onDelete ? <Button type="button" variant="destructive" className="mr-auto" onClick={onDelete}>Elimina</Button> : null}<Button type="button" variant="outline" onClick={onClose}>Annulla</Button><Button type="submit">Conferma</Button></DialogFooter></form></DialogContent></Dialog>
+  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent><form onSubmit={submit} className="contents"><DialogHeader><DialogTitle>{value ? "Modifica effetto" : kind === "time" ? "Aggiungi attività" : "Aggiungi effetto"}</DialogTitle>{kind === "travel" ? <DialogDescription>Sedi, Veicolo e percorso verranno scelti quando il Template sarà usato.</DialogDescription> : null}</DialogHeader><FieldGroup>{!lockKind && !value ? <Field><FieldLabel htmlFor="definition-kind">Tipo</FieldLabel><NativeSelect id="definition-kind" value={kind} onChange={(event) => { setKind(event.target.value as SubItemDefinition["kind"]); setDurationError(undefined) }}><NativeSelectOption value="time">Attività</NativeSelectOption><NativeSelectOption value="expense">Spesa</NativeSelectOption><NativeSelectOption value="travel">Trasferta</NativeSelectOption></NativeSelect></Field> : null}<Field><FieldLabel htmlFor="definition-description">Descrizione</FieldLabel><Input id="definition-description" name="description" defaultValue={value?.description} autoFocus required /></Field>{kind === "time" ? <Field><FieldLabel htmlFor="definition-minutes">Durata</FieldLabel><Input id="definition-minutes" name="minutes" defaultValue={value?.kind === "time" ? hours(value.minutes) : ""} placeholder="es. 2h 30m" onChange={() => setDurationError(undefined)} required />{durationError ? <FieldDescription className="text-destructive">{durationError}</FieldDescription> : <FieldDescription>Puoi usare minuti oppure ore e minuti.</FieldDescription>}</Field> : null}{kind === "expense" ? <Field><FieldLabel htmlFor="definition-amount">Importo</FieldLabel><Input id="definition-amount" name="amount" defaultValue={value?.kind === "expense" ? moneyInputValue(value.amount) : ""} required /></Field> : null}{kind === "travel" ? <><Field><FieldLabel htmlFor="definition-occurrences">Occorrenze</FieldLabel><Input id="definition-occurrences" name="occurrences" type="number" defaultValue={value?.kind === "travel" ? value.occurrences : 1} min={1} required /></Field><div className="grid gap-3 sm:grid-cols-2"><Field><FieldLabel htmlFor="definition-distance">Distanza manuale/occ.</FieldLabel><Input id="definition-distance" name="distance" defaultValue={value?.kind === "travel" ? value.distanceKmPerOccurrence : ""} inputMode="decimal" /></Field><Field><FieldLabel htmlFor="definition-travel-minutes">Tempo manuale/occ.</FieldLabel><Input id="definition-travel-minutes" name="travelMinutes" defaultValue={value?.kind === "travel" && value.travelMinutesPerOccurrence !== undefined ? hours(value.travelMinutesPerOccurrence) : ""} placeholder="es. 45m" onChange={() => setDurationError(undefined)} />{durationError ? <FieldDescription className="text-destructive">{durationError}</FieldDescription> : null}</Field></div><Field orientation="horizontal"><Checkbox id="definition-roundtrip" name="roundTrip" defaultChecked={value?.kind === "travel" ? value.roundTrip : true} /><FieldLabel htmlFor="definition-roundtrip">Andata e ritorno</FieldLabel></Field></> : null}</FieldGroup><DialogFooter>{onDelete ? <Button type="button" variant="destructive" className="mr-auto" onClick={onDelete}>Elimina</Button> : null}<Button type="button" variant="outline" onClick={onClose}>Annulla</Button><Button type="submit">Conferma</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
 export function InsertTemplateDialog({ doc: sourceDocument, quote, onClose, onInsert }: { doc: CashDocument; quote: Quote; onClose: () => void; onInsert: (templateId: string, choices: Record<string, string>, context: { siteId?: string; vehicleId?: string }) => Promise<boolean> }) {
@@ -144,18 +145,127 @@ export function InsertTemplateDialog({ doc: sourceDocument, quote, onClose, onIn
   const [siteId, setSiteId] = useState(quote.mainSite?.sourceId ?? "")
   const [vehicleId, setVehicleId] = useState(doc.settings.defaultVehicleId ?? "")
   const [busy, setBusy] = useState(false)
-  const groups = template?.items.flatMap((item) => item.variantGroups.map((group) => ({ item: item.name, group }))) ?? []
-  const missingGroups = groups.filter(({ group }) => !group.defaultOptionId)
-  const hasTravel = template?.items.some((item) => item.subItems.some((sub) => sub.kind === "travel") || item.variantGroups.some((group) => group.options.some((option) => option.subItems.some((sub) => sub.kind === "travel")))) ?? false
-  const complete = missingGroups.every(({ group }) => Boolean(choices[group.id])) && (!hasTravel || Boolean(siteId && vehicleId))
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="sm:max-w-3xl"><DialogHeader><DialogTitle>Inserisci template</DialogTitle><DialogDescription>Le voci inserite saranno copie indipendenti e resteranno completamente modificabili.</DialogDescription></DialogHeader><div className="grid grid-cols-[260px_1fr] gap-5"><ScrollArea className="h-[420px] rounded-lg border"><div className="p-2">{doc.catalog.templates.map((entry) => <ChoiceButton key={entry.id} selected={entry.id === templateId} title={entry.name} detail={`${entry.items.length} ${entry.items.length === 1 ? "voce" : "voci"}`} onClick={() => { setTemplateId(entry.id); setChoices({}) }} />)}</div></ScrollArea><ScrollArea className="h-[420px]"><div className="space-y-4 pr-3">{template ? <><div className="rounded-lg border p-4"><h3 className="font-medium">{template.name}</h3><div className="mt-3 space-y-2">{template.items.map((item) => <div key={item.id} className="flex items-center justify-between text-sm"><span className="font-medium">{item.name}</span><span className="text-muted-foreground">{item.subItems.length} elementi · {item.variantGroups.length} varianti</span></div>)}</div></div>{missingGroups.length ? <div className="space-y-3"><p className="text-sm font-medium">Scelte richieste</p>{missingGroups.map(({ item, group }) => <Field key={group.id}><FieldLabel htmlFor={`template-choice-${group.id}`}>{item} · {group.name}</FieldLabel><NativeSelect id={`template-choice-${group.id}`} value={choices[group.id] ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [group.id]: event.target.value }))}><NativeSelectOption value="">Scegli opzione</NativeSelectOption>{group.options.map((option) => <NativeSelectOption key={option.id} value={option.id}>{option.name}</NativeSelectOption>)}</NativeSelect></Field>)}</div> : groups.length ? <p className="rounded-lg bg-muted/30 px-3 py-2 text-sm text-muted-foreground">Le varianti useranno le opzioni predefinite.</p> : null}{hasTravel ? <div className="grid grid-cols-2 gap-3 rounded-lg border p-4"><Field><FieldLabel htmlFor="template-site">Sede per le trasferte</FieldLabel><NativeSelect id="template-site" value={siteId} onChange={(event) => setSiteId(event.target.value)}><NativeSelectOption value="">Scegli sede</NativeSelectOption>{doc.sites.map((site) => <NativeSelectOption key={site.id} value={site.id}>{site.name}</NativeSelectOption>)}</NativeSelect></Field><Field><FieldLabel htmlFor="template-vehicle">Veicolo</FieldLabel><NativeSelect id="template-vehicle" value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}><NativeSelectOption value="">Scegli veicolo</NativeSelectOption>{doc.vehicles.map((vehicle) => <NativeSelectOption key={vehicle.id} value={vehicle.id}>{vehicle.name}</NativeSelectOption>)}</NativeSelect></Field></div> : null}</> : <p className="text-sm text-muted-foreground">Seleziona un template.</p>}</div></ScrollArea></div><DialogFooter><Button variant="outline" onClick={onClose}>Annulla</Button><Button disabled={!template || !complete || busy} onClick={() => { if (!template) return; setBusy(true); void onInsert(template.id, choices, { siteId, vehicleId }).then((ok) => { setBusy(false); if (ok) onClose() }) }}>{busy ? "Inserimento…" : `Inserisci ${template?.items.length ?? 0} ${template?.items.length === 1 ? "voce" : "voci"}`}</Button></DialogFooter></DialogContent></Dialog>
+  const groups = template?.items.flatMap((item) => item.variantGroups) ?? []
+  const hasTravel = template ? templateRequiresTravel(template, choices) : false
+  const complete = groups.every((group) => {
+    const optionId = choices[group.id] ?? group.defaultOptionId
+    return Boolean(optionId && group.options.some((option) => option.id === optionId))
+  }) && (!hasTravel || Boolean(siteId && vehicleId))
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Inserisci template</DialogTitle>
+          <DialogDescription>Le voci inserite saranno copie indipendenti e resteranno completamente modificabili.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-5 md:grid-cols-[240px_minmax(0,1fr)]">
+          <ScrollArea className="h-[420px] rounded-lg border">
+            <div className="p-2">
+              {doc.catalog.templates.map((entry) => (
+                <ChoiceButton
+                  key={entry.id}
+                  selected={entry.id === templateId}
+                  title={entry.name}
+                  detail={`${entry.items.length} ${entry.items.length === 1 ? "voce" : "voci"}`}
+                  onClick={() => { setTemplateId(entry.id); setChoices({}) }}
+                />
+              ))}
+            </div>
+          </ScrollArea>
+          <ScrollArea className="h-[420px]">
+            <div className="space-y-4 pr-3">
+              {template ? (
+                <>
+                  <div className="rounded-lg border">
+                    <div className="border-b px-4 py-3">
+                      <h3 className="font-medium">{template.name}</h3>
+                    </div>
+                    <div className="divide-y">
+                      {template.items.map((item) => (
+                        <div key={item.id} className="space-y-3 px-4 py-3">
+                          <p className="font-medium">{item.name}</p>
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-muted-foreground">Sempre incluso</span>
+                            <span>{item.subItems.length} {item.subItems.length === 1 ? "elemento" : "elementi"}</span>
+                          </div>
+                          {item.variantGroups.length ? (
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Varianti</p>
+                              {item.variantGroups.map((group) => {
+                                const optionId = choices[group.id] ?? group.defaultOptionId ?? ""
+                                const option = group.options.find((candidate) => candidate.id === optionId)
+                                return group.defaultOptionId ? (
+                                  <div key={group.id} className="flex items-center justify-between gap-3 text-sm">
+                                    <span>{group.name}</span>
+                                    <span className="font-medium">{option?.name}</span>
+                                  </div>
+                                ) : (
+                                  <Field key={group.id}>
+                                    <FieldLabel htmlFor={`template-choice-${group.id}`}>{group.name}</FieldLabel>
+                                    <NativeSelect
+                                      id={`template-choice-${group.id}`}
+                                      value={choices[group.id] ?? ""}
+                                      onChange={(event) => setChoices((current) => ({ ...current, [group.id]: event.target.value }))}
+                                    >
+                                      <NativeSelectOption value="">Scegli opzione</NativeSelectOption>
+                                      {group.options.map((candidate) => <NativeSelectOption key={candidate.id} value={candidate.id}>{candidate.name}</NativeSelectOption>)}
+                                    </NativeSelect>
+                                  </Field>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {hasTravel ? (
+                    <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel htmlFor="template-site">Sede per le trasferte</FieldLabel>
+                        <NativeSelect id="template-site" value={siteId} onChange={(event) => setSiteId(event.target.value)}>
+                          <NativeSelectOption value="">Scegli sede</NativeSelectOption>
+                          {doc.sites.map((site) => <NativeSelectOption key={site.id} value={site.id}>{site.name}</NativeSelectOption>)}
+                        </NativeSelect>
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="template-vehicle">Veicolo</FieldLabel>
+                        <NativeSelect id="template-vehicle" value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}>
+                          <NativeSelectOption value="">Scegli veicolo</NativeSelectOption>
+                          {doc.vehicles.map((vehicle) => <NativeSelectOption key={vehicle.id} value={vehicle.id}>{vehicle.name}</NativeSelectOption>)}
+                        </NativeSelect>
+                      </Field>
+                    </div>
+                  ) : null}
+                </>
+              ) : <p className="text-sm text-muted-foreground">Seleziona un template.</p>}
+            </div>
+          </ScrollArea>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Annulla</Button>
+          <Button
+            disabled={!template || !complete || busy}
+            onClick={() => {
+              if (!template) return
+              setBusy(true)
+              void onInsert(template.id, choices, { siteId, vehicleId }).then((ok) => { setBusy(false); if (ok) onClose() })
+            }}
+          >
+            {busy ? "Inserimento…" : `Inserisci ${template?.items.length ?? 0} ${template?.items.length === 1 ? "voce" : "voci"}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export function SaveTemplateDialog({ quote, onClose, onSave }: { quote: Quote; onClose: () => void; onSave: (name: string, itemIds: string[]) => boolean }) {
   const [name, setName] = useState("")
   const [selected, setSelected] = useState(() => new Set(quote.items.map((item) => item.id)))
   const changed = quote.items.flatMap((item) => item.subItems.filter((sub) => sub.variantOwner && sub.manuallyModified).map((sub) => `${item.name} / ${sub.description}`))
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Salva come nuovo template</DialogTitle><DialogDescription>Viene sempre creata una nuova copia nel Catalogo; il preventivo e gli eventuali template di origine restano indipendenti.</DialogDescription></DialogHeader><Field><FieldLabel htmlFor="template-new-name">Nome template</FieldLabel><Input id="template-new-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus /></Field><div className="rounded-lg border"><div className="border-b px-4 py-3 text-sm font-medium">Voci da includere</div>{quote.items.map((item) => <label key={item.id} className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-0"><Checkbox checked={selected.has(item.id)} onCheckedChange={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(item.id); else next.delete(item.id); return next })} /><span><span className="block text-sm font-medium">{item.name}</span><span className="text-xs text-muted-foreground">{item.subItems.filter((sub) => !sub.variantOwner).length} sottovoci base · {item.variantGroups.length} gruppi variante</span></span></label>)}</div>{changed.length ? <Alert><AlertTitle>Modifiche alle varianti incluse</AlertTitle><AlertDescription>Le modifiche manuali seguenti saranno applicate alla rispettiva opzione nella nuova copia: {changed.join(", ")}.</AlertDescription></Alert> : null}<DialogFooter><Button variant="outline" onClick={onClose}>Annulla</Button><Button disabled={!name.trim() || selected.size === 0} onClick={() => { if (onSave(name, [...selected])) onClose() }}>Crea template</Button></DialogFooter></DialogContent></Dialog>
+  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Salva come nuovo template</DialogTitle><DialogDescription>Viene sempre creata una nuova copia nel Catalogo; il preventivo e gli eventuali template di origine restano indipendenti.</DialogDescription></DialogHeader><Field><FieldLabel htmlFor="template-new-name">Nome template</FieldLabel><Input id="template-new-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus /></Field><div className="rounded-lg border"><div className="border-b px-4 py-3 text-sm font-medium">Voci da includere</div>{quote.items.map((item) => <label key={item.id} className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-0"><Checkbox checked={selected.has(item.id)} onCheckedChange={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(item.id); else next.delete(item.id); return next })} /><span><span className="block text-sm font-medium">{item.name}</span><span className="text-xs text-muted-foreground">{item.subItems.filter((sub) => !sub.variantOwner).length} sempre inclusi · {item.variantGroups.length} varianti</span></span></label>)}</div>{changed.length ? <Alert><AlertTitle>Modifiche alle varianti incluse</AlertTitle><AlertDescription>Le modifiche manuali seguenti saranno applicate alla rispettiva opzione nella nuova copia: {changed.join(", ")}.</AlertDescription></Alert> : null}<DialogFooter><Button variant="outline" onClick={onClose}>Annulla</Button><Button disabled={!name.trim() || selected.size === 0} onClick={() => { if (onSave(name, [...selected])) onClose() }}>Crea template</Button></DialogFooter></DialogContent></Dialog>
 }
 
 export function SaveSubDialog({ description, onClose, onConfirm }: { description: string; onClose: () => void; onConfirm: () => void }) { return <AlertDialog open onOpenChange={(open) => { if (!open) onClose() }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Salvare nel Catalogo?</AlertDialogTitle><AlertDialogDescription>“{description}” diventerà una nuova copia indipendente e riutilizzabile. Le modifiche future non si propagheranno.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>Crea copia nel Catalogo</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> }
@@ -168,7 +278,7 @@ export function VariantChangeDialog({ group, optionId, doc: sourceDocument, quot
   const [vehicleId, setVehicleId] = useState(doc.settings.defaultVehicleId ?? "")
   const [busy, setBusy] = useState(false)
   const apply = () => { setBusy(true); void onChange({ siteId, vehicleId }, hasManualChanges).then((ok) => { setBusy(false); if (ok) onClose() }) }
-  return <AlertDialog open onOpenChange={(open) => { if (!open) onClose() }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{hasManualChanges ? "Sostituire le sottovoci modificate?" : `Usare “${option?.name}”?`}</AlertDialogTitle><AlertDialogDescription>{hasManualChanges ? "Le modifiche manuali alle sottovoci prodotte da questo gruppo verranno perse. Le altre sottovoci resteranno invariate." : "La selezione sostituirà soltanto le sottovoci prodotte da questo gruppo."}</AlertDialogDescription></AlertDialogHeader>{needsTravel ? <div className="grid grid-cols-2 gap-3"><Field><FieldLabel htmlFor="change-site">Sede</FieldLabel><NativeSelect id="change-site" value={siteId} onChange={(event) => setSiteId(event.target.value)}><NativeSelectOption value="">Scegli sede</NativeSelectOption>{doc.sites.map((site) => <NativeSelectOption key={site.id} value={site.id}>{site.name}</NativeSelectOption>)}</NativeSelect></Field><Field><FieldLabel htmlFor="change-vehicle">Veicolo</FieldLabel><NativeSelect id="change-vehicle" value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}><NativeSelectOption value="">Scegli veicolo</NativeSelectOption>{doc.vehicles.map((vehicle) => <NativeSelectOption key={vehicle.id} value={vehicle.id}>{vehicle.name}</NativeSelectOption>)}</NativeSelect></Field></div> : null}<AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction disabled={busy || (needsTravel && (!siteId || !vehicleId))} onClick={apply}>{busy ? "Applicazione…" : "Conferma cambio"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  return <AlertDialog open onOpenChange={(open) => { if (!open) onClose() }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{hasManualChanges ? "Sostituire le sottovoci modificate?" : `Usare “${option?.name}”?`}</AlertDialogTitle><AlertDialogDescription>{hasManualChanges ? "Le modifiche manuali alle sottovoci prodotte da questa variante verranno perse. Le altre sottovoci resteranno invariate." : "La selezione sostituirà soltanto le sottovoci prodotte da questa variante."}</AlertDialogDescription></AlertDialogHeader>{needsTravel ? <div className="grid grid-cols-2 gap-3"><Field><FieldLabel htmlFor="change-site">Sede</FieldLabel><NativeSelect id="change-site" value={siteId} onChange={(event) => setSiteId(event.target.value)}><NativeSelectOption value="">Scegli sede</NativeSelectOption>{doc.sites.map((site) => <NativeSelectOption key={site.id} value={site.id}>{site.name}</NativeSelectOption>)}</NativeSelect></Field><Field><FieldLabel htmlFor="change-vehicle">Veicolo</FieldLabel><NativeSelect id="change-vehicle" value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}><NativeSelectOption value="">Scegli veicolo</NativeSelectOption>{doc.vehicles.map((vehicle) => <NativeSelectOption key={vehicle.id} value={vehicle.id}>{vehicle.name}</NativeSelectOption>)}</NativeSelect></Field></div> : null}<AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction disabled={busy || (needsTravel && (!siteId || !vehicleId))} onClick={apply}>{busy ? "Applicazione…" : "Conferma cambio"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 }
 
 export function ExportDialog({ quote, doc, results, onSearch, onClose, onExport }: { quote: Quote; doc: CashDocument; results: FicClientSnapshot[]; onSearch: (query: string) => Promise<void>; onClose: () => void; onExport: (client: FicClientSnapshot, groups: Array<{ itemIds: string[]; description: string }>) => Promise<boolean> }) {

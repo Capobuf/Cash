@@ -493,6 +493,8 @@ Un template può contenere una o più voci principali. Un template con una sola 
 
 La creazione è progressiva: l'utente definisce prima nome del Template, Voci e normali attività con durata esplicita. Spese, Trasferte, prezzi di riferimento e Varianti vengono aggiunti solo quando servono. L'interfaccia non impone wizard o modalità semplice/avanzata e non persiste valori che l'utente non abbia scelto esplicitamente.
 
+Nell'editor, le sottovoci normali di una Voce sono presentate come **Sempre incluso**, perché vengono applicate indipendentemente dalle scelte. Le **Varianti** raccolgono invece le parti che cambiano in base a un'opzione. Il nome della Voce è identificato come nome usato nel preventivo, distinto dal nome con cui il Template viene trovato nel Catalogo.
+
 Ogni voce contenuta nel template può avere:
 
 - Nome della voce.
@@ -518,6 +520,8 @@ Durante la creazione del preventivo l'utente può:
 - Creare sottovoci manualmente senza usare il catalogo.
 
 Il catalogo accelera il lavoro ma non è obbligatorio.
+
+Prima dell'inserimento Cash riepiloga, per ciascuna Voce, il numero di elementi sempre inclusi e le opzioni delle Varianti che verranno applicate. Mostra l'opzione predefinita quando presente e richiede una scelta per ogni Variante senza default. Sede e Veicolo vengono richiesti soltanto se sarà materializzata almeno una Trasferta: una sottovoce sempre inclusa oppure una sottovoce dell'opzione effettivamente selezionata. Le Trasferte presenti esclusivamente in opzioni non applicate non richiedono contesto.
 
 ### 11.4 Salvataggio dal preventivo al catalogo
 
@@ -1074,7 +1078,7 @@ Ogni entità persistente possiede un identificatore UUID immutabile, una data/or
 | Voce principale | Deve contenere almeno una sottovoce che produca tempo e il Tempo stimato derivato deve essere maggiore di zero. |
 | Sottovoce Spesa | Importo non negativo. |
 | Contenuto di catalogo | I campi intrinseci devono essere validi. Una Trasferta riutilizzabile omette Partenza, Destinazione, coordinate, Veicolo e risultati OpenRouteService secondo la regola di copia; può conservare A/R, Occorrenze previste ed eventuali valori manuali predefiniti. |
-| Template | Deve contenere almeno una voce; ogni voce deve contenere almeno una sottovoce Tempo o Trasferta. I riferimenti contestuali esclusi dalle Trasferte vengono richiesti dopo l'inserimento nel preventivo. Le modifiche alle copie non alterano l'origine e viceversa. |
+| Template | Deve contenere almeno una voce; ogni voce deve contenere almeno una sottovoce Tempo o Trasferta. I riferimenti contestuali esclusi dalle Trasferte vengono richiesti durante l'inserimento nel preventivo soltanto per le Trasferte sempre incluse o prodotte dalle opzioni effettivamente applicate. Le modifiche alle copie non alterano l'origine e viceversa. |
 | Prezzo di riferimento | Non negativo; mese/anno obbligatorio se il prezzo è presente e non successivo all'ultimo mese FOI pubblicato. |
 | Prezzo scelto | Non negativo; può essere inferiore al valore teorico o alle spese. È obbligatorio per l'esportazione. |
 | Provvigione | Facoltativa; se presente, importo in euro non negativo. Non entra nei calcoli del preventivo. |

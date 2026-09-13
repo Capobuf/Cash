@@ -19,6 +19,16 @@ export function cloneTemplate(source: Template, name = source.name): Template {
   return { ...meta(), name, items: source.items.map(item => cloneTemplateItem(item)) };
 }
 
+export function templateRequiresTravel(template: Template, choices: Record<string, string>): boolean {
+  return template.items.some(item => {
+    if (item.subItems.some(subItem => subItem.kind === 'travel')) return true;
+    return item.variantGroups.some(group => {
+      const optionId = choices[group.id] ?? group.defaultOptionId;
+      return group.options.find(option => option.id === optionId)?.subItems.some(subItem => subItem.kind === 'travel') ?? false;
+    });
+  });
+}
+
 export function cloneTemplateItem(source: TemplateItem): TemplateItem {
   return { ...meta(), name: source.name, ...(source.referencePrice ? { referencePrice: structuredClone(source.referencePrice) } : {}),
     subItems: source.subItems.map(cloneReusableSubItem), variantGroups: source.variantGroups.map(copyGroup) };

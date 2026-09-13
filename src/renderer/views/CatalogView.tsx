@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   BookOpen,
   ChevronDown,
+  ChevronRight,
   Clock3,
   Layers3,
   MapPin,
@@ -9,7 +10,6 @@ import {
   Plus,
   ReceiptText,
   Save,
-  Star,
   Trash2,
 } from "lucide-react"
 import { useState, type FormEvent } from "react"
@@ -28,6 +28,7 @@ import {
 import { validateVariantGroups } from "../../domain/variants"
 import { DefinitionDialog } from "@/components/QuoteDialogs"
 import { WorkItemRow } from "@/components/WorkItemRow"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -95,7 +96,7 @@ export function CatalogView({
       <Tabs defaultValue="templates" className="space-y-4">
         <TabsList>
           <TabsTrigger value="templates"><BookOpen />Template</TabsTrigger>
-          <TabsTrigger value="subitems"><Layers3 />Contenuti riutilizzabili</TabsTrigger>
+          <TabsTrigger value="subitems"><Layers3 />Elementi singoli</TabsTrigger>
         </TabsList>
 
         <TabsContent value="templates">
@@ -112,7 +113,7 @@ export function CatalogView({
                     const variants = entry.items.reduce((sum, item) => sum + item.variantGroups.length, 0)
                     const content = entry.items.reduce((sum, item) => sum + item.subItems.length, 0)
                     return (
-                      <Card key={entry.id} size="sm" className="cursor-pointer transition-colors hover:bg-muted/20" onDoubleClick={() => setEditingTemplateId(entry.id)}>
+                      <Card key={entry.id} size="sm">
                         <CardHeader>
                           <CardTitle>{entry.name}</CardTitle>
                           <CardDescription>{entry.items.map((item) => item.name).join(" · ")}</CardDescription>
@@ -124,10 +125,13 @@ export function CatalogView({
                             />
                           </CardAction>
                         </CardHeader>
-                        <CardContent className="flex gap-4 text-xs text-muted-foreground">
-                          <span>{entry.items.length} {entry.items.length === 1 ? "voce" : "voci"}</span>
-                          <span>{content} elementi base</span>
-                          {variants ? <span>{variants} {variants === 1 ? "variante" : "varianti"}</span> : null}
+                        <CardContent className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <div className="flex flex-1 flex-wrap gap-4">
+                            <span>{entry.items.length} {entry.items.length === 1 ? "voce" : "voci"}</span>
+                            <span>{content} sempre inclusi</span>
+                            {variants ? <span>{variants} {variants === 1 ? "variante" : "varianti"}</span> : null}
+                          </div>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingTemplateId(entry.id)}>Apri <ChevronRight /></Button>
                         </CardContent>
                       </Card>
                     )
@@ -148,9 +152,9 @@ export function CatalogView({
         <TabsContent value="subitems">
           <Card>
             <CardHeader className="border-b">
-              <CardTitle>Contenuti riutilizzabili</CardTitle>
-              <CardDescription>Attività, spese e trasferte da inserire singolarmente.</CardDescription>
-              <CardAction><Button variant="outline" onClick={() => setEditingReusableId(null)}><Plus />Nuovo contenuto</Button></CardAction>
+              <CardTitle>Elementi singoli</CardTitle>
+              <CardDescription>Attività, spese e trasferte salvati per riutilizzarli.</CardDescription>
+              <CardAction><Button variant="outline" onClick={() => setEditingReusableId(null)}><Plus />Nuovo elemento</Button></CardAction>
             </CardHeader>
             <CardContent>
               {doc.catalog.subItems.length ? (
@@ -174,9 +178,9 @@ export function CatalogView({
                 </div>
               ) : (
                 <Empty
-                  title="Nessun contenuto riutilizzabile"
+                  title="Nessun elemento singolo"
                   description="Puoi crearne uno qui o salvarlo da un preventivo."
-                  actionLabel="Nuovo contenuto"
+                  actionLabel="Nuovo elemento"
                   onAction={() => setEditingReusableId(null)}
                 />
               )}
@@ -220,12 +224,20 @@ function TemplateWorkspace({
   onClose: () => void
   onSave: (template: Template) => void
 }) {
-  const [draft, setDraft] = useState<Template>(() => source
+  const [initialDraft] = useState<Template>(() => source
     ? structuredClone(source)
     : { ...meta(), name: "", items: [{ ...meta(), name: "", subItems: [], variantGroups: [] }] })
+  const [draft, setDraft] = useState<Template>(() => structuredClone(initialDraft))
   const [baseEditor, setBaseEditor] = useState<BaseEditor>()
   const [definitionEditor, setDefinitionEditor] = useState<DefinitionEditor>()
   const [pickerItemIndex, setPickerItemIndex] = useState<number>()
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initialDraft)
+
+  const close = () => {
+    if (dirty) setConfirmDiscard(true)
+    else onClose()
+  }
 
   const updateDraft = (mutate: (next: Template) => void) => {
     setDraft((current) => {
@@ -283,13 +295,13 @@ function TemplateWorkspace({
   return (
     <div className="space-y-5">
       <div className="sticky top-16 z-10 -mx-6 flex items-center gap-4 border-y bg-background/95 px-6 py-3 backdrop-blur 2xl:-mx-8 2xl:px-8">
-        <Button variant="ghost" size="sm" onClick={onClose}><ArrowLeft />Catalogo</Button>
+        <Button variant="ghost" size="sm" onClick={close}><ArrowLeft />Catalogo</Button>
         <div className="h-6 w-px bg-border" />
         <div className="min-w-0 flex-1">
           <p className="text-xs text-muted-foreground">Template</p>
           <p className="truncate font-medium">{draft.name.trim() || "Senza nome"}</p>
         </div>
-        <Button variant="outline" onClick={onClose}>Annulla</Button>
+        <Button variant="outline" onClick={close}>Annulla</Button>
         <Button onClick={save}><Save />Salva template</Button>
       </div>
 
@@ -304,6 +316,7 @@ function TemplateWorkspace({
             placeholder="es. Configurazione server"
             autoFocus
           />
+          <FieldDescription>Nome con cui lo troverai nel Catalogo.</FieldDescription>
         </Field>
 
         <div className="space-y-4">
@@ -398,6 +411,19 @@ function TemplateWorkspace({
           }}
         />
       ) : null}
+
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Scartare le modifiche al template?</AlertDialogTitle>
+            <AlertDialogDescription>Le modifiche non salvate andranno perse.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Continua a modificare</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onClose}>Scarta modifiche</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -432,15 +458,18 @@ function TemplateItemCard({
   return (
     <Card>
       <CardHeader className="border-b">
-        <div className="flex items-center gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{itemIndex + 1}</span>
-          <Input
-            value={item.name}
-            onChange={(event) => onRename(event.target.value)}
-            aria-label={`Nome voce ${itemIndex + 1}`}
-            placeholder="Nome della voce"
-            className="h-9 max-w-xl font-medium"
-          />
+        <div className="min-w-0 space-y-3 pr-10">
+          <p className="text-sm font-semibold">Voce {itemIndex + 1}</p>
+          <Field className="max-w-xl">
+            <FieldLabel htmlFor={`template-item-${item.id}`}>Nome nel preventivo</FieldLabel>
+            <Input
+              id={`template-item-${item.id}`}
+              value={item.name}
+              onChange={(event) => onRename(event.target.value)}
+              placeholder="es. Configurazione server"
+              className="h-9 font-medium"
+            />
+          </Field>
         </div>
         <CardAction>
           <Button size="icon-sm" variant="ghost" disabled={!canDelete} aria-label={`Elimina voce ${itemIndex + 1}`} onClick={onDelete}>
@@ -450,22 +479,12 @@ function TemplateItemCard({
       </CardHeader>
       <CardContent className="space-y-5">
         <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-medium">Contenuto della voce</h3>
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => onAddSub("time")}><Plus />Aggiungi attività</Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<Button size="sm" variant="outline" aria-label="Aggiungi altro contenuto" />}>
-                  Altro <ChevronDown />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onAddSub("expense")}><ReceiptText />Spesa</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onAddSub("travel")}><MapPin />Trasferta</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem disabled={!hasReusableItems} onClick={onAddReusable}><Layers3 />Da contenuti riutilizzabili</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-medium">Sempre incluso</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">Attività e costi presenti indipendentemente dalle varianti.</p>
             </div>
+            {item.subItems.length ? <AddContentMenu hasCatalog={hasReusableItems} onAdd={onAddSub} onAddCatalog={onAddReusable} /> : null}
           </div>
 
           {item.subItems.length ? (
@@ -481,14 +500,11 @@ function TemplateItemCard({
               ))}
             </div>
           ) : (
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 rounded-lg border border-dashed px-4 py-5 text-left text-sm text-muted-foreground hover:border-input hover:bg-muted/20"
-              onClick={() => onAddSub("time")}
-            >
-              <Clock3 className="size-5" />
-              <span><strong className="block text-foreground">Aggiungi il lavoro previsto</strong>Descrizione e durata della prima attività.</span>
-            </button>
+            <div className="rounded-lg border border-dashed px-4 py-4 text-sm">
+              <p className="font-medium">Nessun elemento sempre incluso.</p>
+              <p className="mt-1 text-muted-foreground">Aggiungi un’attività, una spesa o una trasferta che fa sempre parte di questa voce.</p>
+              <div className="mt-3"><AddContentMenu hasCatalog={hasReusableItems} onAdd={onAddSub} onAddCatalog={onAddReusable} /></div>
+            </div>
           )}
         </section>
 
@@ -497,7 +513,7 @@ function TemplateItemCard({
         <Collapsible defaultOpen={Boolean(item.referencePrice)}>
           <CollapsibleTrigger render={<Button size="sm" variant="ghost" className="group" />}>
             <ChevronDown className="transition-transform group-data-panel-open:rotate-180" />
-            Prezzo di riferimento
+            Prezzo storico di riferimento
             {item.referencePrice?.amount ? <Badge variant="outline">{eur(item.referencePrice.amount)}</Badge> : null}
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -540,6 +556,7 @@ function TemplateVariants({
   onDefinition: (groupIndex: number, optionIndex: number, definitionIndex?: number, initialKind?: SubItemDefinition["kind"]) => void
 }) {
   const [expandedOptionId, setExpandedOptionId] = useState<string>()
+  const [focusGroupId, setFocusGroupId] = useState<string>()
   const update = (mutate: (groups: VariantGroup[]) => void) => {
     const groups = structuredClone(item.variantGroups)
     mutate(groups)
@@ -547,98 +564,130 @@ function TemplateVariants({
   }
   const addGroup = () => update((groups) => {
     const option: VariantOption = { ...meta(), name: "", subItems: [] }
-    groups.push({ ...meta(), name: "", options: [option], defaultOptionId: option.id })
-    setExpandedOptionId(option.id)
+    const group: VariantGroup = { ...meta(), name: "", options: [option], defaultOptionId: option.id }
+    groups.push(group)
+    setExpandedOptionId(undefined)
+    setFocusGroupId(group.id)
   })
 
   if (!item.variantGroups.length) {
     return (
-      <div className="border-t pt-4">
-        <Button size="sm" variant="ghost" onClick={addGroup}><Plus />Aggiungi varianti</Button>
-      </div>
+      <section className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
+        <div>
+          <h3 className="text-sm font-medium">Varianti</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">Usala quando una parte del lavoro può cambiare.</p>
+        </div>
+        <Button size="sm" variant="ghost" onClick={addGroup}><Plus />Aggiungi variante</Button>
+      </section>
     )
   }
 
   return (
     <section className="space-y-3 border-t pt-5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Varianti</h3>
-        <Button size="sm" variant="ghost" onClick={addGroup}><Plus />Nuovo gruppo</Button>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium">Varianti</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">Parti della voce che cambiano in base a una scelta.</p>
+        </div>
+        <Button size="sm" variant="ghost" onClick={addGroup}><Plus />Aggiungi variante</Button>
       </div>
 
       {item.variantGroups.map((group, groupIndex) => (
-        <div key={group.id} className="rounded-lg border bg-muted/10">
-          <div className="flex items-center gap-2 border-b p-3">
-            <Input
-              value={group.name}
-              onChange={(event) => update((groups) => { groups[groupIndex]!.name = event.target.value })}
-              aria-label={`Nome gruppo variante ${groupIndex + 1}`}
-              placeholder="es. Gestione cliente"
-              className="max-w-lg font-medium"
-            />
-            <Button size="icon-sm" variant="ghost" aria-label="Elimina gruppo variante" onClick={() => update((groups) => groups.splice(groupIndex, 1))}>
-              <Trash2 />
-            </Button>
+        <div key={group.id} className="rounded-lg border-l-2 border-primary/30 bg-muted/20 px-4 py-3">
+          <div className="flex items-end gap-2">
+            <Field className="min-w-0 flex-1">
+              <FieldLabel htmlFor={`variant-name-${group.id}`}>Nome variante</FieldLabel>
+              <Input
+                id={`variant-name-${group.id}`}
+                value={group.name}
+                onChange={(event) => update((groups) => { groups[groupIndex]!.name = event.target.value })}
+                placeholder="es. Gestione cliente"
+                className="max-w-lg font-medium"
+                autoFocus={focusGroupId === group.id}
+                onFocus={() => setFocusGroupId(undefined)}
+              />
+            </Field>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Azioni per la variante ${group.name || groupIndex + 1}`} />}><MoreHorizontal /></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onClick={() => update((groups) => groups.splice(groupIndex, 1))}>Elimina variante</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <div className="space-y-2 p-3">
+          <Field className="mt-3 max-w-sm">
+            <FieldLabel htmlFor={`variant-default-${group.id}`}>Opzione predefinita</FieldLabel>
+            <NativeSelect
+              id={`variant-default-${group.id}`}
+              value={group.defaultOptionId ?? ""}
+              onChange={(event) => update((groups) => {
+                const current = groups[groupIndex]!
+                current.defaultOptionId = event.target.value || undefined
+              })}
+            >
+              <NativeSelectOption value="">Nessuna predefinita</NativeSelectOption>
+              {group.options.map((option, optionIndex) => (
+                <NativeSelectOption key={option.id} value={option.id}>{option.name.trim() || `Opzione ${optionIndex + 1}`}</NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+
+          <div className="mt-4 divide-y rounded-lg border bg-card">
             {group.options.map((option, optionIndex) => {
               const expanded = expandedOptionId === option.id
-              const isDefault = group.defaultOptionId === option.id
               return (
-                <div key={option.id} className="rounded-lg border bg-card">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
-                    onClick={() => setExpandedOptionId(expanded ? undefined : option.id)}
-                    aria-expanded={expanded}
-                  >
-                    <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate font-medium">{option.name.trim() || "Opzione senza nome"}</span>
-                        {isDefault ? <Badge variant="secondary"><Star />Predefinita</Badge> : null}
-                      </span>
-                    </span>
-                    <span className="text-sm text-muted-foreground">{optionEffect(option)}</span>
-                  </button>
-
-                  {expanded ? (
-                    <div className="space-y-3 border-t p-3">
-                      <div className="flex items-end gap-2">
-                        <Field className="flex-1">
-                          <FieldLabel htmlFor={`option-${option.id}`}>Nome opzione</FieldLabel>
-                          <Input
-                            id={`option-${option.id}`}
-                            value={option.name}
-                            onChange={(event) => update((groups) => { groups[groupIndex]!.options[optionIndex]!.name = event.target.value })}
-                            placeholder="es. Nessuna, Minima, Media"
-                          />
-                        </Field>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => update((groups) => {
-                            groups[groupIndex]!.defaultOptionId = isDefault ? undefined : option.id
-                          })}
-                        >
-                          <Star />{isDefault ? "Rimuovi default" : "Imposta default"}
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
+                <div key={option.id}>
+                  <div className="flex min-h-12 items-center gap-2 px-2 py-1.5">
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`${expanded ? "Chiudi" : "Modifica"} ${option.name || `opzione ${optionIndex + 1}`}`}
+                      aria-expanded={expanded}
+                      onClick={() => setExpandedOptionId(expanded ? undefined : option.id)}
+                    >
+                      <ChevronRight className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+                    </Button>
+                    {expanded ? (
+                      <Input
+                        value={option.name}
+                        onChange={(event) => update((groups) => { groups[groupIndex]!.options[optionIndex]!.name = event.target.value })}
+                        aria-label={`Nome opzione ${optionIndex + 1}`}
+                        placeholder="es. Nessuna, Minima, Media"
+                        className="h-8 min-w-0 flex-1 font-medium"
+                        autoFocus
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate text-left text-sm font-medium"
+                        onClick={() => setExpandedOptionId(option.id)}
+                      >
+                        {option.name.trim() || `Opzione ${optionIndex + 1}`}
+                      </button>
+                    )}
+                    <span className="shrink-0 text-sm tabular-nums text-muted-foreground">{optionEffect(option)}</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Azioni per ${option.name || `opzione ${optionIndex + 1}`}`} />}><MoreHorizontal /></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          variant="destructive"
                           disabled={group.options.length === 1}
-                          aria-label={`Elimina opzione ${option.name}`}
                           onClick={() => update((groups) => {
                             const current = groups[groupIndex]!
                             current.options.splice(optionIndex, 1)
                             if (current.defaultOptionId === option.id) current.defaultOptionId = undefined
                           })}
                         >
-                          <Trash2 />
-                        </Button>
-                      </div>
+                          Elimina opzione
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
 
+                  {expanded ? (
+                    <div className="space-y-3 border-t bg-muted/10 px-3 py-3 sm:pl-12">
+                      <p className="text-sm font-medium">Cosa aggiunge questa opzione</p>
                       {option.subItems.length ? (
                         <div className="space-y-2">
                           {option.subItems.map((definition, definitionIndex) => (
@@ -652,42 +701,56 @@ function TemplateVariants({
                           ))}
                         </div>
                       ) : (
-                        <p className="rounded-md bg-muted/30 px-3 py-2 text-sm text-muted-foreground">Nessun contributo</p>
+                        <p className="text-sm text-muted-foreground">Questa opzione non aggiunge attività, spese o trasferte.</p>
                       )}
 
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" onClick={() => onDefinition(groupIndex, optionIndex, undefined, "time")}>
-                          <Plus />Aggiungi tempo
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" />}>Altro <ChevronDown /></DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem onClick={() => onDefinition(groupIndex, optionIndex, undefined, "expense")}><ReceiptText />Spesa</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onDefinition(groupIndex, optionIndex, undefined, "travel")}><MapPin />Trasferta</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
+                      <AddContentMenu onAdd={(kind) => onDefinition(groupIndex, optionIndex, undefined, kind)} />
                     </div>
                   ) : null}
                 </div>
               )
             })}
 
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                const option: VariantOption = { ...meta(), name: "", subItems: [] }
-                update((groups) => { groups[groupIndex]!.options.push(option) })
-                setExpandedOptionId(option.id)
-              }}
-            >
-              <Plus />Aggiungi opzione
-            </Button>
           </div>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="mt-2"
+            onClick={() => {
+              const option: VariantOption = { ...meta(), name: "", subItems: [] }
+              update((groups) => { groups[groupIndex]!.options.push(option) })
+              setExpandedOptionId(option.id)
+            }}
+          >
+            <Plus />Aggiungi opzione
+          </Button>
         </div>
       ))}
     </section>
+  )
+}
+
+function AddContentMenu({
+  onAdd,
+  onAddCatalog,
+  hasCatalog = false,
+}: {
+  onAdd: (kind: Kind) => void
+  onAddCatalog?: () => void
+  hasCatalog?: boolean
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button size="sm" />}><Plus />Aggiungi <ChevronDown /></DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onAdd("time")}><Clock3 />Attività</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAdd("expense")}><ReceiptText />Spesa</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAdd("travel")}><MapPin />Trasferta</DropdownMenuItem>
+        {onAddCatalog ? <DropdownMenuSeparator /> : null}
+        {onAddCatalog ? <DropdownMenuItem disabled={!hasCatalog} onClick={onAddCatalog}><Layers3 />Dal catalogo</DropdownMenuItem> : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -739,7 +802,7 @@ function ReusableDialog({
     }
   }
 
-  const dialogTitle = title ?? (value ? `Modifica ${kindLabel(kind).toLocaleLowerCase("it")}` : "Nuovo contenuto")
+  const dialogTitle = title ?? (value ? `Modifica ${kindLabel(kind).toLocaleLowerCase("it")}` : "Nuovo elemento")
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent>
@@ -826,7 +889,7 @@ function ReusablePickerDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Aggiungi contenuto riutilizzabile</DialogTitle>
+          <DialogTitle>Aggiungi dal catalogo</DialogTitle>
           <DialogDescription>Nel template verrà inserita una copia indipendente.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -852,10 +915,13 @@ function ReusablePickerDialog({
 }
 
 function optionEffect(option: VariantOption): string {
-  if (!option.subItems.length) return "Nessun contributo"
-  if (option.subItems.length === 1) return definitionDetail(option.subItems[0]!)
-  const time = option.subItems.filter((item) => item.kind === "time").reduce((sum, item) => sum + item.minutes, 0)
-  return time > 0 ? `${option.subItems.length} elementi · ${hours(time)}` : `${option.subItems.length} elementi`
+  if (!option.subItems.length) return "—"
+  if (option.subItems.every((item) => item.kind === "time")) {
+    return hours(option.subItems.reduce((sum, item) => sum + (item.kind === "time" ? item.minutes : 0), 0))
+  }
+  if (option.subItems.length === 1 && option.subItems[0]!.kind === "expense") return eur(option.subItems[0]!.amount)
+  if (option.subItems.length === 1 && option.subItems[0]!.kind === "travel") return "Trasferta"
+  return `${option.subItems.length} elementi`
 }
 
 function definitionDetail(item: SubItemDefinition): string {

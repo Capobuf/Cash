@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cloneReusableSubItem, cloneTemplate, reusableFromQuoteSubItem, templateFromQuote } from '../../src/domain/catalog';
+import { cloneReusableSubItem, cloneTemplate, reusableFromQuoteSubItem, templateFromQuote, templateRequiresTravel } from '../../src/domain/catalog';
 import { meta, type ReusableSubItem, type Template } from '../../src/domain/model';
 
 describe('copie indipendenti',()=>{
@@ -7,4 +7,42 @@ describe('copie indipendenti',()=>{
   it('rinnova template, voci, gruppi, opzioni e default',()=>{const option={...meta(),name:'Sì',subItems:[]};const group={...meta(),name:'Firmware',options:[option],defaultOptionId:option.id};const source:Template={...meta(),name:'Server',items:[{...meta(),name:'Config',subItems:[],variantGroups:[group]}]};const copy=cloneTemplate(source);expect(copy.id).not.toBe(source.id);expect(copy.items[0]!.variantGroups[0]!.defaultOptionId).toBe(copy.items[0]!.variantGroups[0]!.options[0]!.id);});
   it('salva sottovoci e template senza Sedi, Veicolo o dati automatici di routing',()=>{const option={...meta(),name:'Sì',subItems:[]};const group={...meta(),name:'G',options:[option],defaultOptionId:option.id};const travel={...meta(),kind:'travel' as const,description:'Viaggio',departure:{sourceId:meta().id,name:'P'},destination:{sourceId:meta().id,name:'D'},vehicleId:meta().id,vehicleName:'Auto',roundTrip:true,occurrences:2,distanceKmPerOccurrence:'40.0',travelMinutesPerOccurrence:40,distanceSource:'route' as const,durationSource:'route' as const,totalMinutes:80,totalDistanceKm:'80.0',vehicleCostPerKm:'0.5',totalCost:'40.00',fuelEvidence:{fuel:'Benzina' as const,mode:'SELF' as const,territory:'Lazio',network:'NON_AUTOSTRADALE' as const,price:'1.800',priceUnit:'EUR/l' as const,referenceDate:'2026-09-08',acquiredAt:'2026-09-08T00:00:00.000Z'}};const reusable=reusableFromQuoteSubItem(travel);expect(reusable).toEqual(expect.objectContaining({kind:'travel',roundTrip:true,occurrences:2}));expect(reusable).not.toHaveProperty('departure');expect(reusable).not.toHaveProperty('vehicleId');expect(reusable).not.toHaveProperty('distanceKmPerOccurrence');const source={...meta(),name:'Voce',subItems:[travel],variantGroups:[group],variantSelections:[]};const built=templateFromQuote('T',[source]);expect(built.ok).toBe(true);if(!built.ok)return;expect(built.value.items[0]?.id).not.toBe(source.id);expect(built.value.items[0]?.variantGroups[0]?.id).not.toBe(group.id);});
   it('riporta nell’opzione corretta le modifiche manuali generate dalla variante',()=>{const option={...meta(),name:'Completa',subItems:[{kind:'time' as const,description:'Originale',minutes:30}]};const group={...meta(),name:'Servizio',options:[option],defaultOptionId:option.id};const source={...meta(),name:'Voce',variantGroups:[group],variantSelections:[{groupId:group.id,optionId:option.id}],subItems:[{...meta(),kind:'time' as const,description:'Personalizzata',minutes:45,variantOwner:{groupId:group.id,optionId:option.id,definitionIndex:0},manuallyModified:true}]};const built=templateFromQuote('Personalizzato',[source]);expect(built.ok).toBe(true);if(!built.ok)return;expect(built.value.items[0]?.variantGroups[0]?.options[0]?.subItems[0]).toEqual({kind:'time',description:'Personalizzata',minutes:45});});
+});
+
+describe('contesto Trasferte dei template',()=>{
+  const time = { kind:'time' as const, description:'Attività', minutes:30 };
+  const travel = { kind:'travel' as const, description:'Viaggio', roundTrip:true, occurrences:1 };
+
+  it('richiede il contesto per una Trasferta sempre inclusa',()=>{
+    const template:Template={...meta(),name:'Template',items:[{...meta(),name:'Voce',subItems:[{...meta(),...travel}],variantGroups:[]}]};
+    expect(templateRequiresTravel(template,{})).toBe(true);
+  });
+
+  it('ignora la Trasferta presente soltanto in un\u2019opzione non selezionata',()=>{
+    const selected={...meta(),name:'Remoto',subItems:[time]};
+    const unselected={...meta(),name:'In sede',subItems:[travel]};
+    const group={...meta(),name:'Modalità',options:[selected,unselected],defaultOptionId:selected.id};
+    const template:Template={...meta(),name:'Template',items:[{...meta(),name:'Voce',subItems:[],variantGroups:[group]}]};
+    expect(templateRequiresTravel(template,{})).toBe(false);
+  });
+
+  it('richiede il contesto per la Trasferta dell\u2019opzione scelta esplicitamente',()=>{
+    const remote={...meta(),name:'Remoto',subItems:[time]};
+    const onSite={...meta(),name:'In sede',subItems:[travel]};
+    const group={...meta(),name:'Modalità',options:[remote,onSite]};
+    const template:Template={...meta(),name:'Template',items:[{...meta(),name:'Voce',subItems:[],variantGroups:[group]}]};
+    expect(templateRequiresTravel(template,{[group.id]:onSite.id})).toBe(true);
+  });
+
+  it('valuta i default di più Varianti e più Voci',()=>{
+    const remote={...meta(),name:'Remoto',subItems:[time]};
+    const remoteGroup={...meta(),name:'Assistenza',options:[remote],defaultOptionId:remote.id};
+    const onSite={...meta(),name:'In sede',subItems:[travel]};
+    const onSiteGroup={...meta(),name:'Installazione',options:[onSite],defaultOptionId:onSite.id};
+    const template:Template={...meta(),name:'Template',items:[
+      {...meta(),name:'Analisi',subItems:[],variantGroups:[remoteGroup]},
+      {...meta(),name:'Installazione',subItems:[],variantGroups:[onSiteGroup]},
+    ]};
+    expect(templateRequiresTravel(template,{})).toBe(true);
+  });
 });
