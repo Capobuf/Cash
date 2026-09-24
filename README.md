@@ -85,5 +85,6 @@ modificabili e non sono aggiornati automaticamente.
 npm run package:win
 ```
 
-L’installer NSIS risultante include Electron e non richiede Node.js, database, container o server sulla
-macchina dell’utente. Il prodotto è destinato a Windows 10/11 x64 e a uso sequenziale monoutente.
+Il comando produce `release/Cash.exe`, un’applicazione Windows portable pronta all’uso che include Electron
+e non richiede installazione, Node.js, database, container o server sulla macchina dell’utente. Il
+prodotto è destinato a Windows 10/11 x64 e a uso sequenziale monoutente.

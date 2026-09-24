@@ -30,13 +30,13 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Package Windows installer
+      - name: Package Windows portable
         run: npm run package:win
 
-      - name: Upload Windows installer
+      - name: Upload Windows portable
         uses: actions/upload-artifact@v7
         with:
-          name: Cash-Windows
-          path: dist/Cash-*.exe
+          name: Cash-Windows-Portable
+          path: release/Cash.exe
           if-no-files-found: error
           retention-days: 14
