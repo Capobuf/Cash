@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:win": "npm run build && electron-builder --win nsis"
+    "package:win": "npm run build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
