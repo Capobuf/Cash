@@ -19,6 +19,7 @@ let current: ArchiveSession | null = null;
 let dirty = false;
 let closingApproved = false;
 let closePromptOpen = false;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 function selectedPathValid(path: string): boolean { return current?.path === path; }
 function activeFicCompany(companyId: string): boolean {
@@ -163,20 +164,30 @@ async function detectExternalChange(): Promise<void> {
 }
 
 async function createWindow(): Promise<void> {
-  window = new BrowserWindow({ width: 1360, height: 900, minWidth: 1024, minHeight: 700, show: false,
+  const createdWindow = window = new BrowserWindow({ width: 1360, height: 900, minWidth: 1024, minHeight: 700, show: false,
     backgroundColor: '#f5f2ea', webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true,
       nodeIntegration: false, sandbox: true, webSecurity: true } });
-  window.removeMenu();
-  await window.loadFile(join(__dirname, '../renderer/index.html'));
-  window.once('ready-to-show', () => window?.show());
-  window.on('focus', () => void detectExternalChange());
-  window.on('close', event => {
+  createdWindow.removeMenu();
+  createdWindow.once('ready-to-show', () => { if (!createdWindow.isDestroyed()) createdWindow.show(); });
+  await createdWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  if (!createdWindow.isDestroyed() && !createdWindow.isVisible()) createdWindow.show();
+  createdWindow.on('focus', () => void detectExternalChange());
+  createdWindow.on('close', event => {
     if (!dirty || closingApproved) return;
     event.preventDefault();
     if (!closePromptOpen) { closePromptOpen = true; window?.webContents.send(IPC.appCloseRequested); }
   });
 }
 
-app.whenReady().then(() => { registerHandlers(); void createWindow(); setInterval(() => void detectExternalChange(), 30_000); });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
+if (!hasSingleInstanceLock) app.quit();
+else {
+  app.on('second-instance', () => {
+    if (!window) return;
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+  });
+  app.whenReady().then(() => { registerHandlers(); void createWindow(); setInterval(() => void detectExternalChange(), 30_000); });
+  app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
+}

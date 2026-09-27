@@ -1,0 +1,60 @@
+name: Build Windows portable
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Package Windows portable
+        run: npm run package:win
+
+      - name: Verify portable runtime
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            "release/win-unpacked/Cash.exe",
+            "release/win-unpacked/resources/app.asar",
+            "release/win-unpacked/resources/app.asar.unpacked/node_modules/keytar/build/Release/keytar.node"
+          )
+          foreach ($requiredFile in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+              throw "Missing portable runtime file: $requiredFile"
+            }
+          }
+
+      - name: Upload Windows portable
+        uses: actions/upload-artifact@v7
+        with:
+          name: Cash-Windows-Portable-x64
+          path: release/win-unpacked/
+          if-no-files-found: error
+          retention-days: 14
