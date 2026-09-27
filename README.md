@@ -85,8 +85,6 @@ modificabili e non sono aggiornati automaticamente.
 npm run package:win
 ```
 
-Il comando crea l’applicazione portable in `release/win-unpacked`. La cartella include Electron e tutte
-le dipendenze necessarie: non richiede installazione, Node.js, database, container o server sulla macchina
-dell’utente. Copiare o estrarre l’intera cartella sul PC e avviare `Cash.exe`; non eseguire il programma
-direttamente dall’interno di un archivio ZIP/7z. Il prodotto è destinato a Windows 10/11 x64 e a uso
-sequenziale monoutente.
+Il comando crea `release/Cash.exe`, un’applicazione portable autosufficiente. Non richiede installazione,
+Node.js, database, container o server sulla macchina dell’utente. Il prodotto è destinato a Windows 10/11
+x64 e a uso sequenziale monoutente.

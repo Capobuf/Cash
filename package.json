@@ -18,7 +18,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:win": "npm run build && electron-builder --win dir --x64 --publish never"
+    "package:win": "npm run build && electron-builder --win portable --x64 --publish never"
   },
   "dependencies": {
     "keytar": "7.9.0"
@@ -66,8 +66,9 @@
     ],
     "win": {
       "target": [
-        "dir"
-      ]
+        "portable"
+      ],
+      "artifactName": "Cash.${ext}"
     }
   },
   "allowScripts": {

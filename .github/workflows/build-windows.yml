@@ -37,24 +37,10 @@ jobs:
       - name: Package Windows portable
         run: npm run package:win
 
-      - name: Verify portable runtime
-        shell: pwsh
-        run: |
-          $requiredFiles = @(
-            "release/win-unpacked/Cash.exe",
-            "release/win-unpacked/resources/app.asar",
-            "release/win-unpacked/resources/app.asar.unpacked/node_modules/keytar/build/Release/keytar.node"
-          )
-          foreach ($requiredFile in $requiredFiles) {
-            if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
-              throw "Missing portable runtime file: $requiredFile"
-            }
-          }
-
       - name: Upload Windows portable
         uses: actions/upload-artifact@v7
         with:
           name: Cash-Windows-Portable-x64
-          path: release/win-unpacked/
+          path: release/Cash.exe
           if-no-files-found: error
           retention-days: 14
