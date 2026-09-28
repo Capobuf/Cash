@@ -21,4 +21,7 @@ await Promise.all([
     platform: 'browser', format: 'iife', target: 'chrome140', jsx: 'automatic', ...optimization }),
 ]);
 
-await cp('src/renderer/index.html', 'dist/renderer/index.html');
+await Promise.all([
+  cp('src/renderer/index.html', 'dist/renderer/index.html'),
+  cp('src/renderer/assets', 'dist/renderer/assets', { recursive: true }),
+]);

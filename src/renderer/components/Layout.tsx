@@ -40,6 +40,15 @@ const descriptions: Record<View, string> = {
   catalog: "Template e contenuti riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 
+function BrandLogo({ className }: { className: string }) {
+  return (
+    <span className={className} role="img" aria-label="Cash">
+      <img src="assets/logo-light.svg" alt="" className="size-full dark:hidden" />
+      <img src="assets/logo-dark.svg" alt="" className="hidden size-full dark:block" />
+    </span>
+  )
+}
+
 export function GlobalError({ appState }: { appState: AppState }) {
   if (!appState.error) return null
   return (
@@ -59,6 +68,7 @@ export function Onboarding({ appState }: { appState: AppState }) {
     <main className="grid min-h-screen place-items-center bg-background p-8">
       <Card className="w-full max-w-2xl">
         <CardHeader>
+          <BrandLogo className="mb-2 size-16" />
           <Badge className="mb-3">Client desktop locale</Badge>
           <CardTitle className="text-3xl">Preventivi con una base verificabile.</CardTitle>
           <CardDescription className="text-base">Cash mette insieme obiettivo economico, tempo, trasferte e spese. Il prezzo finale resta sempre una tua decisione.</CardDescription>
@@ -89,8 +99,8 @@ export function AppShell({ appState, view, onView, children }: {
       <Sidebar collapsible="none">
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">C</div>
-            <div><div className="font-semibold">Cash</div><div className="text-xs text-sidebar-foreground/70">Preventivi verificabili</div></div>
+            <BrandLogo className="size-14 shrink-0" />
+            <div className="text-lg font-semibold">Cash</div>
           </div>
         </SidebarHeader>
         <SidebarContent>

@@ -7,13 +7,14 @@ import {
   Layers3,
   MapPin,
   MoreHorizontal,
+  Pencil,
   Plus,
   ReceiptText,
   Save,
   Trash2,
   Upload,
 } from "lucide-react"
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react"
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { cloneReusableSubItem } from "../../domain/catalog"
 import { parseDuration } from "../../domain/duration"
 import {
@@ -48,6 +49,9 @@ import type { AppState } from "../state"
 import type { DeleteTarget } from "../types"
 
 type Kind = ReusableSubItem["kind"]
+type VariantFilter = "all" | "with" | "without"
+type ContentFilter = "all" | Kind
+type TemplateSort = "name-asc" | "name-desc" | "recent"
 type BaseEditor = { itemIndex: number; subIndex?: number; initialKind?: Kind }
 type DefinitionEditor = {
   itemIndex: number
@@ -75,9 +79,47 @@ export function CatalogView({
   const [editingReusableId, setEditingReusableId] = useState<string | null>()
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>()
   const [importPreview, setImportPreview] = useState<TemplateImportPreview>()
+  const [templateQuery, setTemplateQuery] = useState("")
+  const [variantFilter, setVariantFilter] = useState<VariantFilter>("all")
+  const [contentFilter, setContentFilter] = useState<ContentFilter>("all")
+  const [templateSort, setTemplateSort] = useState<TemplateSort>("name-asc")
+  const [reusableQuery, setReusableQuery] = useState("")
+  const [reusableKind, setReusableKind] = useState<ContentFilter>("all")
   const importInputRef = useRef<HTMLInputElement>(null)
   const reusable = editingReusableId ? doc.catalog.subItems.find((entry) => entry.id === editingReusableId) : undefined
   const template = editingTemplateId ? doc.catalog.templates.find((entry) => entry.id === editingTemplateId) : undefined
+  const filteredTemplates = useMemo(() => {
+    const query = normalizeSearch(templateQuery)
+    return doc.catalog.templates
+      .filter((entry) => !query || templateSearchText(entry).includes(query))
+      .filter((entry) => {
+        const hasVariants = entry.items.some((item) => item.variantGroups.length > 0)
+        return variantFilter === "all" || (variantFilter === "with" ? hasVariants : !hasVariants)
+      })
+      .filter((entry) => contentFilter === "all" || templateHasKind(entry, contentFilter))
+      .toSorted((left, right) => {
+        if (templateSort === "recent") return right.updatedAt.localeCompare(left.updatedAt)
+        const comparison = left.name.localeCompare(right.name, "it", { sensitivity: "base" })
+        return templateSort === "name-desc" ? -comparison : comparison
+      })
+  }, [contentFilter, doc.catalog.templates, templateQuery, templateSort, variantFilter])
+  const filteredReusable = useMemo(() => {
+    const query = normalizeSearch(reusableQuery)
+    return doc.catalog.subItems.filter((item) => (
+      (!query || normalizeSearch(item.description).includes(query))
+      && (reusableKind === "all" || item.kind === reusableKind)
+    ))
+  }, [doc.catalog.subItems, reusableKind, reusableQuery])
+  const templateResultsFiltered = Boolean(templateQuery.trim())
+    || variantFilter !== "all"
+    || contentFilter !== "all"
+
+  const resetTemplateFilters = () => {
+    setTemplateQuery("")
+    setVariantFilter("all")
+    setContentFilter("all")
+    setTemplateSort("name-asc")
+  }
 
   const readImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -166,37 +208,71 @@ export function CatalogView({
                 </div>
               </CardAction>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {doc.catalog.templates.length ? (
-                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-                  {doc.catalog.templates.map((entry) => {
-                    const variants = entry.items.reduce((sum, item) => sum + item.variantGroups.length, 0)
-                    const content = entry.items.reduce((sum, item) => sum + item.subItems.length, 0)
-                    return (
-                      <Card key={entry.id} size="sm">
-                        <CardHeader>
-                          <CardTitle>{entry.name}</CardTitle>
-                          <CardDescription>{entry.items.map((item) => item.name).join(" · ")}</CardDescription>
-                          <CardAction>
-                            <RowMenu
-                              label={entry.name}
-                              onEdit={() => setEditingTemplateId(entry.id)}
-                              onDelete={() => requestDelete({ kind: "template", id: entry.id, label: entry.name })}
-                            />
-                          </CardAction>
-                        </CardHeader>
-                        <CardContent className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <div className="flex flex-1 flex-wrap gap-4">
-                            <span>{entry.items.length} {entry.items.length === 1 ? "voce" : "voci"}</span>
-                            <span>{content} sempre inclusi</span>
-                            {variants ? <span>{variants} {variants === 1 ? "variante" : "varianti"}</span> : null}
-                          </div>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingTemplateId(entry.id)}>Apri <ChevronRight /></Button>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                </div>
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="search"
+                      value={templateQuery}
+                      onChange={(event) => setTemplateQuery(event.target.value)}
+                      placeholder="Cerca template..."
+                      aria-label="Cerca template"
+                      className="min-w-64 flex-1 sm:max-w-md"
+                    />
+                    <NativeSelect
+                      aria-label="Filtra per varianti"
+                      value={variantFilter}
+                      onChange={(event) => setVariantFilter(event.target.value as VariantFilter)}
+                    >
+                      <NativeSelectOption value="all">Varianti: Tutti</NativeSelectOption>
+                      <NativeSelectOption value="with">Con varianti</NativeSelectOption>
+                      <NativeSelectOption value="without">Senza varianti</NativeSelectOption>
+                    </NativeSelect>
+                    <NativeSelect
+                      aria-label="Filtra per contenuto"
+                      value={contentFilter}
+                      onChange={(event) => setContentFilter(event.target.value as ContentFilter)}
+                    >
+                      <NativeSelectOption value="all">Contenuto: Tutti</NativeSelectOption>
+                      <NativeSelectOption value="time">Attività</NativeSelectOption>
+                      <NativeSelectOption value="expense">Spese</NativeSelectOption>
+                      <NativeSelectOption value="travel">Trasferte</NativeSelectOption>
+                    </NativeSelect>
+                    <NativeSelect
+                      aria-label="Ordina template"
+                      value={templateSort}
+                      onChange={(event) => setTemplateSort(event.target.value as TemplateSort)}
+                    >
+                      <NativeSelectOption value="name-asc">Ordina: Nome A–Z</NativeSelectOption>
+                      <NativeSelectOption value="name-desc">Nome Z–A</NativeSelectOption>
+                      <NativeSelectOption value="recent">Modificati di recente</NativeSelectOption>
+                    </NativeSelect>
+                  </div>
+                  <p className="text-xs text-muted-foreground" aria-live="polite">
+                    {templateResultsFiltered ? `${filteredTemplates.length} di ${doc.catalog.templates.length}` : doc.catalog.templates.length} template
+                  </p>
+                  {filteredTemplates.length ? (
+                    <div className="divide-y rounded-lg border">
+                      {filteredTemplates.map((entry) => (
+                        <TemplateListRow
+                          key={entry.id}
+                          template={entry}
+                          onEdit={() => setEditingTemplateId(entry.id)}
+                          onDelete={() => requestDelete({ kind: "template", id: entry.id, label: entry.name })}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid min-h-48 place-items-center rounded-lg border border-dashed px-4 text-center">
+                      <div>
+                        <p className="font-medium">Nessun template corrisponde alla ricerca o ai filtri.</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Prova a cambiare i criteri oppure riparti dall’elenco completo.</p>
+                        <Button className="mt-4" size="sm" variant="outline" onClick={resetTemplateFilters}>Reimposta filtri</Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <Empty
                   title="Crea il tuo primo template"
@@ -216,26 +292,55 @@ export function CatalogView({
               <CardDescription>Attività, spese e trasferte salvati per riutilizzarli.</CardDescription>
               <CardAction><Button variant="outline" onClick={() => setEditingReusableId(null)}><Plus />Nuovo elemento</Button></CardAction>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {doc.catalog.subItems.length ? (
-                <div className="space-y-2">
-                  {doc.catalog.subItems.map((item) => (
-                    <WorkItemRow
-                      key={item.id}
-                      kind={item.kind}
-                      description={item.description}
-                      detail={reusableDetail(item)}
-                      onClick={() => setEditingReusableId(item.id)}
-                      action={
-                        <RowMenu
-                          label={item.description}
-                          onEdit={() => setEditingReusableId(item.id)}
-                          onDelete={() => requestDelete({ kind: "catalog", id: item.id, label: item.description })}
-                        />
-                      }
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="search"
+                      value={reusableQuery}
+                      onChange={(event) => setReusableQuery(event.target.value)}
+                      placeholder="Cerca elementi..."
+                      aria-label="Cerca elementi singoli"
+                      className="min-w-64 flex-1 sm:max-w-md"
                     />
-                  ))}
-                </div>
+                    <NativeSelect
+                      aria-label="Filtra elementi per tipo"
+                      value={reusableKind}
+                      onChange={(event) => setReusableKind(event.target.value as ContentFilter)}
+                    >
+                      <NativeSelectOption value="all">Tutti i tipi</NativeSelectOption>
+                      <NativeSelectOption value="time">Attività</NativeSelectOption>
+                      <NativeSelectOption value="expense">Spese</NativeSelectOption>
+                      <NativeSelectOption value="travel">Trasferte</NativeSelectOption>
+                    </NativeSelect>
+                  </div>
+                  {filteredReusable.length ? (
+                    <div className="space-y-2">
+                      {filteredReusable.map((item) => (
+                        <WorkItemRow
+                          key={item.id}
+                          kind={item.kind}
+                          description={item.description}
+                          detail={reusableDetail(item)}
+                          onClick={() => setEditingReusableId(item.id)}
+                          action={
+                            <RowMenu
+                              label={item.description}
+                              onEdit={() => setEditingReusableId(item.id)}
+                              onDelete={() => requestDelete({ kind: "catalog", id: item.id, label: item.description })}
+                            />
+                          }
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed px-4 py-10 text-center">
+                      <p className="font-medium">Nessun elemento corrisponde alla ricerca o al filtro.</p>
+                      <Button className="mt-3" size="sm" variant="outline" onClick={() => { setReusableQuery(""); setReusableKind("all") }}>Reimposta filtri</Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <Empty
                   title="Nessun elemento singolo"
@@ -282,6 +387,131 @@ export function CatalogView({
         />
       ) : null}
     </>
+  )
+}
+
+function TemplateListRow({
+  template,
+  onEdit,
+  onDelete,
+}: {
+  template: Template
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const includedCount = template.items.reduce((sum, item) => sum + item.subItems.length, 0)
+  const variantCount = template.items.reduce((sum, item) => sum + item.variantGroups.length, 0)
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="flex items-stretch transition-colors hover:bg-muted/30">
+        <CollapsibleTrigger
+          className="grid min-w-0 flex-1 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-3 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 lg:grid-cols-[auto_minmax(12rem,1fr)_6rem_8rem_7rem]"
+          aria-label={`${open ? "Chiudi" : "Espandi"} anteprima di ${template.name}`}
+        >
+          <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+          <span className="min-w-0 truncate font-medium">{template.name}</span>
+          <span className="col-start-2 flex flex-wrap gap-x-4 text-xs text-muted-foreground lg:hidden">
+            <span>{template.items.length} {template.items.length === 1 ? "voce" : "voci"}</span>
+            <span>{includedCount} {includedCount === 1 ? "incluso" : "inclusi"}</span>
+            <span>{variantCount} {variantCount === 1 ? "variante" : "varianti"}</span>
+          </span>
+          <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground lg:block">
+            {template.items.length} {template.items.length === 1 ? "voce" : "voci"}
+          </span>
+          <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground lg:block">
+            {includedCount} {includedCount === 1 ? "incluso" : "inclusi"}
+          </span>
+          <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground lg:block">
+            {variantCount} {variantCount === 1 ? "variante" : "varianti"}
+          </span>
+        </CollapsibleTrigger>
+        <div className="flex items-center gap-1 px-2">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={`Apri e modifica ${template.name}`}
+            title="Apri e modifica"
+            onClick={onEdit}
+          >
+            <Pencil />
+          </Button>
+          <RowMenu label={template.name} onEdit={onEdit} onDelete={onDelete} />
+        </div>
+      </div>
+
+      <CollapsibleContent>
+        <div className="border-t bg-muted/20 px-4 py-4 sm:px-10">
+          <div className="space-y-5">
+            {template.items.map((item) => (
+              <section key={item.id} className="space-y-3 border-border/70 [&+section]:border-t [&+section]:pt-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h3 className="font-medium">{item.name}</h3>
+                  {item.referencePrice ? (
+                    <p className="text-xs text-muted-foreground">
+                      Prezzo di riferimento: <span className="font-medium text-foreground">{eur(item.referencePrice.amount)}</span> · {formatReferencePeriod(item.referencePrice.period)}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sempre inclusi</h4>
+                  {item.subItems.length ? (
+                    <ul className="mt-2 space-y-1.5">
+                      {item.subItems.map((subItem) => <PreviewSubItem key={subItem.id} item={subItem} />)}
+                    </ul>
+                  ) : (
+                    <p className="mt-1.5 text-sm text-muted-foreground">Nessun elemento sempre incluso.</p>
+                  )}
+                </div>
+
+                {item.variantGroups.length ? (
+                  <div>
+                    <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Varianti</h4>
+                    <div className="mt-2 space-y-3">
+                      {item.variantGroups.map((group) => (
+                        <div key={group.id} className="border-l-2 border-border pl-3">
+                          <p className="text-sm font-medium">{group.name}</p>
+                          <div className="mt-1.5 space-y-2">
+                            {group.options.map((option) => (
+                              <div key={option.id}>
+                                <p className="text-sm">
+                                  {option.name}
+                                  {group.defaultOptionId === option.id ? <Badge variant="outline" className="ml-2">Predefinita</Badge> : null}
+                                </p>
+                                {option.subItems.length ? (
+                                  <ul className="mt-1 space-y-1 pl-4">
+                                    {option.subItems.map((subItem, index) => <PreviewSubItem key={`${option.id}-${index}`} item={subItem} />)}
+                                  </ul>
+                                ) : (
+                                  <p className="mt-0.5 pl-4 text-xs text-muted-foreground">Nessun contenuto aggiuntivo.</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ))}
+          </div>
+          <Button className="mt-5" size="sm" variant="outline" onClick={onEdit}>Apri e modifica</Button>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function PreviewSubItem({ item }: { item: ReusableSubItem | SubItemDefinition }) {
+  return (
+    <li className="flex flex-wrap items-baseline gap-x-2 text-sm">
+      <Badge variant="outline">{kindLabel(item.kind)}</Badge>
+      <span>{item.description}</span>
+      <span className="text-xs text-muted-foreground">· {previewSubItemDetail(item)}</span>
+    </li>
   )
 }
 
@@ -1042,6 +1272,47 @@ function ReusablePickerDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function normalizeSearch(value: string): string {
+  return value.trim().toLocaleLowerCase("it")
+}
+
+function templateSearchText(template: Template): string {
+  const values = [template.name]
+  for (const item of template.items) {
+    values.push(item.name, ...item.subItems.map((subItem) => subItem.description))
+    for (const group of item.variantGroups) {
+      values.push(group.name)
+      for (const option of group.options) {
+        values.push(option.name, ...option.subItems.map((subItem) => subItem.description))
+      }
+    }
+  }
+  return normalizeSearch(values.join(" "))
+}
+
+function templateHasKind(template: Template, kind: Kind): boolean {
+  return template.items.some((item) => (
+    item.subItems.some((subItem) => subItem.kind === kind)
+    || item.variantGroups.some((group) => group.options.some((option) => option.subItems.some((subItem) => subItem.kind === kind)))
+  ))
+}
+
+function formatReferencePeriod(period: string): string {
+  return new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(`${period}-01T00:00:00`))
+}
+
+function previewSubItemDetail(item: ReusableSubItem | SubItemDefinition): string {
+  if (item.kind === "time") return hours(item.minutes)
+  if (item.kind === "expense") return eur(item.amount)
+  const details = [
+    item.roundTrip ? "A/R" : "Solo andata",
+    `${item.occurrences} ${item.occurrences === 1 ? "occorrenza" : "occorrenze"}`,
+  ]
+  if (item.distanceKmPerOccurrence !== undefined) details.push(`${item.distanceKmPerOccurrence} km/occorrenza`)
+  if (item.travelMinutesPerOccurrence !== undefined) details.push(`${hours(item.travelMinutesPerOccurrence)}/occorrenza`)
+  return details.join(" · ")
 }
 
 function optionEffect(option: VariantOption): string {

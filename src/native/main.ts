@@ -21,6 +21,8 @@ let closingApproved = false;
 let closePromptOpen = false;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
+if (process.platform === 'win32') app.setAppUserModelId('it.cash.desktop');
+
 function selectedPathValid(path: string): boolean { return current?.path === path; }
 function activeFicCompany(companyId: string): boolean {
   return current?.document ? requireActiveFic(current.document.settings, companyId).ok : false;
@@ -165,7 +167,7 @@ async function detectExternalChange(): Promise<void> {
 
 async function createWindow(): Promise<void> {
   const createdWindow = window = new BrowserWindow({ width: 1360, height: 900, minWidth: 1024, minHeight: 700, show: false,
-    backgroundColor: '#f5f2ea', webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true,
+    backgroundColor: '#f5f2ea', icon: join(__dirname, '../renderer/assets/app-icon.ico'), webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true,
       nodeIntegration: false, sandbox: true, webSecurity: true } });
   createdWindow.removeMenu();
   createdWindow.once('ready-to-show', () => { if (!createdWindow.isDestroyed()) createdWindow.show(); });

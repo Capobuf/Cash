@@ -12,6 +12,7 @@
     "build:styles": "tailwindcss -i ./src/renderer/styles.css -o ./dist/renderer/styles.css --minify",
     "build": "npm run build:code && npm run build:styles",
     "build:dev": "npm run build:code:dev && npm run build:styles",
+    "generate:icon": "node scripts/generate-icon.mjs",
     "start": "npm run build && electron .",
     "dev": "npm run build:dev && electron .",
     "typecheck": "tsc --noEmit",
@@ -65,6 +66,7 @@
       "node_modules/keytar/**/*"
     ],
     "win": {
+      "icon": "src/renderer/assets/app-icon.ico",
       "target": [
         "portable"
       ],
