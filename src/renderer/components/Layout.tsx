@@ -98,9 +98,8 @@ export function AppShell({ appState, view, onView, children }: {
     <SidebarProvider>
       <Sidebar collapsible="none">
         <SidebarHeader className="p-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center">
             <BrandLogo className="size-14 shrink-0" />
-            <div className="text-lg font-semibold">Cash</div>
           </div>
         </SidebarHeader>
         <SidebarContent>
