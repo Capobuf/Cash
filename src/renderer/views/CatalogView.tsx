@@ -11,8 +11,9 @@ import {
   ReceiptText,
   Save,
   Trash2,
+  Upload,
 } from "lucide-react"
-import { useState, type FormEvent } from "react"
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { cloneReusableSubItem } from "../../domain/catalog"
 import { parseDuration } from "../../domain/duration"
 import {
@@ -25,6 +26,8 @@ import {
   type VariantGroup,
   type VariantOption,
 } from "../../domain/model"
+import { cashDocumentSchema, validationErrorFromIssues } from "../../domain/schema"
+import { findTemplatePackConflicts, materializeTemplatePack, parseTemplatePack, type TemplatePack } from "../../domain/template-pack"
 import { validateVariantGroups } from "../../domain/variants"
 import { DefinitionDialog } from "@/components/QuoteDialogs"
 import { WorkItemRow } from "@/components/WorkItemRow"
@@ -53,6 +56,12 @@ type DefinitionEditor = {
   definitionIndex?: number
   initialKind?: SubItemDefinition["kind"]
 }
+type TemplateImportPreview = {
+  fileName: string
+  pack: TemplatePack
+  conflicts: Set<number>
+  importAnyway: Record<number, boolean>
+}
 
 export function CatalogView({
   doc,
@@ -65,8 +74,54 @@ export function CatalogView({
 }) {
   const [editingReusableId, setEditingReusableId] = useState<string | null>()
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>()
+  const [importPreview, setImportPreview] = useState<TemplateImportPreview>()
+  const importInputRef = useRef<HTMLInputElement>(null)
   const reusable = editingReusableId ? doc.catalog.subItems.find((entry) => entry.id === editingReusableId) : undefined
   const template = editingTemplateId ? doc.catalog.templates.find((entry) => entry.id === editingTemplateId) : undefined
+
+  const readImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+    if (!file.name.toLocaleLowerCase("it").endsWith(".json")) {
+      appState.setError({ code: "VALIDATION", field: "file", message: "Seleziona un singolo file JSON.", action: "Scegli un file con estensione .json. Nessun template è stato importato." })
+      return
+    }
+    let input: unknown
+    try {
+      input = JSON.parse(await file.text())
+    } catch (error) {
+      appState.setError({
+        code: "VALIDATION",
+        field: "file",
+        message: "Il file selezionato non contiene JSON valido.",
+        action: "Correggi il file e selezionalo nuovamente. Nessun template è stato importato.",
+        details: [error instanceof Error ? error.message : "Errore di lettura o sintassi JSON."],
+      })
+      return
+    }
+    const parsed = parseTemplatePack(input)
+    if (!parsed.ok) { appState.setError(parsed.error); return }
+    const conflicts = new Set(findTemplatePackConflicts(parsed.value, doc.catalog.templates).map((conflict) => conflict.templateIndex))
+    appState.clearError()
+    setImportPreview({ fileName: file.name, pack: parsed.value, conflicts, importAnyway: {} })
+  }
+
+  const confirmImport = () => {
+    if (!importPreview) return
+    const currentConflicts = new Set(findTemplatePackConflicts(importPreview.pack, doc.catalog.templates).map((conflict) => conflict.templateIndex))
+    const selectedIndexes = importPreview.pack.templates
+      .map((_, index) => index)
+      .filter((index) => !currentConflicts.has(index) || importPreview.importAnyway[index])
+    if (!selectedIndexes.length) { setImportPreview(undefined); return }
+    const templates = materializeTemplatePack(importPreview.pack, selectedIndexes)
+    const candidate = structuredClone(doc)
+    candidate.catalog.templates.push(...templates)
+    const validation = cashDocumentSchema.safeParse(candidate)
+    if (!validation.success) { appState.setError(validationErrorFromIssues(validation.error.issues)); return }
+    appState.mutate((document) => { document.catalog.templates.push(...templates) })
+    setImportPreview(undefined)
+  }
 
   if (editingTemplateId !== undefined) {
     return (
@@ -104,7 +159,12 @@ export function CatalogView({
             <CardHeader className="border-b">
               <CardTitle>Template</CardTitle>
               <CardDescription>Prepara le basi che userai più spesso nei preventivi.</CardDescription>
-              <CardAction><Button onClick={() => setEditingTemplateId(null)}><Plus />Nuovo template</Button></CardAction>
+              <CardAction>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => importInputRef.current?.click()}><Upload />Importa</Button>
+                  <Button onClick={() => setEditingTemplateId(null)}><Plus />Nuovo template</Button>
+                </div>
+              </CardAction>
             </CardHeader>
             <CardContent>
               {doc.catalog.templates.length ? (
@@ -207,7 +267,77 @@ export function CatalogView({
           }}
         />
       ) : null}
+
+      <input ref={importInputRef} type="file" accept=".json,application/json" className="hidden" onChange={(event) => { void readImportFile(event) }} />
+
+      {importPreview ? (
+        <TemplateImportDialog
+          preview={importPreview}
+          onChange={(templateIndex, importAnyway) => setImportPreview((current) => current ? {
+            ...current,
+            importAnyway: { ...current.importAnyway, [templateIndex]: importAnyway },
+          } : current)}
+          onClose={() => setImportPreview(undefined)}
+          onImport={confirmImport}
+        />
+      ) : null}
     </>
+  )
+}
+
+function TemplateImportDialog({
+  preview,
+  onChange,
+  onClose,
+  onImport,
+}: {
+  preview: TemplateImportPreview
+  onChange: (templateIndex: number, importAnyway: boolean) => void
+  onClose: () => void
+  onImport: () => void
+}) {
+  const selectedCount = preview.pack.templates.filter((_, index) => !preview.conflicts.has(index) || preview.importAnyway[index]).length
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Importa Template</DialogTitle>
+          <DialogDescription>
+            {preview.fileName} · {preview.pack.templates.length} template
+            {preview.conflicts.size ? ` · ${preview.conflicts.size} ${preview.conflicts.size === 1 ? "conflitto" : "conflitti"}` : " · nessun conflitto"}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+          {preview.pack.templates.map((template, templateIndex) => {
+            const conflict = preview.conflicts.has(templateIndex)
+            return (
+              <div key={`${template.name}-${templateIndex}`} className="flex items-center gap-3 rounded-lg border px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{template.name}</p>
+                  <p className="text-xs text-muted-foreground">{template.items.length} {template.items.length === 1 ? "voce" : "voci"}</p>
+                </div>
+                {conflict ? <Badge variant="outline">Conflitto</Badge> : <Badge variant="secondary">Nuovo</Badge>}
+                {conflict ? (
+                  <NativeSelect
+                    size="sm"
+                    aria-label={`Scelta per il conflitto ${template.name}`}
+                    value={preview.importAnyway[templateIndex] ? "import" : "skip"}
+                    onChange={(event) => onChange(templateIndex, event.target.value === "import")}
+                  >
+                    <NativeSelectOption value="skip">Salta</NativeSelectOption>
+                    <NativeSelectOption value="import">Importa comunque</NativeSelectOption>
+                  </NativeSelect>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Annulla</Button>
+          <Button onClick={onImport}>{selectedCount ? `Importa ${selectedCount}` : "Chiudi senza importare"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
