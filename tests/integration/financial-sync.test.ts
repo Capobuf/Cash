@@ -13,6 +13,22 @@ const remote = (type: string, id = 1) => ({ id, type, date: '2026-01-01', amount
 });
 
 describe('snapshot finanziario FIC completo', () => {
+  it.each([{ id: 42, name: 'Controparte' }, { id: '42' }, { name: 'Controparte' }, { id: null, name: null }, null])('conserva entity.id e name opzionali per emessi e ricevuti: %j', async entity => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/company/info')) return response(company);
+      if (url.pathname.endsWith('/pending')) return response({ current_page: 1, last_page: 1, data: [] });
+      const type = url.searchParams.get('type')!;
+      return response({ current_page: 1, last_page: 1, data: [{ ...remote(type, type === 'credit_note' || type === 'passive_credit_note' ? 2 : 1), entity }] });
+    });
+    const result = await syncFinancialData('1', 'token', fetcher as typeof fetch);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    for (const document of [...result.value.issuedDocuments, ...result.value.receivedDocuments]) {
+      expect(document.entityId).toBe(entity?.id == null ? undefined : String(entity.id));
+      expect(document.entityName).toBe(entity?.name ?? undefined);
+    }
+  });
+
   it('legge tutte le pagine dei quattro tipi, normalizza solo i campi necessari senza filtri anno/SDI', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));

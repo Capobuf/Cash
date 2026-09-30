@@ -105,7 +105,7 @@ const financialPaymentSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['paidDate'], message: 'Un pagamento paid richiede una data di pagamento valida.' });
 });
 const financialDocumentFields = {
-  id: z.string().min(1), date: z.string().date(), entityName: z.string().optional(),
+  id: z.string().min(1), date: z.string().date(), entityId: z.string().min(1).optional(), entityName: z.string().optional(),
   amountGross: moneyInput, payments: z.array(financialPaymentSchema),
 };
 export const financialSnapshotSchema = z.object({

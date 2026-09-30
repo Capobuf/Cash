@@ -267,6 +267,7 @@ export interface FicIssuedDocument {
   number?: string;
   numeration?: string;
   description?: string;
+  entityId?: string;
   entityName?: string;
   amountGross: DecimalString;
   payments: FicFinancialPayment[];
@@ -276,6 +277,7 @@ export interface FicReceivedDocument {
   type: 'expense' | 'passive_credit_note';
   date: string;
   invoiceNumber?: string;
+  entityId?: string;
   entityName?: string;
   description?: string;
   category?: string;

@@ -12,6 +12,16 @@ const snapshot: FicFinancialSnapshot = { source: 'fatture_in_cloud', company: { 
   issuedDocuments: [{ id: '10', type: 'invoice', date: '2026-01-01', amountGross: '100.00', payments: [{ id: '20', amount: '100.00', status: 'paid', paidDate: '2026-02-01' }] }], receivedDocuments: [] };
 
 describe('archivio finanziario v5', () => {
+  it('apre v5 preesistenti senza entityId e conserva gli ID opzionali al salvataggio e riapertura', async () => {
+    const document = createEmptyDocument(); document.financialSnapshot = structuredClone(snapshot);
+    expect(parseDocument(document).financialSnapshot).toEqual(snapshot);
+    document.financialSnapshot.issuedDocuments[0]!.entityId = '42';
+    document.financialSnapshot.receivedDocuments.push({ id: '1', entityId: '73', entityName: 'Fornitore', type: 'expense', date: '2026-01-01', amountGross: '10.00', payments: [] });
+    const dir = await mkdtemp(join(tmpdir(), 'cash-entity-id-')); const path = join(dir, 'Cash.json');
+    const created = await createArchive(path, document); if (!created.ok) throw new Error(created.error.message);
+    expect(await openArchive(path)).toMatchObject({ ok: true, value: { document: { schemaVersion: 5, financialSnapshot: document.financialSnapshot } } });
+  });
+
   it('migra v4 senza blocker né perdita di profili, costi, sedi, default e trasferte', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'cash-financial-')); const path = join(dir, 'v4.json');
     const document = createEmptyDocument(); document.schemaVersion = 4;

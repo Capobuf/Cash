@@ -245,7 +245,7 @@ const remoteFinancialDocument = z.object({
   id: remoteId, type: z.enum(['invoice', 'credit_note', 'expense', 'passive_credit_note']),
   date: z.string().date(), amount_gross: remoteMoney,
   number: z.union([z.string(), z.number().int()]).nullish(), numeration: z.string().nullish(),
-  invoice_number: z.string().nullish(), entity: z.object({ name: z.string().nullish() }).nullish(),
+  invoice_number: z.string().nullish(), entity: z.object({ id: remoteId.nullish(), name: z.string().nullish() }).nullish(),
   description: z.string().nullish(), subject: z.string().nullish(), category: z.string().nullish(),
   payments_list: z.array(remotePayment).nullable(),
 });
@@ -341,6 +341,7 @@ export async function syncFinancialData(companyId: string, token: string, fetche
       if (!result.ok) return result;
       for (const document of result.value) {
         const common = { id: document.id, date: document.date, amountGross: document.amount_gross,
+          ...(document.entity?.id != null ? { entityId: document.entity.id } : {}),
           ...(document.entity?.name != null ? { entityName: document.entity.name } : {}),
           payments: (document.payments_list ?? []).map(payment => ({ amount: payment.amount, status: payment.status,
             ...(payment.id != null ? { id: payment.id } : {}), ...(payment.due_date ? { dueDate: payment.due_date } : {}),

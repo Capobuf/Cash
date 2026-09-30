@@ -33,6 +33,88 @@ export interface FinancialMonth {
   month: number; issuedRevenue: string; collectedRevenue: string; documentedCosts: string; paidCosts: string;
 }
 
+const share = (amount: string, total: string) => d(total).gt(0) ? percentOut(d(amount).div(total).mul(100)) : undefined;
+
+// Dates are validated ISO calendar dates; UTC prevents DST from changing day counts.
+export const calendarDaysBetween = (from: string, to: string): number =>
+  (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+
+function groupDocuments<T extends FinancialDocument>(documents: T[], keyOf: (document: T) => string): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const document of documents) {
+    const key = keyOf(document);
+    const group = groups.get(key);
+    if (group) group.push(document); else groups.set(key, [document]);
+  }
+  return [...groups.values()];
+}
+
+const entityKey = (document: FinancialDocument) => document.entityId
+  ? `entity:${document.entityId}` : `document:${document.type}:${document.id}`;
+function identity(documents: FinancialDocument[]) {
+  const first = documents[0]!;
+  return { key: entityKey(first), entityId: first.entityId,
+    name: documents.find(document => document.entityName?.trim())?.entityName ?? 'Controparte non disponibile',
+    ungroupedDocumentId: first.entityId ? undefined : first.id };
+}
+
+// Aggregates refer to documents issued in the selected year and their complete
+// payment schedules. Calendar-year cash flows remain separate in the KPI/months.
+export function aggregateClients(invoices: FicIssuedDocument[], today: string) {
+  const total = sumMoney(invoices.map(document => document.amountGross));
+  return groupDocuments(invoices, entityKey).map(documents => {
+    const summaries = documents.map(document => financialPaymentSummary(document, today));
+    const issuedRevenue = sumMoney(documents.map(document => document.amountGross));
+    return { ...identity(documents), invoiceCount: documents.length, issuedRevenue,
+      collectedRevenue: sumMoney(summaries.map(summary => summary.paid)),
+      outstandingRevenue: sumMoney(summaries.map(summary => summary.outstanding)),
+      overdueRevenue: sumMoney(summaries.map(summary => summary.overdue)),
+      revenueShare: share(issuedRevenue, total) };
+  }).sort((a, b) => d(b.issuedRevenue).cmp(a.issuedRevenue) || a.key.localeCompare(b.key));
+}
+
+export function analyzeClientPayments(invoices: FicIssuedDocument[], today: string) {
+  return groupDocuments(invoices, entityKey).map(documents => {
+    const payments = documents.flatMap(document => document.payments);
+    const delays = payments.flatMap(payment => payment.status === 'paid' && payment.dueDate && payment.paidDate
+      ? [Math.max(0, calendarDaysBetween(payment.dueDate, payment.paidDate))] : []);
+    const openDueDates = payments.flatMap(payment => payment.status !== 'paid' && d(payment.amount).gt(0)
+      && payment.dueDate && payment.dueDate < today ? [payment.dueDate] : []).sort();
+    const summaries = documents.map(document => financialPaymentSummary(document, today));
+    return { ...identity(documents), analyzedPaymentCount: delays.length,
+      averageDelayDays: delays.length ? delays.reduce((sum, delay) => sum + delay, 0) / delays.length : undefined,
+      maxDelayDays: delays.length ? Math.max(...delays) : undefined,
+      onTimePercentage: delays.length ? percentOut(d(delays.filter(delay => delay === 0).length).div(delays.length).mul(100)) : undefined,
+      overdueRevenue: sumMoney(summaries.map(summary => summary.overdue)),
+      overdueInvoiceCount: summaries.filter(summary => d(summary.overdue).gt(0)).length,
+      oldestOpenDueDays: openDueDates[0] ? calendarDaysBetween(openDueDates[0], today) : undefined };
+  }).sort((a, b) => (b.averageDelayDays ?? -1) - (a.averageDelayDays ?? -1)
+    || d(b.overdueRevenue).cmp(a.overdueRevenue) || a.key.localeCompare(b.key));
+}
+
+function costTotals(documents: FicReceivedDocument[], today: string) {
+  const summaries = documents.map(document => financialPaymentSummary(document, today));
+  return { documentCount: documents.length, documentedCosts: sumMoney(documents.map(document => document.amountGross)),
+    paidCosts: sumMoney(summaries.map(summary => summary.paid)), outstandingCosts: sumMoney(summaries.map(summary => summary.outstanding)) };
+}
+
+export function aggregateCostCategories(expenses: FicReceivedDocument[], today: string) {
+  const total = sumMoney(expenses.map(document => document.amountGross));
+  const categoryKey = (document: FicReceivedDocument) => document.category?.trim() ? `category:${document.category}` : 'missing';
+  return groupDocuments(expenses, categoryKey).map(documents => {
+    const totals = costTotals(documents, today);
+    return { key: categoryKey(documents[0]!), category: documents[0]!.category?.trim() ? documents[0]!.category! : 'Senza categoria',
+      ...totals, costShare: share(totals.documentedCosts, total) };
+  }).sort((a, b) => d(b.documentedCosts).cmp(a.documentedCosts) || a.key.localeCompare(b.key));
+}
+
+export function aggregateSuppliers(expenses: FicReceivedDocument[], today: string) {
+  return groupDocuments(expenses, entityKey).map(documents => ({ ...identity(documents), ...costTotals(documents, today) }))
+    .sort((a, b) => d(b.documentedCosts).cmp(a.documentedCosts) || a.key.localeCompare(b.key));
+}
+
+export type FinancialAnalysis = ReturnType<typeof calculateFinancialAnalysis>;
+
 export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year: number,
   profile: EconomicProfile | undefined, costs: BusinessCost[], today: string) {
   const annualProfile = profile?.year === year ? profile : undefined;
@@ -77,6 +159,16 @@ export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year:
     };
   });
   return {
+    invoiceCount: annualInvoices.length,
+    outstandingInvoiceCount: invoiceDetails.filter(detail => d(detail.outstanding).gt(0)).length,
+    overdueInvoiceCount: invoiceDetails.filter(detail => d(detail.overdue).gt(0)).length,
+    costDocumentCount: annualExpenses.length,
+    clientAnalysis: aggregateClients(annualInvoices, today),
+    clientPaymentAnalysis: analyzeClientPayments(annualInvoices, today),
+    costCategoryAnalysis: aggregateCostCategories(annualExpenses, today),
+    supplierAnalysis: aggregateSuppliers(annualExpenses, today),
+    costIncidenceOnIssued: share(total(annualExpenses), issuedRevenue),
+    paidCostIncidenceOnCollected: share(sumMoney(paidExpenses.map(payment => payment.amount)), collectedRevenue),
     revenueTarget, issuedRevenue, collectedRevenue,
     outstandingRevenue: sumMoney(invoiceDetails.map(detail => detail.outstanding)),
     overdueRevenue: sumMoney(invoiceDetails.map(detail => detail.overdue)),

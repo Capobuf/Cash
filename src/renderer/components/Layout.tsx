@@ -128,7 +128,7 @@ export function AppShell({ appState, view, onView, children }: {
           </div>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3 backdrop-blur 2xl:px-8">
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{descriptions[view]}</p>

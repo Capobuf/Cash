@@ -42,7 +42,7 @@ export function FinancialDocuments({ snapshot, year, today }: { snapshot: FicFin
     ['Oggetto', selected.document.subject], ['Categoria', selected.document.category], ['Stato', 'Da registrare in Fatture in Cloud'],
   ] : [
     ['Tipo', typeLabels[selected.document.type]], ['FIC ID', selected.document.id], ['Data', dateIt(selected.document.date)],
-    ['Numero', numberOf(selected.document)], ['Cliente / fornitore', selected.document.entityName], ['Importo', eur(selected.document.amountGross)],
+    ['Numero', numberOf(selected.document)], ['Cliente / fornitore', selected.document.entityName], ['ID controparte FIC', selected.document.entityId], ['Importo', eur(selected.document.amountGross)],
     ['Descrizione', 'description' in selected.document ? selected.document.description : undefined],
     ['Categoria', 'category' in selected.document ? selected.document.category : undefined],
     ['Stato derivato', statusOf(selected.document, today)], ['Totale pagato', eur(detail?.paid)], ['Residuo', eur(detail?.outstanding)],
