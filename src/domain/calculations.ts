@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { calculateWorkCalendar } from './calendar';
 import { d, decimalHours, floorMinute, money, perKm, percentOut, sumMoney } from './decimal';
-import { err, modeForFuel, ok, type BusinessCost, type EconomicProfile, type FuelEvidence, type QuoteItem, type Result, type RouteResult, type Vehicle } from './model';
+import { err, modeForFuel, ok, type BusinessCost, type EconomicProfile, type FiscalParameters, type FuelEvidence, type QuoteItem, type Result, type RouteResult, type Vehicle } from './model';
 
 export interface ProfileAnalysis {
   revenueTarget: string; revenueFromTime: string; forfaitIncome?: string; contributionBase?: string; contributions?: string;
@@ -10,6 +10,30 @@ export interface ProfileAnalysis {
   availableClientMinutes: number; hourlyTarget: string; excludedHolidays: string[]; warnings: string[];
 }
 const fail = <T>(message: string, field?: string): Result<T> => err({ code: 'VALIDATION', message, ...(field ? { field } : {}) });
+
+export interface FiscalProjection {
+  forfaitIncome: string; contributionBase: string; contributions: string; taxBase: string;
+  effectiveTaxRate: string; substituteTax: string; fiscalNet: string; totalToReserve: string;
+}
+
+// Shared for target planning and actual collections; costs never reduce the forfait base.
+export function calculateFiscalProjection(revenueAmount: string, fiscal: FiscalParameters): Result<FiscalProjection> {
+  try {
+    const revenue = d(revenueAmount);
+    if (!revenue.isFinite() || revenue.lt(0)) return fail('Il ricavo fiscale deve essere non negativo.', 'revenue');
+    if (!fiscal.atecoCode.trim()) return fail('Il codice ATECO è obbligatorio.', 'atecoCode');
+    const profitability = d(fiscal.profitabilityCoefficient).div(100); const contributionRate = d(fiscal.contributionRate).div(100);
+    const effectiveRate = fiscal.activityPhase === 'reduced_eligible' && fiscal.reducedEligibilityConfirmed ? fiscal.reducedSubstituteTaxRate : fiscal.ordinarySubstituteTaxRate;
+    const taxRate = d(effectiveRate).div(100);
+    if (profitability.lte(0) || profitability.gt(1) || contributionRate.lt(0) || contributionRate.gt(1) || taxRate.lt(0) || taxRate.gt(1)) return fail('Coefficienti e aliquote fiscali non validi.', 'fiscal');
+    if (d(fiscal.contributionCeiling).lte(0)) return fail('Il massimale contributivo deve essere positivo.', 'contributionCeiling');
+    if (d(fiscal.ordinaryThreshold).lte(0) || d(fiscal.cessationThreshold).lte(fiscal.ordinaryThreshold)) return fail('Le soglie devono essere positive e la cessazione deve superare la soglia ordinaria.', 'fiscal.thresholds');
+    const forfaitIncome = revenue.mul(profitability); const contributionBase = Decimal.min(forfaitIncome, d(fiscal.contributionCeiling));
+    const contributions = d(money(contributionBase.mul(contributionRate))); const taxBase = Decimal.max(0, forfaitIncome.minus(contributions));
+    const substituteTax = d(money(taxBase.mul(taxRate))); const fiscalNet = revenue.minus(contributions).minus(substituteTax);
+    return ok({ forfaitIncome: money(forfaitIncome), contributionBase: money(contributionBase), contributions: money(contributions), taxBase: money(taxBase), effectiveTaxRate: effectiveRate, substituteTax: money(substituteTax), fiscalNet: money(fiscalNet), totalToReserve: money(contributions.plus(substituteTax)) });
+  } catch { return fail('Parametri fiscali non validi.', 'fiscal'); }
+}
 
 function calculateProfileCore(profile: EconomicProfile, costs: BusinessCost[], requireConfirmed: boolean): Result<ProfileAnalysis> {
   try {
@@ -27,12 +51,8 @@ function calculateProfileCore(profile: EconomicProfile, costs: BusinessCost[], r
     const workMinutes = d(availableDays).mul(hours).mul(60).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
     const clientMinutes = d(workMinutes).mul(clientPercent).div(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
     if (clientMinutes <= 0) return fail('Le ore disponibili per i lavori devono essere maggiori di zero.', 'clientTimePercentage');
-    const profitability = d(profile.fiscal.profitabilityCoefficient).div(100); const contributionRate = d(profile.fiscal.contributionRate).div(100);
-    const effectiveRate = profile.fiscal.activityPhase === 'reduced_eligible' && profile.fiscal.reducedEligibilityConfirmed ? profile.fiscal.reducedSubstituteTaxRate : profile.fiscal.ordinarySubstituteTaxRate;
-    const taxRate = d(effectiveRate).div(100);
-    if (profitability.lte(0) || profitability.gt(1) || contributionRate.lt(0) || contributionRate.gt(1) || taxRate.lt(0) || taxRate.gt(1)) return fail('Coefficienti e aliquote fiscali non validi.', 'fiscal');
-    if (d(profile.fiscal.contributionCeiling).lte(0)) return fail('Il massimale contributivo deve essere positivo.', 'contributionCeiling');
-    if (d(profile.fiscal.ordinaryThreshold).lte(0) || d(profile.fiscal.cessationThreshold).lte(profile.fiscal.ordinaryThreshold)) return fail('Le soglie devono essere positive e la cessazione deve superare la soglia ordinaria.', 'fiscal.thresholds');
+    const fiscalResult = calculateFiscalProjection(profile.revenueTarget, profile.fiscal);
+    if (!fiscalResult.ok) return fiscalResult;
     const annualCosts = costs.reduce((sum, cost) => sum.plus(d(cost.monthlyAmount).mul(12)), d(0));
     if (annualCosts.lt(0)) return fail('I costi aziendali non possono essere negativi.', 'businessCosts');
     const revenueFromTime = revenue.minus(specific); const hourlyTarget = revenueFromTime.div(d(clientMinutes).div(60));
@@ -42,10 +62,8 @@ function calculateProfileCore(profile: EconomicProfile, costs: BusinessCost[], r
     if (requireConfirmed && profile.fiscal.activityPhase === 'reduced_eligible' && !profile.fiscal.reducedEligibilityConfirmed) return err({ code: 'MISSING_DATA', field: 'reducedEligibilityConfirmed', message: 'Confermare separatamente i requisiti per l’aliquota agevolata.' });
     if (requireConfirmed && revenue.gt(profile.fiscal.ordinaryThreshold) && revenue.lte(profile.fiscal.cessationThreshold) && !profile.fiscal.ordinaryApplicabilityConfirmed) return err({ code: 'MISSING_DATA', field: 'ordinaryApplicabilityConfirmed', message: 'Confermare l’applicabilità del regime oltre la soglia ordinaria.' });
     if (revenue.gt(profile.fiscal.cessationThreshold)) { base.warnings.push('Superata la soglia di cessazione: proiezione fiscale non disponibile.'); return ok(base); }
-    const forfaitIncome = revenue.mul(profitability); const contributionBase = Decimal.min(forfaitIncome, d(profile.fiscal.contributionCeiling));
-    const contributions = d(money(contributionBase.mul(contributionRate))); const taxBase = Decimal.max(0, forfaitIncome.minus(contributions));
-    const substituteTax = d(money(taxBase.mul(taxRate))); const fiscalNet = revenue.minus(contributions).minus(substituteTax);
-    return ok({ ...base, forfaitIncome: money(forfaitIncome), contributionBase: money(contributionBase), contributions: money(contributions), taxBase: money(taxBase), effectiveTaxRate: effectiveRate, substituteTax: money(substituteTax), fiscalNet: money(fiscalNet), availableIncome: money(fiscalNet.minus(annualCosts).minus(specific)) });
+    const { totalToReserve, ...projection } = fiscalResult.value;
+    return ok({ ...base, ...projection, availableIncome: money(revenue.minus(totalToReserve).minus(annualCosts).minus(specific)) });
   } catch (cause) { return fail(cause instanceof Error ? cause.message : 'Valori del profilo non validi.'); }
 }
 

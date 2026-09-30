@@ -5,14 +5,12 @@ import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigr
 import { deleteFicToken, hasFicToken, hasOrsApiKey, requireFicToken, requireOrsApiKey, setFicToken, setOrsApiKey } from './credentials';
 import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
-import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
+import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, syncFinancialData, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
 import { IPC } from '../shared/ipc';
-import { requireActiveFic } from '../domain/integration';
+import { FIC_SCOPES, requireActiveFic } from '../domain/integration';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from './fic-link';
 import { readPreferences, rememberArchive, setFicClientId } from './preferences';
 import { calculateRoute, reverseCoordinates, searchAddress, verifyConnection } from './integrations/openrouteservice';
-
-const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a'];
 
 let window: BrowserWindow | null = null;
 let current: ArchiveSession | null = null;
@@ -124,6 +122,17 @@ function registerHandlers(): void {
     current = saved.value;
     dirty = false;
     return saved;
+  });
+  ipcMain.handle(IPC.ficFinancialSync, async (_event, input: { companyId: string }) => {
+    if (!input || typeof input.companyId !== 'string' || !activeFicCompany(input.companyId) || current?.readOnly)
+      return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Aggiornamento non disponibile: verificare archivio e azienda Fatture in Cloud attiva.' });
+    const session = current;
+    const token = await requireFicToken();
+    if (!token.ok) return token;
+    const result = await syncFinancialData(input.companyId, token.value);
+    if (current?.path !== session?.path || current?.token.documentId !== session?.token.documentId || !activeFicCompany(input.companyId))
+      return err({ code: 'CONFLICT', source: 'archive', message: 'Archivio o collegamento cambiato durante la sincronizzazione. Ripetere l’aggiornamento.' });
+    return result;
   });
   ipcMain.handle(IPC.ficClients, async (_event, input: { companyId: string; query: string }) => {
     if (!activeFicCompany(input.companyId)) return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Integrazione Fatture in Cloud disattivata o azienda non configurata.' });

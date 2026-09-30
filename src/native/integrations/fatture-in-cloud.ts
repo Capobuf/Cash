@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { err, ok, type ExportLine, type FicClientDetails, type FicClientSnapshot, type FicTaxProfileSnapshot, type Result } from '../../domain/model';
 import { officialFetch } from './http';
+import { d, money } from '../../domain/decimal';
+import { financialSnapshotSchema } from '../../domain/schema';
+import type { FicFinancialSnapshot } from '../../domain/model';
 
 const BASE = 'https://api-v2.fattureincloud.it';
 const queryString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
@@ -16,7 +19,25 @@ const companySchema = z.object({ id: z.union([z.string(), z.number()]), name: z.
 const permissionLevel = z.enum(['none', 'read', 'write', 'detailed']).nullish();
 const companyInfoSchema = z.object({ id: z.union([z.string(), z.number()]), name: z.string().min(1),
   access_info: z.object({ permissions: z.object({ fic_clients: permissionLevel, fic_products: permissionLevel,
-    fic_settings: permissionLevel, fic_issued_documents_detailed: z.object({ quotes: permissionLevel }).nullish() }) }) });
+    fic_settings: permissionLevel, fic_received_documents: permissionLevel,
+    fic_issued_documents_detailed: z.object({ quotes: permissionLevel, invoices: permissionLevel, credit_notes: permissionLevel }).nullish() }) }) });
+
+function missingPermissions(company: z.infer<typeof companyInfoSchema>, financialOnly: boolean): string[] {
+  const permissions = company.access_info.permissions;
+  const canRead = (level: z.infer<typeof permissionLevel>) => level === 'read' || level === 'write' || level === 'detailed';
+  const checks: Array<[string, boolean]> = [
+    ['issued_documents.invoices:r', canRead(permissions.fic_issued_documents_detailed?.invoices)],
+    ['issued_documents.credit_notes:r', canRead(permissions.fic_issued_documents_detailed?.credit_notes)],
+    ['received_documents:r', canRead(permissions.fic_received_documents)],
+  ];
+  if (!financialOnly) checks.push(['entity.clients:r', canRead(permissions.fic_clients)], ['products:r', canRead(permissions.fic_products)],
+    ['settings:r', canRead(permissions.fic_settings)], ['issued_documents.quotes:a', permissions.fic_issued_documents_detailed?.quotes === 'write']);
+  return checks.filter(([, allowed]) => !allowed).map(([scope]) => scope);
+}
+
+const permissionsError = (scopes: string[]) => err({ code: 'CREDENTIALS', source: 'FattureInCloud',
+  message: `Permessi insufficienti: ${scopes.join(', ')}.`,
+  action: 'Riconfigura il token in Impostazioni → Integrazioni con gli scope indicati e verifica i permessi azienda.' });
 
 const normalizeVat = (vat:z.infer<typeof vatSchema>):VerifiedProduct['vat'] => ({id:String(vat.id),
   ...(vat.value!=null?{value:vat.value}:{}),...(vat.description?{description:vat.description}:{})});
@@ -60,10 +81,8 @@ export async function verifyActivation(token: string, companyId: string, product
   try {
     const json = await response.value.json() as { data?: unknown };
     const company = companyInfoSchema.parse(json.data);
-    const permissions = company.access_info.permissions;
-    const canRead = (level: z.infer<typeof permissionLevel>) => level === 'read' || level === 'write' || level === 'detailed';
-    if (!canRead(permissions.fic_clients) || !canRead(permissions.fic_products) || !canRead(permissions.fic_settings) || permissions.fic_issued_documents_detailed?.quotes !== 'write')
-      return err({ code: 'CREDENTIALS', source: 'FattureInCloud', message: 'Permessi insufficienti: servono entity.clients:r, products:r, settings:r e issued_documents.quotes:a.' });
+    const missing = missingPermissions(company, false);
+    if (missing.length) return permissionsError(missing);
     const taxProfile=await getTaxProfile(companyId,token,fetcher);if(!taxProfile.ok)return taxProfile;
     const regime=taxProfile.value.regime?.trim().toLocaleLowerCase('it');
     if(regime&&!regime.startsWith('forfettario'))return err({code:'VALIDATION',source:'FattureInCloud',field:'taxProfile.regime',
@@ -144,6 +163,94 @@ export async function verifyProduct(companyId: string, productId: string, token:
     if(!vat?.id)return err({code:'MISSING_DATA',source:'FattureInCloud',field:'product.default_vat',message:'Né il prodotto “Consulenza” né l’azienda hanno un’IVA predefinita.',action:'Configura l’IVA predefinita del prodotto o del profilo fiscale in Fatture in Cloud, salva e poi ripeti la verifica.'});
     return ok({ id: String(product.id), name: product.name, vat:normalizeVat(vat) });
   } catch (cause) { return err({ code: 'SOURCE_INVALID', source: 'FattureInCloud', message: 'Risposta prodotto non valida.', details: [String(cause)] }); }
+}
+
+const remoteId = z.union([z.string().regex(/^\d+$/), z.number().int().positive().safe()]).transform(String);
+const remoteMoney = z.union([z.number().finite(), z.string().regex(/^-?\d+(?:\.\d+)?$/)])
+  .refine(value => d(value).isFinite() && d(value).gte(0), 'Importo non valido').transform(value => money(value));
+const remotePayment = z.object({
+  id: remoteId.nullish(), amount: remoteMoney, due_date: z.string().date().nullish(),
+  paid_date: z.string().date().nullish(), status: z.enum(['paid', 'not_paid', 'reversed']),
+}).superRefine((payment, ctx) => {
+  if (payment.status === 'paid' && !payment.paid_date)
+    ctx.addIssue({ code: 'custom', path: ['paid_date'], message: 'Pagamento paid senza paid_date valida: impossibile attribuire l’anno.' });
+});
+const remoteFinancialDocument = z.object({
+  id: remoteId, type: z.enum(['invoice', 'credit_note', 'expense', 'passive_credit_note']),
+  date: z.string().date(), amount_gross: remoteMoney,
+  number: z.union([z.string(), z.number().int()]).nullish(), numeration: z.string().nullish(),
+  invoice_number: z.string().nullish(), entity: z.object({ name: z.string().nullish() }).nullish(),
+  description: z.string().nullish(), category: z.string().nullish(),
+  payments_list: z.array(remotePayment).nullable(),
+});
+const financialPage = z.object({ data: z.array(remoteFinancialDocument), current_page: z.number().int().positive(), last_page: z.number().int().positive() });
+
+async function listFinancialDocuments(companyId: string, token: string, type: z.infer<typeof remoteFinancialDocument>['type'], fetcher: typeof fetch) {
+  const issued = type === 'invoice' || type === 'credit_note';
+  const endpoint = issued ? 'issued_documents' : 'received_documents';
+  const fields = `id,type,date,entity,amount_gross,payments_list,${issued ? 'number,numeration' : 'invoice_number,description,category'}`;
+  const scope = issued ? type === 'invoice' ? 'issued_documents.invoices:r' : 'issued_documents.credit_notes:r' : 'received_documents:r';
+  const documents: z.infer<typeof remoteFinancialDocument>[] = [];
+  let lastPage = 1;
+  for (let page = 1; page <= lastPage; page++) {
+    const response = await ficFetch(`/c/${encodeURIComponent(companyId)}/${endpoint}?type=${type}&per_page=100&fieldset=detailed&fields=${encodeURIComponent(fields)}&page=${page}`, token, {}, fetcher);
+    if (!response.ok) return response;
+    if (!response.value.ok) {
+      if (response.value.status === 401 || response.value.status === 403) return permissionsError([scope]);
+      return err({ code: response.value.status === 429 ? 'RATE_LIMIT' : 'SOURCE_UNAVAILABLE', source: 'FattureInCloud',
+        message: `Sincronizzazione ${type}, pagina ${page} non riuscita (HTTP ${response.value.status}).` });
+    }
+    try {
+      const result = financialPage.parse(await response.value.json());
+      if (result.current_page !== page || result.last_page < page || (page > 1 && result.last_page !== lastPage))
+        throw new Error('Paginazione incoerente o cambiata durante la lettura. Ripetere l’aggiornamento.');
+      if (result.data.some(document => document.type !== type)) throw new Error('Tipo documento diverso da quello richiesto.');
+      lastPage = result.last_page;
+      documents.push(...result.data);
+    } catch (cause) {
+      return err({ code: 'SOURCE_INVALID', source: 'FattureInCloud', message: `Dati ${type} non validi alla pagina ${page}. Nessuno snapshot aggiornato.`, details: [String(cause)] });
+    }
+  }
+  return ok(documents);
+}
+
+export async function syncFinancialData(companyId: string, token: string, fetcher: typeof fetch = fetch): Promise<Result<FicFinancialSnapshot>> {
+  const response = await ficFetch(`/c/${encodeURIComponent(companyId)}/company/info`, token, {}, fetcher);
+  if (!response.ok) return response;
+  if (!response.value.ok) {
+    if (response.value.status === 401 || response.value.status === 403)
+      return permissionsError(['issued_documents.invoices:r', 'issued_documents.credit_notes:r', 'received_documents:r']);
+    return err({ code: response.value.status === 429 ? 'RATE_LIMIT' : 'SOURCE_UNAVAILABLE', source: 'FattureInCloud',
+      message: `Verifica azienda non disponibile (HTTP ${response.value.status}).` });
+  }
+  try {
+    const company = companyInfoSchema.parse((await response.value.json() as { data?: unknown }).data);
+    if (String(company.id) !== companyId) throw new Error('Azienda restituita diversa da quella configurata.');
+    const missing = missingPermissions(company, true);
+    if (missing.length) return permissionsError(missing);
+    const snapshot: FicFinancialSnapshot = { source: 'fatture_in_cloud', company: { id: String(company.id), name: company.name },
+      acquiredAt: new Date().toISOString(), issuedDocuments: [], receivedDocuments: [] };
+    for (const type of ['invoice', 'credit_note', 'expense', 'passive_credit_note'] as const) {
+      const result = await listFinancialDocuments(companyId, token, type, fetcher);
+      if (!result.ok) return result;
+      for (const document of result.value) {
+        const common = { id: document.id, date: document.date, amountGross: document.amount_gross,
+          ...(document.entity?.name != null ? { entityName: document.entity.name } : {}),
+          payments: (document.payments_list ?? []).map(payment => ({ amount: payment.amount, status: payment.status,
+            ...(payment.id != null ? { id: payment.id } : {}), ...(payment.due_date ? { dueDate: payment.due_date } : {}),
+            ...(payment.paid_date ? { paidDate: payment.paid_date } : {}) })) };
+        if (type === 'invoice' || type === 'credit_note') snapshot.issuedDocuments.push({ ...common, type,
+          ...(document.number != null ? { number: String(document.number) } : {}), ...(document.numeration != null ? { numeration: document.numeration } : {}) });
+        else snapshot.receivedDocuments.push({ ...common, type,
+          ...(document.invoice_number != null ? { invoiceNumber: document.invoice_number } : {}),
+          ...(document.description != null ? { description: document.description } : {}), ...(document.category != null ? { category: document.category } : {}) });
+      }
+    }
+    snapshot.acquiredAt = new Date().toISOString();
+    return ok(financialSnapshotSchema.parse(snapshot));
+  } catch (cause) {
+    return err({ code: 'SOURCE_INVALID', source: 'FattureInCloud', message: 'Snapshot finanziario non valido. I dati precedenti restano invariati.', details: [String(cause)] });
+  }
 }
 
 export async function exportQuote(input: { companyId: string; clientId: string; productId: string; product:VerifiedProduct; lines: ExportLine[]; attemptId: string },

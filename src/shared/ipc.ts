@@ -1,11 +1,12 @@
 import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
-import type { CashDocument, CashError, Coordinates, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, GeocodingResult, Result, RouteResult } from '../domain/model';
+import type { CashDocument, CashError, FicFinancialSnapshot, Coordinates, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, GeocodingResult, Result, RouteResult } from '../domain/model';
 
 export const IPC = {
   archiveCreate: 'cash:archive:create', archiveOpen: 'cash:archive:open', archiveOpenLast: 'cash:archive:open-last', archiveSave: 'cash:archive:save',
   archiveRecovery: 'cash:archive:recovery', archiveRestore: 'cash:archive:restore', archiveInspect: 'cash:archive:inspect',
   tokenHas: 'cash:token:has', tokenSet: 'cash:token:set',
   mimitFuel: 'cash:mimit:fuel', foiRevalue: 'cash:foi:revalue', ficClients: 'cash:fic:clients', ficClientDetails: 'cash:fic:client-details',
+  ficFinancialSync: 'cash:fic:financial-sync',
   ficProduct: 'cash:fic:product', ficExport: 'cash:fic:export', ficWizardCompanies: 'cash:fic:wizard-companies',
   ficWizardProducts: 'cash:fic:wizard-products', ficWizardActivate: 'cash:fic:wizard-activate', ficRemoveLink: 'cash:fic:remove-link',
   ficSetupInfo: 'cash:fic:setup-info', ficSetClientId: 'cash:fic:set-client-id',
@@ -38,6 +39,7 @@ export interface CashNativeApi {
     route(input: { departure: Coordinates; destination: Coordinates }): Promise<Result<RouteResult>>;
   };
   fic: {
+    syncFinancialData(input: { companyId: string }): Promise<Result<FicFinancialSnapshot>>;
     setupInfo(): Promise<{ clientId: string; requiredScopes: string[] }>;
     setClientId(clientId: string): Promise<Result<{ clientId: string }>>;
     listCompaniesForActivation(token: string): Promise<Result<Array<{ id: string; name: string }>>>;

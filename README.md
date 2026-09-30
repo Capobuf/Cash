@@ -1,8 +1,11 @@
 # Cash
 
-Cash è un client desktop Windows monoutente per costruire preventivi a partire da obiettivi economici,
+Cash è un client desktop Windows monoutente con due aree separate: **Preventivazione** e **Analisi finanziaria**.
+La preventivazione costruisce offerte a partire da obiettivi economici,
 tempo, spese e trasferte. Il prezzo finale resta sempre una scelta dell’utente. L’app non è un software
 fiscale o contabile e non sostituisce il commercialista.
+
+La specifica canonica è [Cash_Specifica_Funzionale_v0.7.md](Cash_Specifica_Funzionale_v0.7.md), del 30 settembre 2026.
 
 ## Avvio in sviluppo
 
@@ -36,7 +39,9 @@ Ogni salvataggio valido incrementa la revisione, conserva la versione precedente
 revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
-Gli archivi schema 1–3 richiedono anteprima e conferma prima della migrazione allo schema 4. La migrazione
+Gli archivi schema 1–4 richiedono anteprima e conferma prima della migrazione allo schema 5.
+Il passaggio v4→v5 conserva tutti i dati esistenti e aggiorna soltanto la versione, senza snapshot iniziale.
+Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando lo snapshot finanziario. La migrazione
 automatica procede solo per trasformazioni deterministiche. Se trova Clienti locali, `oneWayKm` o
 Trasferte del modello precedente, si arresta senza scrivere e indica i dati da ricostruire esplicitamente.
 Uno schema più nuovo viene aperto soltanto in lettura.
@@ -62,7 +67,8 @@ locale funziona senza token, azienda o prodotto. Il Client ID dell’app privata
 soltanto nelle preferenze locali della postazione e non è incorporato nella build.
 
 La procedura guidata richiede un token manuale con i soli permessi `entity.clients:r`, `products:r`,
-`settings:r` e `issued_documents.quotes:a` e lo salva nel Gestore credenziali di Windows non appena viene confermato,
+`settings:r`, `issued_documents.quotes:a`, `issued_documents.invoices:r`,
+`issued_documents.credit_notes:r` e `received_documents:r` e lo salva nel Gestore credenziali di Windows non appena viene confermato,
 anche se il wizard viene poi interrotto. Fa quindi scegliere azienda e prodotto con nome esatto
 `Consulenza`, verifica i permessi e importa il profilo fiscale aziendale. I valori disponibili in Fatture in
 Cloud prevalgono su quelli manuali; i campi non esposti restano da compilare. Ogni postazione deve essere configurata
@@ -71,6 +77,26 @@ token locale e i riferimenti condivisi, senza modificare snapshot o esportazioni
 
 I Clienti sono recuperati esclusivamente da Fatture in Cloud. Cash conserva soltanto riferimenti e
 snapshot necessari a Sedi e Preventivi; non mantiene un’anagrafica Cliente locale.
+
+## Analisi finanziaria
+
+La pagina dedicata confronta Fatturato obiettivo e Costi pianificati Cash con fatture, spese registrate
+e pagamenti FIC. Fatture in Cloud resta la source of truth: i documenti amministrativi sono in sola lettura.
+La Panoramica continua a riguardare esclusivamente la preventivazione.
+
+**Aggiorna dati Fatture in Cloud** acquisisce manualmente tutte le pagine di invoice, credit_note,
+expense e passive_credit_note e sostituisce un unico snapshot finanziario nel file JSON. Un errore
+lascia invariato lo snapshot precedente. Nessun aggiornamento automatico, polling o webhook.
+I nuovi permessi sono di sola lettura; i vecchi token vanno riconfigurati con gli scope sopra elencati.
+
+L’emesso segue la data fattura; l’incassato segue paid_date, anche per fatture di anni precedenti.
+I pagamenti paid senza data valida bloccano l’intera acquisizione. Note di credito e costi documentati
+restano separati da ricavi e costi pianificati. La **Stima fiscale sull’incassato** riusa il motore forfettario
+con il profilo confermato dello stesso anno. Sono disponibili tabella mensile e dettagli dei residui.
+
+Lo snapshot rimane consultabile offline, con integrazione disattivata o rimossa e su postazioni senza token.
+La data dell’ultimo aggiornamento è sempre mostrata. Un cambio azienda viene segnalato e una sincronizzazione
+riuscita sostituisce interamente i dati, senza mescolarli. Cash non calcola saldi bancari e non gestisce contabilità.
 
 ## OpenRouteService
 

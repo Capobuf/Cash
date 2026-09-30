@@ -96,7 +96,34 @@ const exportAttemptSchema = z.object({ ...entity, companyId: z.string().min(1), 
 const templateItemSchema = z.object({ ...entity, name: z.string().min(1), referencePrice: z.object({ amount: moneyInput, period: z.string().regex(/^\d{4}-\d{2}$/) }).optional(), subItems: z.array(reusableSubItemSchema), variantGroups: variantGroupsSchema });
 const templateSchema = z.object({ ...entity, name: z.string().min(1), items: z.array(templateItemSchema).min(1) });
 
+const financialPaymentSchema = z.object({
+  id: z.string().min(1).optional(), amount: moneyInput,
+  dueDate: z.string().date().optional(), paidDate: z.string().date().optional(),
+  status: z.enum(['paid', 'not_paid', 'reversed']),
+}).superRefine((payment, ctx) => {
+  if (payment.status === 'paid' && !payment.paidDate)
+    ctx.addIssue({ code: 'custom', path: ['paidDate'], message: 'Un pagamento paid richiede una data di pagamento valida.' });
+});
+const financialDocumentFields = {
+  id: z.string().min(1), date: z.string().date(), entityName: z.string().optional(),
+  amountGross: moneyInput, payments: z.array(financialPaymentSchema),
+};
+export const financialSnapshotSchema = z.object({
+  source: z.literal('fatture_in_cloud'), company: z.object({ id: z.string().min(1), name: z.string().min(1) }), acquiredAt: iso,
+  issuedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['invoice', 'credit_note']), number: z.string().optional(), numeration: z.string().optional() })),
+  receivedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['expense', 'passive_credit_note']), invoiceNumber: z.string().optional(), description: z.string().optional(), category: z.string().optional() })),
+}).superRefine((snapshot, ctx) => {
+  for (const collection of ['issuedDocuments', 'receivedDocuments'] as const) {
+    const ids = new Set<string>();
+    snapshot[collection].forEach((document, index) => {
+      if (ids.has(document.id)) ctx.addIssue({ code: 'custom', path: [collection, index, 'id'], message: 'ID FIC duplicato.' });
+      ids.add(document.id);
+    });
+  }
+});
+
 export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
+  financialSnapshot: financialSnapshotSchema.optional(),
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION), documentId: uuid, revision: z.number().int().positive(), createdAt: iso, updatedAt: iso,
   settings: z.object({ fuelTerritory: z.string().min(1).optional(), defaultDepartureSiteId: uuid.optional(), defaultVehicleId: uuid.optional(), fic: z.object({ enabled: z.boolean(), company: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), product: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), taxProfile: z.object({ acquiredAt: iso, companyType: z.string().optional(), companySubtype: z.string().optional(), profession: z.string().optional(), regime: z.string().optional(), profitCoefficient: decimal.optional(), contributionsPercentage: decimal.optional(), defaultVat: z.object({ id: z.string().min(1), value: z.number().optional(), description: z.string().optional() }).optional() }).optional(), legacyReferences: z.object({ companyId: z.string().min(1).optional(), productId: z.string().min(1).optional() }).optional(), lastVerification: z.object({ at: iso, result: z.enum(['success', 'error']), diagnostic: z.string().optional() }).optional() }) }),
   profiles: z.array(profileSchema), businessCosts: z.array(z.object({ ...entity, category: z.string().min(1), description: z.string().min(1), monthlyAmount: moneyInput })),

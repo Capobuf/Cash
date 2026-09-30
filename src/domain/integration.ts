@@ -1,5 +1,8 @@
 import { err, ok, type Result, type SharedSettings } from './model';
 
+export const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a',
+  'issued_documents.invoices:r', 'issued_documents.credit_notes:r', 'received_documents:r'];
+
 export type FicDeviceState = 'disabled' | 'requires_local_configuration' | 'active' | 'connection_error';
 
 export function ficDeviceState(settings: SharedSettings, hasLocalToken: boolean): FicDeviceState {

@@ -13,6 +13,7 @@ import { state, type ArchiveDecision } from "./state"
 import type { DeleteTarget, View } from "./types"
 import { CatalogView } from "./views/CatalogView"
 import { ClientsView } from "./views/ClientsView"
+import { FinancialAnalysisView } from "./views/FinancialAnalysisView"
 import { DashboardView } from "./views/DashboardView"
 import { QuotesView } from "./views/QuotesView"
 import { SettingsView } from "./views/SettingsView"
@@ -106,6 +107,8 @@ export function App() {
         ? <ClientsView doc={doc} appState={appState} requestDelete={setDeleteTarget} />
         : view === "catalog"
           ? <CatalogView doc={doc} appState={appState} requestDelete={setDeleteTarget} />
+          : view === "financial-analysis"
+            ? <FinancialAnalysisView key={doc.documentId} doc={doc} appState={appState} hasToken={hasFicToken} />
           : <SettingsView doc={doc} appState={appState} activeProfileId={activeProfileId} ficUi={{ hasToken: hasFicToken, connectionError: ficConnectionError, setupInfo: ficSetupInfo, setSetupInfo: setFicSetupInfo, setHasToken: setHasFicToken, setConnectionError: setFicConnectionError }} onEditProfile={setActiveProfileId} onCopyProfile={setCopyProfileId} requestDelete={setDeleteTarget} />
 
   const copySource = doc.profiles.find((profile) => profile.id === copyProfileId)

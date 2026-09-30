@@ -15,6 +15,7 @@ export class AppState {
   private savePromise: Promise<void> = Promise.resolve();
   private mutationVersion = 0;
   private sessionVersion = 0;
+  financialSyncing = false;
   private requestArchiveDecision?: () => Promise<ArchiveDecision>;
 
   get document(): CashDocument | undefined { return this.session?.document; }
@@ -52,6 +53,34 @@ export class AppState {
   }
 
   acceptNativeSession(session: ArchiveSession): void { this.accept(session); }
+  async syncFinancialData(): Promise<void> {
+    if (this.financialSyncing || !this.document || this.session?.readOnly || this.status === 'Conflitto esterno') return;
+    const companyId = this.document.settings.fic.company?.id;
+    if (!this.document.settings.fic.enabled || !companyId) {
+      this.setError({ code: 'MISSING_DATA', message: 'Configura e attiva Fatture in Cloud prima di aggiornare i dati.' }); return;
+    }
+    const documentId = this.document.documentId; const path = this.session?.path;
+    const acquiredAt = this.document.financialSnapshot?.acquiredAt;
+    const sameContext = () => this.document?.documentId === documentId && this.session?.path === path
+      && this.document.settings.fic.enabled && this.document.settings.fic.company?.id === companyId
+      && this.document.financialSnapshot?.acquiredAt === acquiredAt;
+    this.financialSyncing = true; this.emit();
+    try {
+      await this.save();
+      if (!sameContext() || !this.isSaved()) return;
+      const result = await window.cash.fic.syncFinancialData({ companyId });
+      if (!sameContext()) {
+        this.setError({ code: 'CONFLICT', message: 'Archivio, azienda o snapshot cambiato durante l’aggiornamento. Ripeti la sincronizzazione.' }); return;
+      }
+      if (!result.ok) { this.setError(result.error); return; }
+      if (result.value.company.id !== companyId) {
+        this.setError({ code: 'SOURCE_INVALID', message: 'Lo snapshot ricevuto appartiene a un’altra azienda.' }); return;
+      }
+      this.mutate(document => { document.financialSnapshot = result.value; });
+    } catch {
+      this.setError({ code: 'SOURCE_UNAVAILABLE', source: 'FattureInCloud', message: 'Aggiornamento finanziario non riuscito. Lo snapshot precedente resta disponibile.' });
+    } finally { this.financialSyncing = false; this.emit(); }
+  }
   setArchiveDecisionHandler(handler: () => Promise<ArchiveDecision>): void { this.requestArchiveDecision = handler; }
 
   mutate(mutator: (document: CashDocument) => void): void {

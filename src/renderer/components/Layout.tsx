@@ -1,4 +1,4 @@
-import { Archive, BookOpen, CheckCircle2, CircleAlert, CloudCog, Database, FileText, Gauge, LoaderCircle, MoreHorizontal, Save, Settings, Users, X } from "lucide-react"
+import { Archive, ChartNoAxesCombined, BookOpen, CheckCircle2, CircleAlert, CloudCog, Database, FileText, Gauge, LoaderCircle, MoreHorizontal, Save, Settings, Users, X } from "lucide-react"
 import type { ReactNode } from "react"
 import type { AppState } from "../state"
 import type { DeleteTarget, View } from "../types"
@@ -26,17 +26,20 @@ const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
   { key: "quotes", label: "Preventivi", icon: FileText },
   { key: "clients", label: "Clienti", icon: Users },
   { key: "catalog", label: "Catalogo", icon: BookOpen },
+  { key: "financial-analysis", label: "Analisi finanziaria", icon: ChartNoAxesCombined },
   { key: "settings", label: "Impostazioni", icon: Settings },
 ]
 
 const titles: Record<View, string> = {
   dashboard: "Panoramica", quotes: "Preventivi", clients: "Clienti",
+  "financial-analysis": "Analisi finanziaria",
   catalog: "Catalogo", settings: "Impostazioni",
 }
 
 const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
   clients: "Clienti Fatture in Cloud e sedi correlate",
+  "financial-analysis": "Obiettivi e dati amministrativi registrati",
   catalog: "Template e contenuti riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 
@@ -103,11 +106,11 @@ export function AppShell({ appState, view, onView, children }: {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Applicazione</SidebarGroupLabel>
+          {[{ label: "Preventivazione", keys: ["dashboard", "quotes", "clients", "catalog"] }, { label: "Analisi", keys: ["financial-analysis"] }, { label: "Configurazione", keys: ["settings"] }].map(group => <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {entries.map(({ key, label, icon: Icon }) => (
+                {entries.filter(entry => group.keys.includes(entry.key)).map(({ key, label, icon: Icon }) => (
                   <SidebarMenuItem key={key}>
                     <SidebarMenuButton isActive={view === key} aria-current={view === key ? "page" : undefined} onClick={() => onView(key)}>
                       <Icon aria-hidden="true" /><span>{label}</span>
@@ -116,7 +119,7 @@ export function AppShell({ appState, view, onView, children }: {
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
-          </SidebarGroup>
+          </SidebarGroup>)}
         </SidebarContent>
         <SidebarFooter className="p-4">
           <div className="flex gap-3 rounded-lg border border-sidebar-border p-3 text-xs text-sidebar-foreground/70">

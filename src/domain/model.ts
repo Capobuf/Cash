@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -253,6 +253,42 @@ export interface FicTaxProfileSnapshot {
   defaultVat?: { id: string; value?: number; description?: string };
 }
 
+export interface FicFinancialPayment {
+  id?: string;
+  amount: DecimalString;
+  dueDate?: string;
+  paidDate?: string;
+  status: 'paid' | 'not_paid' | 'reversed';
+}
+export interface FicIssuedDocument {
+  id: string;
+  type: 'invoice' | 'credit_note';
+  date: string;
+  number?: string;
+  numeration?: string;
+  entityName?: string;
+  amountGross: DecimalString;
+  payments: FicFinancialPayment[];
+}
+export interface FicReceivedDocument {
+  id: string;
+  type: 'expense' | 'passive_credit_note';
+  date: string;
+  invoiceNumber?: string;
+  entityName?: string;
+  description?: string;
+  category?: string;
+  amountGross: DecimalString;
+  payments: FicFinancialPayment[];
+}
+export interface FicFinancialSnapshot {
+  source: 'fatture_in_cloud';
+  company: { id: string; name: string };
+  acquiredAt: string;
+  issuedDocuments: FicIssuedDocument[];
+  receivedDocuments: FicReceivedDocument[];
+}
+
 export interface CashDocument {
   schemaVersion: number;
   documentId: string;
@@ -266,6 +302,7 @@ export interface CashDocument {
   sites: Site[];
   catalog: Catalog;
   quotes: Quote[];
+  financialSnapshot?: FicFinancialSnapshot;
 }
 
 export const nowIso = (): string => new Date().toISOString();
