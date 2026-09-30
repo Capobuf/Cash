@@ -109,10 +109,21 @@ const financialDocumentFields = {
   amountGross: moneyInput, payments: z.array(financialPaymentSchema),
 };
 export const financialSnapshotSchema = z.object({
+  pendingReceivedDocuments: z.array(z.object({
+    id: z.string().min(1), source: z.enum(['agyo', 'mail', 'browser']), documentType: z.string().optional(),
+    date: z.string().date().optional(), subject: z.string().optional(), supplierName: z.string().optional(),
+    amountGross: moneyInput.optional(), category: z.string().optional(),
+  })).optional(),
   source: z.literal('fatture_in_cloud'), company: z.object({ id: z.string().min(1), name: z.string().min(1) }), acquiredAt: iso,
-  issuedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['invoice', 'credit_note']), number: z.string().optional(), numeration: z.string().optional() })),
+  issuedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['invoice', 'credit_note']), number: z.string().optional(), numeration: z.string().optional(), description: z.string().optional() })),
   receivedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['expense', 'passive_credit_note']), invoiceNumber: z.string().optional(), description: z.string().optional(), category: z.string().optional() })),
 }).superRefine((snapshot, ctx) => {
+  const pendingIds = new Set<string>();
+  (snapshot.pendingReceivedDocuments ?? []).forEach((document, index) => {
+    const key = `${document.source}:${document.id}`;
+    if (pendingIds.has(key)) ctx.addIssue({ code: 'custom', path: ['pendingReceivedDocuments', index, 'id'], message: 'ID pending FIC duplicato nella stessa sorgente.' });
+    pendingIds.add(key);
+  });
   for (const collection of ['issuedDocuments', 'receivedDocuments'] as const) {
     const ids = new Set<string>();
     snapshot[collection].forEach((document, index) => {

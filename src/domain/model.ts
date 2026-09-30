@@ -266,6 +266,7 @@ export interface FicIssuedDocument {
   date: string;
   number?: string;
   numeration?: string;
+  description?: string;
   entityName?: string;
   amountGross: DecimalString;
   payments: FicFinancialPayment[];
@@ -281,12 +282,23 @@ export interface FicReceivedDocument {
   amountGross: DecimalString;
   payments: FicFinancialPayment[];
 }
+export interface FicPendingReceivedDocument {
+  id: string;
+  source: 'agyo' | 'mail' | 'browser';
+  documentType?: string;
+  date?: string;
+  subject?: string;
+  supplierName?: string;
+  amountGross?: DecimalString;
+  category?: string;
+}
 export interface FicFinancialSnapshot {
   source: 'fatture_in_cloud';
   company: { id: string; name: string };
   acquiredAt: string;
   issuedDocuments: FicIssuedDocument[];
   receivedDocuments: FicReceivedDocument[];
+  pendingReceivedDocuments?: FicPendingReceivedDocument[];
 }
 
 export interface CashDocument {

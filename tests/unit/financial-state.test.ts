@@ -33,6 +33,9 @@ describe('applicazione atomica dello snapshot', () => {
     sync.mockResolvedValueOnce(err({ code: 'SOURCE_INVALID', message: 'Pagina 2 malformata' }));
     await state.syncFinancialData(); await vi.runAllTimersAsync();
     expect(state.document).toEqual(before); expect(save).not.toHaveBeenCalled(); expect(state.error?.code).toBe('SOURCE_INVALID');
+    expect(state.financialSyncError?.code).toBe('SOURCE_INVALID');
+    state.clearError(); expect(state.financialSyncError?.code).toBe('SOURCE_INVALID');
+    await state.syncFinancialData(); expect(state.financialSyncError).toBeNull();
   });
 
   it('scarta una risposta arrivata dopo un cambio azienda e blocca richieste concorrenti', async () => {

@@ -26,6 +26,7 @@ const api: CashNativeApi = {
     route: input => ipcRenderer.invoke(IPC.orsRoute, input),
   },
   fic: {
+    verifyPermissions: input => ipcRenderer.invoke(IPC.ficVerifyPermissions, input),
     syncFinancialData: input => ipcRenderer.invoke(IPC.ficFinancialSync, input),
     setupInfo: () => ipcRenderer.invoke(IPC.ficSetupInfo),
     setClientId: clientId => ipcRenderer.invoke(IPC.ficSetClientId, clientId),

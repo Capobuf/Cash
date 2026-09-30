@@ -10,7 +10,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { FinancialDocuments } from '@/components/FinancialDocuments';
 import { dateIt, eur, formatNumber } from '@/lib/format';
 
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
@@ -31,11 +35,14 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
       : !fic.company ? 'Configura l’azienda Fatture in Cloud nelle Impostazioni.' : undefined;
   const canSync = !unavailable && !appState.session?.readOnly && appState.status !== 'Conflitto esterno';
   const mismatch = snapshot && fic.company && snapshot.company.id !== fic.company.id;
-  const outstanding = analysis?.invoiceDetails.filter(detail => d(detail.outstanding).gt(0)) ?? [];
+  const chartData = analysis?.monthly.map(month => ({ month: months[month.month - 1]?.slice(0, 3),
+    issuedRevenue: Number(month.issuedRevenue), collectedRevenue: Number(month.collectedRevenue),
+    documentedCosts: Number(month.documentedCosts), paidCosts: Number(month.paidCosts),
+  })) ?? [];
 
-  return <div className="space-y-5">
-    <Card><CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
-      <div className="space-y-2"><Badge variant="secondary">Analisi dei dati Fatture in Cloud</Badge>
+  return <div className="min-w-0 space-y-5">
+    <Card><CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="space-y-2"><Badge variant="secondary">{unavailable || appState.financialSyncError ? 'Snapshot offline' : 'Snapshot · aggiornamento live manuale'}</Badge>
         <p className="font-medium">{snapshot ? `${snapshot.company.name} · ID ${snapshot.company.id}` : 'Nessuna azienda sincronizzata'}</p>
         <p className="text-sm text-muted-foreground">{snapshot ? `Ultimo aggiornamento: ${new Date(snapshot.acquiredAt).toLocaleString('it-IT')}` : 'Aggiornamento completo solo su richiesta.'}</p>
       </div>
@@ -49,21 +56,49 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
       </div>
     </CardContent></Card>
     {unavailable ? <Alert><AlertTitle>Aggiornamento live non disponibile</AlertTitle><AlertDescription>{unavailable}{snapshot ? ` Snapshot aggiornato al ${dateIt(snapshot.acquiredAt)}.` : ''}</AlertDescription></Alert> : null}
+    {appState.financialSyncError ? <Alert><AlertTitle>Ultimo aggiornamento non riuscito</AlertTitle><AlertDescription>Stai consultando lo snapshot precedente. Puoi ripetere l’aggiornamento manuale.</AlertDescription></Alert> : null}
     {mismatch ? <Alert><AlertTitle>Azienda diversa dallo snapshot</AlertTitle><AlertDescription>Stai consultando {snapshot.company.name}. Il collegamento attuale è con {fic.company?.name}. Un aggiornamento riuscito sostituirà integralmente questi dati con quelli dell’azienda configurata.</AlertDescription></Alert> : null}
     {!snapshot ? <Card><CardContent className="py-12 text-center"><h2 className="text-lg font-semibold">Nessun dato finanziario sincronizzato</h2><p className="mt-2 text-sm text-muted-foreground">{canSync ? 'Usa Aggiorna dati Fatture in Cloud per acquisire fatture, spese e pagamenti registrati.' : 'Configura Fatture in Cloud per acquisire il primo snapshot.'}</p></CardContent></Card> : null}
-    {snapshot && !analysis ? <Alert><AlertDescription>Lo snapshot non contiene documenti o pagamenti e non sono presenti profili annuali.</AlertDescription></Alert> : null}
+    {snapshot && !analysis ? <Alert><AlertDescription>Lo snapshot non contiene documenti registrati o pagamenti con un anno disponibile e non sono presenti profili annuali. Gli eventuali documenti in ingresso restano consultabili sotto.</AlertDescription></Alert> : null}
     {analysis ? <>
-      <Card><CardHeader><CardTitle>Ricavi · {year}</CardTitle><CardDescription>Emesso per data fattura; incassato per data del pagamento, anche di fatture di anni precedenti.</CardDescription></CardHeader><CardContent className="space-y-5">
-        <dl className="grid grid-cols-2 gap-5 xl:grid-cols-3">{[
-          ['Fatturato obiettivo', analysis.revenueTarget], ['Fatturato emesso', analysis.issuedRevenue], ['Incassato', analysis.collectedRevenue],
-          ['Da incassare', analysis.outstandingRevenue], ['di cui Scaduto', analysis.overdueRevenue], ['Note di credito emesse', analysis.issuedCreditNotes],
-        ].map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{eur(value)}</dd></div>)}</dl>
-        <div className="flex flex-wrap gap-x-8 gap-y-2 border-t pt-4 text-sm">
-          <p>Emesso / obiettivo: <strong>{analysis.percentIssuedVsTarget === undefined ? '—' : `${formatNumber(analysis.percentIssuedVsTarget, 2)}%`}</strong></p>
-          <p>Incassato / obiettivo: <strong>{analysis.percentCollectedVsTarget === undefined ? '—' : `${formatNumber(analysis.percentCollectedVsTarget, 2)}%`}</strong></p>
-          <p className="font-medium">{analysis.gapToTarget === undefined ? 'Obiettivo annuale non configurato' : d(analysis.gapToTarget).lt(0) ? `Obiettivo superato di ${eur(money(d(analysis.gapToTarget).abs()))}` : d(analysis.gapToTarget).isZero() ? 'Obiettivo raggiunto' : `Mancano ${eur(analysis.gapToTarget)} all’obiettivo`}</p>
-        </div><p className="text-xs text-muted-foreground">Da incassare e scaduto riguardano le fatture emesse nell’anno, secondo i pagamenti presenti nell’ultimo snapshot. Le note di credito sono separate e non riducono il fatturato emesso.</p>
-      </CardContent></Card>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Card><CardHeader><CardDescription>Obiettivo annuale</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(analysis.revenueTarget)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">Fatturato obiettivo {year}</CardContent></Card>
+        <Card><CardHeader><CardDescription>Fatturato emesso</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(analysis.issuedRevenue)}</CardTitle></CardHeader><CardContent className="space-y-2">
+          <Progress aria-label="Fatturato emesso rispetto all’obiettivo" value={analysis.percentIssuedVsTarget === undefined ? 0 : Math.min(100, Number(analysis.percentIssuedVsTarget))} />
+          <p className="text-xs text-muted-foreground">{analysis.percentIssuedVsTarget === undefined ? 'Obiettivo non configurato o nullo' : `${formatNumber(analysis.percentIssuedVsTarget, 2)}% dell’obiettivo`}</p>
+        </CardContent></Card>
+        <Card className="border-primary/50 bg-primary/5"><CardHeader><CardDescription className="text-foreground">Incassato</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(analysis.collectedRevenue)}</CardTitle></CardHeader><CardContent className="space-y-2">
+          <Progress aria-label="Incassato rispetto all’obiettivo" value={analysis.percentCollectedVsTarget === undefined ? 0 : Math.min(100, Number(analysis.percentCollectedVsTarget))} />
+          <p className="text-xs text-muted-foreground">{analysis.percentCollectedVsTarget === undefined ? 'Obiettivo non configurato o nullo' : `${formatNumber(analysis.percentCollectedVsTarget, 2)}% dell’obiettivo`}</p>
+        </CardContent></Card>
+        <Card><CardHeader><CardDescription>Da incassare</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(analysis.outstandingRevenue)}</CardTitle></CardHeader><CardContent><Badge variant={d(analysis.overdueRevenue).gt(0) ? 'destructive' : 'secondary'}>di cui scaduto {eur(analysis.overdueRevenue)}</Badge></CardContent></Card>
+        <Card><CardHeader><CardDescription>Stima fiscale</CardDescription><CardTitle className="text-2xl tabular-nums">{analysis.fiscalProjection ? eur(analysis.fiscalProjection.totalToReserve) : 'Non disponibile'}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{analysis.fiscalProjection ? 'Totale stimato da accantonare' : analysis.fiscalUnavailableReason}</CardContent></Card>
+      </div>
+      <p className="text-sm text-muted-foreground">{analysis.gapToTarget === undefined || analysis.revenueTarget === undefined || d(analysis.revenueTarget).isZero() ? 'Obiettivo annuale non configurato o nullo' : d(analysis.gapToTarget).lt(0) ? `Obiettivo superato di ${eur(money(d(analysis.gapToTarget).abs()))}` : d(analysis.gapToTarget).isZero() ? 'Obiettivo raggiunto' : `Mancano ${eur(analysis.gapToTarget)} all’obiettivo`}. Da incassare e scaduto riguardano le fatture emesse nell’anno. Le note di credito restano separate.</p>
+      <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
+        <Card className="min-w-0"><CardHeader><CardTitle>Ricavi mensili</CardTitle><CardDescription>Emesso per data fattura; incassato per data pagamento, anche per fatture di anni precedenti.</CardDescription></CardHeader><CardContent>
+          <ChartContainer className="h-64 w-full aspect-auto" config={{ issuedRevenue: { label: 'Fatturato emesso', color: 'var(--chart-1)' }, collectedRevenue: { label: 'Incassato', color: 'var(--chart-2)' } }}>
+            <BarChart accessibilityLayer data={chartData} margin={{ left: 4, right: 8, top: 8 }}>
+              <CartesianGrid vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} interval={0} tickMargin={8} />
+              <YAxis tickLine={false} axisLine={false} width={72} tickFormatter={value => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: 0 }).format(Number(value))} />
+              <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => <><span className="text-muted-foreground">{name === 'issuedRevenue' ? 'Fatturato emesso' : 'Incassato'}</span><span className="ml-auto font-medium tabular-nums">{eur(String(value))}</span></>} />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Bar dataKey="issuedRevenue" fill="var(--color-issuedRevenue)" radius={3} /><Bar dataKey="collectedRevenue" fill="var(--color-collectedRevenue)" radius={3} />
+            </BarChart>
+          </ChartContainer>
+        </CardContent></Card>
+        <Card className="min-w-0"><CardHeader><CardTitle>Costi mensili</CardTitle><CardDescription>Solo spese registrate FIC: documentati per data documento, pagati per data pagamento.</CardDescription></CardHeader><CardContent>
+          <ChartContainer className="h-64 w-full aspect-auto" config={{ documentedCosts: { label: 'Costi documentati', color: 'var(--chart-1)' }, paidCosts: { label: 'Costi pagati', color: 'var(--chart-2)' } }}>
+            <BarChart accessibilityLayer data={chartData} margin={{ left: 4, right: 8, top: 8 }}>
+              <CartesianGrid vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} interval={0} tickMargin={8} />
+              <YAxis tickLine={false} axisLine={false} width={72} tickFormatter={value => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: 0 }).format(Number(value))} />
+              <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => <><span className="text-muted-foreground">{name === 'documentedCosts' ? 'Costi documentati' : 'Costi pagati'}</span><span className="ml-auto font-medium tabular-nums">{eur(String(value))}</span></>} />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Bar dataKey="documentedCosts" fill="var(--color-documentedCosts)" radius={3} /><Bar dataKey="paidCosts" fill="var(--color-paidCosts)" radius={3} />
+            </BarChart>
+          </ChartContainer>
+        </CardContent></Card>
+      </div>
       <Card><CardHeader><CardTitle>Costi · pianificazione e dati registrati</CardTitle><CardDescription>I costi pianificati sono la previsione Cash corrente, annualizzata. I documenti FIC restano distinti e non vengono sommati alla previsione.</CardDescription></CardHeader><CardContent>
         <dl className="grid grid-cols-2 gap-5 xl:grid-cols-4">{[
           ['Costi pianificati Cash', analysis.plannedBusinessCosts], ['Costi documentati FIC', analysis.documentedCosts], ['Costi pagati FIC', analysis.paidCosts], ['Note di credito ricevute', analysis.receivedCreditNotes],
@@ -77,20 +112,11 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
           : <Alert><AlertTitle>Stima fiscale non disponibile</AlertTitle><AlertDescription>{analysis.fiscalUnavailableReason} Gli altri dati finanziari restano disponibili.</AlertDescription></Alert>}
         {analysis.fiscalWarnings.map(warning => <p key={warning} className="mt-3 text-sm">{warning}</p>)}
       </CardContent></Card>
-      <Card><CardHeader><CardTitle>Andamento mensile · {year}</CardTitle></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Mese</TableHead>{['Fatturato emesso', 'Incassato', 'Costi documentati', 'Costi pagati'].map(label => <TableHead key={label} className="text-right">{label}</TableHead>)}</TableRow></TableHeader><TableBody>
+      <Card><CardContent><Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}>Dettaglio mensile · {year} · mostra / nascondi</CollapsibleTrigger><CollapsibleContent><Table><TableHeader><TableRow><TableHead>Mese</TableHead>{['Fatturato emesso', 'Incassato', 'Costi documentati', 'Costi pagati'].map(label => <TableHead key={label} className="text-right">{label}</TableHead>)}</TableRow></TableHeader><TableBody>
         {analysis.monthly.map(month => <TableRow key={month.month}><TableCell>{months[month.month - 1]}</TableCell>{[month.issuedRevenue, month.collectedRevenue, month.documentedCosts, month.paidCosts].map((value, index) => <TableCell key={index} className="text-right tabular-nums">{eur(value)}</TableCell>)}</TableRow>)}
-      </TableBody></Table></CardContent></Card>
-      <Card><CardHeader><CardTitle>Dettaglio documenti · {year}</CardTitle><CardDescription>Importi pagati e residui secondo tutti i pagamenti registrati nello snapshot, anche in anni diversi.</CardDescription></CardHeader><CardContent>
-        <Tabs defaultValue="outstanding"><TabsList><TabsTrigger value="outstanding">Da incassare ({outstanding.length})</TabsTrigger><TabsTrigger value="costs">Costi ({analysis.costDetails.length})</TabsTrigger></TabsList>
-          <TabsContent value="outstanding">{outstanding.length ? <Table><TableHeader><TableRow>{['Data', 'Numero', 'Cliente', 'Totale fattura', 'Incassato', 'Residuo', 'Scadenza', 'Stato'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>
-            {outstanding.map(detail => <TableRow key={detail.document.id}><TableCell>{dateIt(detail.document.date)}</TableCell><TableCell>{detail.document.number === undefined ? '—' : `${detail.document.number}${detail.document.numeration ?? ''}`}</TableCell><TableCell>{detail.document.entityName ?? '—'}</TableCell><TableCell>{eur(detail.document.amountGross)}</TableCell><TableCell>{eur(detail.paid)}</TableCell><TableCell>{eur(detail.outstanding)}</TableCell><TableCell>{detail.dueDate ? dateIt(detail.dueDate) : '—'}</TableCell><TableCell><Badge variant={detail.status === 'Scaduta' ? 'destructive' : 'secondary'}>{detail.status}</Badge></TableCell></TableRow>)}
-          </TableBody></Table> : <p className="py-6 text-sm text-muted-foreground">Nessuna fattura dell’anno da incassare.</p>}</TabsContent>
-          <TabsContent value="costs">{analysis.costDetails.length ? <Table><TableHeader><TableRow>{['Data', 'Numero', 'Fornitore', 'Descrizione / categoria FIC', 'Importo', 'Pagato', 'Residuo'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>
-            {analysis.costDetails.map(detail => <TableRow key={detail.document.id}><TableCell>{dateIt(detail.document.date)}</TableCell><TableCell>{detail.document.invoiceNumber ?? '—'}</TableCell><TableCell>{detail.document.entityName ?? '—'}</TableCell><TableCell className="max-w-sm whitespace-normal">{[detail.document.description, detail.document.category].filter(Boolean).join(' · ') || '—'}</TableCell><TableCell>{eur(detail.document.amountGross)}</TableCell><TableCell>{eur(detail.paid)}</TableCell><TableCell>{eur(detail.outstanding)}</TableCell></TableRow>)}
-          </TableBody></Table> : <p className="py-6 text-sm text-muted-foreground">Nessun costo documentato nell’anno.</p>}</TabsContent>
-        </Tabs>
-      </CardContent></Card>
+      </TableBody></Table></CollapsibleContent></Collapsible></CardContent></Card>
     </> : null}
+    {snapshot ? <FinancialDocuments key={`${snapshot.company.id}:${snapshot.acquiredAt}:${year}`} snapshot={snapshot} year={year} today={today} /> : null}
     <p className="text-xs text-muted-foreground">Cash utilizza dati amministrativi provenienti da Fatture in Cloud per analisi e pianificazione. I documenti si gestiscono in Fatture in Cloud; Cash non è un software contabile e non sostituisce il commercialista.</p>
   </div>;
 }

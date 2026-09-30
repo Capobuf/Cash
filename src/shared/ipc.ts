@@ -1,4 +1,5 @@
 import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
+import type { FicAccessVerification } from '../domain/integration';
 import type { CashDocument, CashError, FicFinancialSnapshot, Coordinates, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, GeocodingResult, Result, RouteResult } from '../domain/model';
 
 export const IPC = {
@@ -7,6 +8,7 @@ export const IPC = {
   tokenHas: 'cash:token:has', tokenSet: 'cash:token:set',
   mimitFuel: 'cash:mimit:fuel', foiRevalue: 'cash:foi:revalue', ficClients: 'cash:fic:clients', ficClientDetails: 'cash:fic:client-details',
   ficFinancialSync: 'cash:fic:financial-sync',
+  ficVerifyPermissions: 'cash:fic:verify-permissions',
   ficProduct: 'cash:fic:product', ficExport: 'cash:fic:export', ficWizardCompanies: 'cash:fic:wizard-companies',
   ficWizardProducts: 'cash:fic:wizard-products', ficWizardActivate: 'cash:fic:wizard-activate', ficRemoveLink: 'cash:fic:remove-link',
   ficSetupInfo: 'cash:fic:setup-info', ficSetClientId: 'cash:fic:set-client-id',
@@ -39,6 +41,7 @@ export interface CashNativeApi {
     route(input: { departure: Coordinates; destination: Coordinates }): Promise<Result<RouteResult>>;
   };
   fic: {
+    verifyPermissions(input: { companyId: string }): Promise<Result<FicAccessVerification>>;
     syncFinancialData(input: { companyId: string }): Promise<Result<FicFinancialSnapshot>>;
     setupInfo(): Promise<{ clientId: string; requiredScopes: string[] }>;
     setClientId(clientId: string): Promise<Result<{ clientId: string }>>;

@@ -5,7 +5,7 @@ import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigr
 import { deleteFicToken, hasFicToken, hasOrsApiKey, requireFicToken, requireOrsApiKey, setFicToken, setOrsApiKey } from './credentials';
 import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
-import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, syncFinancialData, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
+import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, syncFinancialData, verifyActivation, verifyProduct, verifyPermissions } from './integrations/fatture-in-cloud';
 import { IPC } from '../shared/ipc';
 import { FIC_SCOPES, requireActiveFic } from '../domain/integration';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from './fic-link';
@@ -132,6 +132,17 @@ function registerHandlers(): void {
     const result = await syncFinancialData(input.companyId, token.value);
     if (current?.path !== session?.path || current?.token.documentId !== session?.token.documentId || !activeFicCompany(input.companyId))
       return err({ code: 'CONFLICT', source: 'archive', message: 'Archivio o collegamento cambiato durante la sincronizzazione. Ripetere l’aggiornamento.' });
+    return result;
+  });
+  ipcMain.handle(IPC.ficVerifyPermissions, async (_event, input: { companyId: string }) => {
+    if (!input || typeof input.companyId !== 'string' || !activeFicCompany(input.companyId))
+      return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Verifica non disponibile: attiva il collegamento all’azienda.' });
+    const session = current;
+    const token = await requireFicToken();
+    if (!token.ok) return token;
+    const result = await verifyPermissions(input.companyId, token.value);
+    if (current?.path !== session?.path || current?.token.documentId !== session?.token.documentId || !activeFicCompany(input.companyId))
+      return err({ code: 'CONFLICT', message: 'Archivio o azienda cambiato durante la verifica. Ripeti l’operazione.' });
     return result;
   });
   ipcMain.handle(IPC.ficClients, async (_event, input: { companyId: string; query: string }) => {

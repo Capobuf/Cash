@@ -16,6 +16,7 @@ export class AppState {
   private mutationVersion = 0;
   private sessionVersion = 0;
   financialSyncing = false;
+  financialSyncError: CashError | null = null;
   private requestArchiveDecision?: () => Promise<ArchiveDecision>;
 
   get document(): CashDocument | undefined { return this.session?.document; }
@@ -43,6 +44,8 @@ export class AppState {
   }
 
   private accept(session: ArchiveSession): void {
+    if (session.document?.documentId !== this.document?.documentId || session.path !== this.session?.path)
+      this.financialSyncError = null;
     this.session = session;
     this.mutationVersion = 0;
     this.sessionVersion += 1;
@@ -64,7 +67,7 @@ export class AppState {
     const sameContext = () => this.document?.documentId === documentId && this.session?.path === path
       && this.document.settings.fic.enabled && this.document.settings.fic.company?.id === companyId
       && this.document.financialSnapshot?.acquiredAt === acquiredAt;
-    this.financialSyncing = true; this.emit();
+    this.financialSyncing = true; this.financialSyncError = null; this.emit();
     try {
       await this.save();
       if (!sameContext() || !this.isSaved()) return;
@@ -72,13 +75,14 @@ export class AppState {
       if (!sameContext()) {
         this.setError({ code: 'CONFLICT', message: 'Archivio, azienda o snapshot cambiato durante l’aggiornamento. Ripeti la sincronizzazione.' }); return;
       }
-      if (!result.ok) { this.setError(result.error); return; }
+      if (!result.ok) { this.financialSyncError = result.error; this.setError(result.error); return; }
       if (result.value.company.id !== companyId) {
         this.setError({ code: 'SOURCE_INVALID', message: 'Lo snapshot ricevuto appartiene a un’altra azienda.' }); return;
       }
       this.mutate(document => { document.financialSnapshot = result.value; });
     } catch {
-      this.setError({ code: 'SOURCE_UNAVAILABLE', source: 'FattureInCloud', message: 'Aggiornamento finanziario non riuscito. Lo snapshot precedente resta disponibile.' });
+      this.financialSyncError = { code: 'SOURCE_UNAVAILABLE', source: 'FattureInCloud', message: 'Aggiornamento finanziario non riuscito. Lo snapshot precedente resta disponibile.' };
+      this.setError(this.financialSyncError);
     } finally { this.financialSyncing = false; this.emit(); }
   }
   setArchiveDecisionHandler(handler: () => Promise<ArchiveDecision>): void { this.requestArchiveDecision = handler; }

@@ -836,7 +836,7 @@ L'utente attiva e configura autonomamente il modulo in **Impostazioni → Integr
 
 **7.** Salvare la configurazione e visualizzare lo stato finale `Attiva` con azienda, prodotto, fiscalità importata e data/ora dell'ultima verifica riuscita.
 
-Per l'MVP Cash usa l'autenticazione manuale prevista da Fatture in Cloud, coerente con un'applicazione privata monoutente. Cash distribuisce o mostra il Client ID della propria applicazione privata e non conserva alcun Client Secret. Sono richiesti esclusivamente `entity.clients:r`, `products:r`, `settings:r`, `issued_documents.quotes:a`, `issued_documents.invoices:r`, `issued_documents.credit_notes:r` e `received_documents:r`. Il wizard verifica anche i permessi azienda per fatture, note di credito e documenti ricevuti. Un token precedente senza i nuovi scope produce un errore con i permessi mancanti e richiede una nuova configurazione; non vengono applicati fallback. Non è richiesto `taxes:r`.
+Per l'MVP Cash usa l'autenticazione manuale prevista da Fatture in Cloud, coerente con un'applicazione privata monoutente. Cash distribuisce o mostra il Client ID della propria applicazione privata e non conserva alcun Client Secret. Sono richiesti esclusivamente `entity.clients:r`, `products:r`, `settings:r`, `issued_documents.quotes:a`, `issued_documents.invoices:r`, `issued_documents.credit_notes:r` e `received_documents:r`. Il wizard verifica anche i permessi azienda per fatture, note di credito e documenti ricevuti. Un accesso negato richiede di verificare sia gli scope richiesti al token sia i permessi dell’utente sull’azienda; un HTTP 403 non prova da solo quale dei due livelli abbia impedito l’accesso. Non vengono applicati fallback. Non è richiesto `taxes:r`.
 
 Il token non viene scritto nel file dati né sincronizzato con Google Drive. Viene custodito dal portachiavi/gestore credenziali del sistema operativo della singola postazione. Ogni postazione viene collegata separatamente. Cash salva nel file dati l'identificativo dell'azienda Fatture in Cloud selezionata, i riferimenti non segreti necessari e lo snapshot non segreto del profilo fiscale importato.
 
@@ -1338,9 +1338,9 @@ Non sono configurabili: formule economiche, regola di snapshot, atomicità, divi
 
 - F24, acconti e saldi fiscali reali, scadenze tributarie, gestione fiscale completa.
 
-- Pending Received Documents della sezione Da registrare, preventivi FIC in ingresso e documenti diversi dai quattro tipi finanziari previsti.
+- Preventivi FIC in ingresso e documenti registrati diversi dai quattro tipi finanziari previsti. I Pending Received Documents della sezione Da registrare sono inclusi, esclusivamente a scopo informativo.
 
-- Webhook, polling FIC, sincronizzazione finanziaria automatica in background, worker, notifiche, grafici avanzati e nuove dipendenze UI. Il controllo locale dei conflitti del file resta invariato.
+- Webhook, polling FIC, sincronizzazione finanziaria automatica in background, worker, notifiche e grafici avanzati. Sono inclusi soltanto shadcn Chart (Recharts) e Progress per la dashboard richiesta. Il controllo locale dei conflitti del file resta invariato.
 
 - Simulatore fiscale universale per tutti i regimi e professioni.
 
@@ -1534,7 +1534,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **58.** Separare sidebar e pagine in Preventivazione, Analisi e Configurazione, mantenendo Panoramica dedicata ai preventivi.
 
-**59.** Acquisire manualmente e atomicamente tutte le pagine dei quattro tipi finanziari FIC; un errore o un pagamento paid senza data valida lascia lo snapshot precedente invariato.
+**59.** Acquisire manualmente e atomicamente tutte le pagine dei quattro tipi finanziari FIC e dei pending agyo, mail e browser; un errore o un pagamento paid senza data valida lascia lo snapshot precedente invariato.
 
 **60.** Distinguere emissione e pagamento per anno, note di credito, pianificato e documentato; mostrare dodici mesi, dettagli residui e confronto con obiettivo.
 
@@ -1615,9 +1615,10 @@ L’unica azione è **Aggiorna dati Fatture in Cloud**, attraverso una sola oper
 
 - GET /c/{company_id}/company/info per azienda e autorizzazioni;
 - GET /c/{company_id}/issued_documents?type=invoice e type=credit_note;
-- GET /c/{company_id}/received_documents?type=expense e type=passive_credit_note.
+- GET /c/{company_id}/received_documents?type=expense e type=passive_credit_note;
+- GET /c/{company_id}/received_documents/pending?type=agyo, type=mail e type=browser.
 
-Le quattro raccolte vengono lette senza filtro anno, con per_page=100, fieldset=detailed e page fino a last_page. Il parametro fields seleziona esplicitamente i soli campi necessari, escludendo righe prodotto e riferimenti agli allegati. Non vengono scaricati allegati, PDF o XML né interrogati quote, proforma, ricevute, ordini, DDT, rapporti di lavoro, self invoice, pending received documents, cashbook o F24. Eventuali campi aggiuntivi restituiti dal servizio non vengono utilizzati né conservati.
+Le sette raccolte vengono lette senza filtro anno, con per_page=100 e page fino a last_page; le quattro raccolte registrate mantengono fieldset=detailed. I pending richiedono il tipo sorgente e selezionano solo id,type,document_type,date,subject,supplier_name,amount_gross,category. Il parametro fields seleziona esplicitamente i soli campi necessari, escludendo righe prodotto e riferimenti agli allegati. Non vengono scaricati allegati, PDF o XML né interrogati quote, proforma, ricevute, ordini, DDT, rapporti di lavoro, self invoice, cashbook o F24. Eventuali campi aggiuntivi restituiti dal servizio non vengono utilizzati né conservati.
 
 Tutte le pagine vengono validate e normalizzate in memoria prima di restituire lo snapshot completo. ID, tipo, data documento, importi, lista pagamenti e date dei pagamenti paid sono critici. Una pagina malformata, autorizzazione insufficiente o errore di rete fa fallire l’intera acquisizione. Solo dopo il successo avviene una singola mutazione Cash, seguita dal normale autosalvataggio atomico con backup e verifica conflitti. Nessuna modifica record-per-record o applicazione parziale. Una nuova acquisizione riflette modifiche ed eliminazioni FIC sostituendo integralmente la precedente. Se nel frattempo cambiano archivio, azienda o snapshot, il risultato non viene applicato.
 
@@ -1625,9 +1626,9 @@ Non vengono introdotti SDK, database, server, worker, webhook, polling o sincron
 
 ### 31.5 Snapshot finanziario minimale
 
-Un solo nuovo concetto persistito: financialSnapshot opzionale nello schema 5. Contiene source=fatture_in_cloud, azienda (ID e nome), acquiredAt e due raccolte normalizzate, issuedDocuments e receivedDocuments.
+Un solo nuovo concetto persistito: financialSnapshot opzionale nello schema 5. Contiene source=fatture_in_cloud, azienda (ID e nome), acquiredAt e le raccolte normalizzate issuedDocuments e receivedDocuments, più pendingReceivedDocuments opzionale. Lo schema resta v5: gli archivi già creati senza pending continuano ad aprirsi; il campo assente viene letto come lista vuota e la UI invita ad aggiornare per acquisirlo.
 
-Ogni documento emesso conserva ID FIC, type, date, numero/numerazione e cliente quando presenti, amount_gross normalizzato e pagamenti. Ogni documento ricevuto conserva ID FIC, type, date, invoice_number, fornitore, descrizione/categoria FIC quando presenti, amount_gross e pagamenti. Ogni pagamento conserva solo ID remoto opzionale, amount, due_date opzionale, paid_date opzionale (obbligatoria con paid) e status remoto.
+Ogni documento emesso conserva ID FIC, type, date, numero/numerazione, cliente e subject (normalizzato in description) quando presenti, amount_gross normalizzato e pagamenti. Ogni documento ricevuto conserva ID FIC, type, date, invoice_number, fornitore, descrizione/categoria FIC quando presenti, amount_gross e pagamenti. Ogni pagamento conserva solo ID remoto opzionale, amount, due_date opzionale, paid_date opzionale (obbligatoria con paid) e status remoto.
 
 I campi normalizzati usano le convenzioni TypeScript Cash (amountGross, entityName, invoiceNumber, payments, dueDate, paidDate). Non vengono conservate risposte JSON complete, righe prodotto o campi estranei all’analisi. I documenti remoti non hanno EntityMeta o UUID Cash e non sono modificabili dall’utente. Le categorie restano testo FIC e non introducono un’anagrafica categorie Cash.
 
@@ -1637,13 +1638,37 @@ Disattivare FIC o rimuovere il collegamento conserva lo snapshot. Senza token lo
 
 L’header mostra anno, azienda/ID dello snapshot, ultimo aggiornamento e pulsante manuale. L’anno è stato UI locale. Le opzioni sono l’unione degli anni nei profili, nei documenti e nelle date dei pagamenti; il default è l’anno corrente se presente, altrimenti il più recente. Se non esistono anni, non ne viene inventato uno.
 
-La pagina usa Card, Table, Tabs, Badge, Button, Alert e NativeSelect esistenti: riepilogo compatto dei ricavi, riepilogo distinto dei costi, fiscalità, tabella mensile e dettagli. Non aggiunge librerie grafiche.
+La pagina usa i componenti shadcn base-nova/Base UI esistenti e aggiunge tramite CLI soltanto Chart e Progress. Cinque Card principali mostrano Obiettivo, Fatturato emesso con progresso, Incassato con progresso e gerarchia principale, Da incassare con quota scaduta (Badge destructive soltanto se positiva), Stima fiscale o motivo di indisponibilità. Le percentuali possono superare 100%; la barra si ferma al 100%. Obiettivo assente o nullo non produce percentuali inventate.
+
+Due Card con BarChart a barre affiancate mostrano Ricavi mensili (emesso/incassato) e Costi mensili (documentati/pagati), dodici mesi, tooltip e legenda shadcn, valori EUR e colori da variabili CSS per dark/light. Nessun grafico SVG custom o wrapper generico, seconda libreria grafici o saldo bancario presunto. Il dettaglio numerico mensile resta in un Collapsible secondario.
 
 La tabella mensile contiene sempre dodici righe gennaio–dicembre per l’anno selezionato, con Fatturato emesso e Costi documentati per data documento, Incassato e Costi pagati per paid_date.
 
-Il dettaglio Da incassare mostra data, numero, cliente, totale fattura, incassato, residuo, prima scadenza residua disponibile (anche già scaduta) e stato derivato. Il dettaglio Costi mostra data, numero, fornitore, descrizione/categoria FIC, importo, pagato e residuo. Pagato e residuo del dettaglio considerano tutti i pagamenti dello snapshot e sono etichettati come tali. Le liste usano lo scrolling ordinario, senza ricerca, filtri avanzati o paginazione UI.
+Le Tabs sono Fatture emesse, Da incassare, Scadute, Costi registrati, In ingresso e Note di credito (emesse e ricevute distinte). Le liste dei documenti registrati si riferiscono all’anno selezionato. In ingresso mostra tutti i pending dello snapshot, anche senza data e di anni precedenti, dichiarando esplicitamente questa differenza; sono separati dai KPI annuali.
+
+Il dettaglio Da incassare mostra data, numero, cliente, totale fattura, incassato, residuo, prima scadenza residua disponibile (anche già scaduta) e stato derivato. Il dettaglio Costi mostra data, numero, fornitore, descrizione/categoria FIC, importo, pagato e residuo. Pagato e residuo del dettaglio considerano tutti i pagamenti dello snapshot e sono etichettati come tali. Le liste usano Table senza ricerca, filtri avanzati, TanStack Table o paginazione UI. Il clic sulla riga o il pulsante accessibile Dettaglio apre uno Sheet read-only con ScrollArea: tipo, ID FIC, data, numero, controparte, importo, descrizione, categoria, stato derivato, pagato, residuo e lista pagamenti con importo, stato FIC, scadenza e data pagamento, quando disponibili. Nessuna nuova route.
 
 Senza snapshot appare **Nessun dato finanziario sincronizzato**, con azione di aggiornamento se il collegamento è utilizzabile. Se FIC è disattivato, manca il token o l’archivio è in sola lettura/conflitto, la consultazione resta disponibile e l’aggiornamento è bloccato. Un errore usa il sistema errori esistente e conserva lo snapshot precedente, senza presentarlo come dato corrente.
+
+### 31.7 Documenti in ingresso / Da registrare
+
+Un Received Document di tipo expense è un costo già registrato nella sezione Spese FIC. Un Pending Received Document è invece una fattura/documento in ingresso ancora da registrare: non è un costo documentato o pagato e non partecipa alla stima fiscale né al riepilogo economico. FIC resta source of truth.
+
+Lo snapshot conserva per ogni pending solo ID FIC, sorgente agyo/mail/browser e, quando presenti, document_type, data, subject, supplier_name, amount_gross e category, normalizzati in documentType, date, subject, supplierName, amountGross, category. Data e importo possono essere assenti; si mostra “—”. Non si scaricano allegati, XML, PDF, other_attachments, campi mining o dati estratti completi. La UI mostra conteggio e somma decimale dei soli importi disponibili, precisando quanti documenti contribuiscono; non spaccia una somma parziale per un totale completo.
+
+Alla successiva sincronizzazione completa un documento registrato in FIC sparisce naturalmente dai pending e compare fra gli expense. Non esiste matching pending/expense. Errori di pagina, duplicati nella stessa sorgente o campi presenti ma invalidi fanno fallire l’intera sincronizzazione; campi realmente opzionali assenti non sono errori.
+
+### 31.8 Verifica live dei permessi
+
+In Impostazioni → Integrazioni il comando **Verifica permessi** presenta due sezioni distinte: **Accessi richiesti da Cash** (funzione, scope richiesto, stato ed evidenza) e **Permessi azienda** in Collapsible. Quest’ultima conserva solo in memoria l’intera matrice restituita da company/info → access_info.permissions, inclusi campi DiC e permessi dettagliati dei documenti emessi. Mostra i livelli none/read/write/detailed e tollera nuove chiavi ufficiali senza invalidare la risposta; non persiste la matrice nell’archivio.
+
+I permessi dell’utente sull’azienda e gli scope concessi all’Access Token sono livelli distinti. Cash non decodifica il token né pretende di interrogare una lista raw degli scope manuali: il contratto ufficiale consultato non offre una lista di introspezione utilizzabile a questo scopo. I Badge degli scope richiesti sono requisiti di configurazione, non prova degli accessi concessi.
+
+La verifica esegue GET non distruttive: clienti, prodotti, fatture, note di credito, expense, passive_credit_note e tutti e tre i tipi pending con per_page=1 e fields=id; per il profilo fiscale usa settings/tax_profile. Una risposta 2xx conferma l’accesso effettivo a quella lettura; 401/403 lo rendono non disponibile. Un 403 invita a verificare scope richiesto e permessi azienda senza attribuire una causa non dimostrata. Errori di rete, rate limit o server sono non verificabili, non prove di un permesso mancante. Nessun retry automatico o fallback.
+
+Per issued_documents.quotes:a viene mostrato il permesso azienda rilevato; l’accesso write non è verificabile direttamente senza un’operazione di esportazione. Nessun preventivo fittizio viene creato. L’esito è datato e resta live, in memoria, riferito alla sola azienda e sessione consultata.
+
+Contratti ufficiali: [PendingReceivedDocument](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/PendingReceivedDocument.md), [ReceivedDocumentsApi](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/ReceivedDocumentsApi.md), [Permissions](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/Permissions.md) e [PermissionsFicIssuedDocumentsDetailed](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/PermissionsFicIssuedDocumentsDetailed.md).
 
 ## Appendice A - Esempio di preventivo
 
