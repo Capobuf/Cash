@@ -1,11 +1,11 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { CURRENT_SCHEMA_VERSION, type CashDocument, type CashError } from './model';
-import { bankExpenseIdentity, normalizeBankDescription } from './bank-expenses';
+import { bankExpenseIdentity, normalizeBankDescription, normalizeBankRuleText } from './bank-expenses';
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
-  bankExpenses: 'Movimenti bancari', bankExpenseCategories: 'Categorie spese', categoryId: 'categoria', parentId: 'categoria principale',
+  bankExpenses: 'Movimenti bancari', bankExpenseCategories: 'Categorie spese', bankExpenseRules: 'Regole automatiche', categoryIds: 'categorie manuali', matchText: 'testo da riconoscere', categoryId: 'categoria', parentId: 'categoria principale',
   vehicles: 'Veicoli', businessCosts: 'Costi aziendali', sites: 'Sedi', profiles: 'Profili', quotes: 'Preventivi',
   catalog: 'Catalogo', settings: 'Impostazioni', name: 'nome', displayName: 'denominazione', category: 'categoria',
   description: 'descrizione', address: 'indirizzo', coordinates: 'coordinate', consumption: 'consumo', annualKm: 'km annui',
@@ -141,10 +141,28 @@ export const bankExpenseRowSchema = z.object({
   amount: z.string().regex(/^(?:0|[1-9]\d*)\.\d{2}$/).refine(value => /^(?:0|[1-9]\d*)\.\d{2}$/.test(value) && new Decimal(value).gt(0), 'importo non positivo'),
 });
 export const bankExpenseImportSchema = z.object({ rows: z.array(bankExpenseRowSchema), ignoredIncome: z.number().int().nonnegative() });
+export const bankExpenseRuleSchema = z.object({ ...entity,
+  matchText: z.string().trim().refine(value => normalizeBankRuleText(value).length > 0, 'Inserisci almeno una lettera o un numero.'),
+  categoryId: uuid,
+});
+
+// Early v6 archives used a single manual category. Normalize only that known
+// legacy shape, leaving malformed arrays/references for validation to reject.
+const bankExpenseSchema = z.preprocess(input => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const row = input as Record<string, unknown>;
+  const categoryIds = row.categoryIds === undefined
+    ? row.categoryId === undefined ? [] : [row.categoryId]
+    : Array.isArray(row.categoryIds) && row.categoryId !== undefined && !row.categoryIds.includes(row.categoryId)
+      ? [...row.categoryIds, row.categoryId]
+      : row.categoryIds;
+  return { ...row, categoryIds };
+}, bankExpenseRowSchema.extend({ ...entity, categoryIds: z.array(uuid) }));
 
 export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
-  bankExpenses: z.array(bankExpenseRowSchema.extend({ ...entity, categoryId: uuid.optional() })),
-  bankExpenseCategories: z.array(z.object({ ...entity, name: z.string().trim().min(1), parentId: uuid.optional() })),
+  bankExpenses: z.array(bankExpenseSchema).default([]),
+  bankExpenseCategories: z.array(z.object({ ...entity, name: z.string().trim().min(1), parentId: uuid.optional() })).default([]),
+  bankExpenseRules: z.array(bankExpenseRuleSchema).default([]),
   financialSnapshot: financialSnapshotSchema.optional(),
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION), documentId: uuid, revision: z.number().int().positive(), createdAt: iso, updatedAt: iso,
   settings: z.object({ fuelTerritory: z.string().min(1).optional(), defaultDepartureSiteId: uuid.optional(), defaultVehicleId: uuid.optional(), fic: z.object({ enabled: z.boolean(), company: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), product: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), taxProfile: z.object({ acquiredAt: iso, companyType: z.string().optional(), companySubtype: z.string().optional(), profession: z.string().optional(), regime: z.string().optional(), profitCoefficient: decimal.optional(), contributionsPercentage: decimal.optional(), defaultVat: z.object({ id: z.string().min(1), value: z.number().optional(), description: z.string().optional() }).optional() }).optional(), legacyReferences: z.object({ companyId: z.string().min(1).optional(), productId: z.string().min(1).optional() }).optional(), lastVerification: z.object({ at: iso, result: z.enum(['success', 'error']), diagnostic: z.string().optional() }).optional() }) }),
@@ -172,10 +190,17 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
     const path = ['bankExpenses', index];
     if (ids.has(expense.id)) ctx.addIssue({ code: 'custom', path, message: 'ID movimento duplicato' });
     ids.add(expense.id);
-    if (expense.categoryId && !categories.has(expense.categoryId)) ctx.addIssue({ code: 'custom', path, message: 'Categoria del movimento inesistente' });
+    if (expense.categoryIds.some(id => !categories.has(id))) ctx.addIssue({ code: 'custom', path: [...path, 'categoryIds'], message: 'Categoria del movimento inesistente' });
+    if (new Set(expense.categoryIds).size !== expense.categoryIds.length) ctx.addIssue({ code: 'custom', path: [...path, 'categoryIds'], message: 'Categorie manuali duplicate' });
     const key = bankExpenseIdentity(expense);
     if (movements.has(key)) ctx.addIssue({ code: 'custom', path, message: 'Movimento bancario duplicato' });
     movements.add(key);
+  });
+  document.bankExpenseRules.forEach((rule, index) => {
+    const path = ['bankExpenseRules', index];
+    if (ids.has(rule.id)) ctx.addIssue({ code: 'custom', path, message: 'ID regola duplicato' });
+    ids.add(rule.id);
+    if (!categories.has(rule.categoryId)) ctx.addIssue({ code: 'custom', path: [...path, 'categoryId'], message: 'Categoria della regola inesistente' });
   });
   const years = new Set<number>();
   for (const [index, profile] of document.profiles.entries()) { if (years.has(profile.year)) ctx.addIssue({ code: 'custom', path: ['profiles', index, 'year'], message: 'esiste già un profilo per questo anno' }); years.add(profile.year); }

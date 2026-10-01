@@ -40,8 +40,11 @@ revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripr
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
 Gli archivi schema 1–5 richiedono anteprima e conferma prima della migrazione allo schema 6.
-Il passaggio v5→v6 aggiunge `bankExpenseCategories` e `bankExpenses` vuoti e conserva tutti i dati,
+Il passaggio v5→v6 aggiunge `bankExpenseCategories`, `bankExpenses` e `bankExpenseRules` vuoti e conserva tutti i dati,
 incluso lo snapshot Fatture in Cloud. Le migrazioni storiche proseguono fino a v6.
+Gli archivi già v6 con raccolte bancarie assenti vengono letti con liste vuote; le vecchie
+assegnazioni `categoryId` diventano categorie manuali in `categoryIds`. L’apertura non riscrive
+il file: il successivo salvataggio conserva il formato precedente nel consueto backup.
 Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando i dati nuovi. La migrazione
 automatica procede solo per trasformazioni deterministiche. Se trova Clienti locali, `oneWayKm` o
 Trasferte del modello precedente, si arresta senza scrivere e indica i dati da ricostruire esplicitamente.
@@ -87,22 +90,48 @@ La Panoramica nell’area Preventivazione resta distinta dalla Panoramica finanz
 
 **Spese → Movimenti** importa un XLSX della banca tramite dialog nativo. Il parser legge il primo
 foglio e cerca l’intestazione `Data_Operazione`, `Data_Valuta`, `Entrate`, `Uscite`, `Descrizione`,
-`Descrizione_Completa`, `Stato`, anche dopo un preambolo. Acquisisce solo le uscite, indipendentemente
+`Descrizione_Completa`, `Stato`, anche dopo un preambolo. Acquisisce solo le righe con `Uscite < 0`, indipendentemente
 dallo stato, usando data valuta, descrizione completa (con fallback) e importo positivo a due decimali.
 Una riga di uscita non valida annulla l’intero import; le entrate sono ignorate. Il risultato riporta
 movimenti aggiunti, duplicati e entrate ignorate. La deduplica esatta data/descrizione/importo vale
 anche all’interno del file e conserva le categorie già assegnate. Due spese reali con la stessa terna
 sono intenzionalmente considerate duplicate.
 
-La tabella consente ricerca, filtri e assegnazione manuale della categoria con autosalvataggio.
+La tabella consente ricerca, filtri e assegnazione manuale di più categorie con autosalvataggio.
+**Nuova spesa** e **Modifica** consentono di gestire data, descrizione, importo positivo e categorie
+manuali; data/descrizione/importo duplicati vengono rifiutati. Cambiando descrizione si ricalcolano le regole.
+Le checkbox selezionano singole spese o tutti i risultati visibili nell’anno e nei filtri correnti;
+cambiando filtri o anno la selezione si azzera. La barra mostra numero e totale delle spese selezionate.
+Le azioni di massa aggiungono, rimuovono, sostituiscono o svuotano le categorie manuali in un solo
+salvataggio, senza alterare quelle automatiche. L’eliminazione singola o multipla richiede conferma
+con l’elenco delle spese; categorie e regole vengono conservate. Reimportare un XLSX può reinserire
+le spese eliminate. Le modifiche rispettano sola lettura e blocco per conflitto esterno.
+Nei dialoghi di categorizzazione, creazione/modifica spesa e regola è disponibile **Nuova categoria /
+sottocategoria**: nome e padre facoltativo permettono di creare la voce senza lasciare le spese.
+**Crea e seleziona** salva subito la categoria e la seleziona nel dialogo, preservando le scelte già
+effettuate; l’assegnazione viene confermata con il salvataggio del dialogo. La creazione rapida è
+disponibile anche nelle azioni multiple di aggiunta e sostituzione. Restano validi il massimo di due
+livelli e l’unicità del nome nello stesso padre, senza distinzione di maiuscole/minuscole.
+`BankExpense.categoryIds` contiene solo le categorie manuali. Le categorie automatiche, indicate con
+`Auto`, sono derivate dalle regole e unite a quelle manuali senza duplicati.
 **Spese → Categorie** gestisce categorie e sottocategorie su due livelli; nomi univoci, senza distinzione
-maiuscole/minuscole, nello stesso padre. Categorie con figli o movimenti assegnati non sono eliminabili.
+maiuscole/minuscole, nello stesso padre. Categorie con figli, assegnazioni manuali o regole non sono eliminabili.
+Nella stessa pagina, **Regole automatiche** permette di creare, modificare ed eliminare associazioni
+`testo → categoria`. Il confronto cerca il testo nella descrizione dopo lowercase e rimozione di tutto
+tranne lettere e numeri, senza fuzzy matching, priorità o regole predefinite. Tutte le regole corrispondenti
+si sommano e ogni modifica ha effetto immediato sulle spese storiche e future, senza riscriverle.
+L’azione **Crea regola** di ciascun movimento mostra descrizione originale, testo modificabile,
+categoria e numero di corrispondenze su tutti gli anni prima della conferma.
 **Spese → Riepilogo** mostra totali, quota categorizzata, spese mensili e totali per categoria principale.
+Filtri e KPI usano le categorie effettive: una spesa è senza categoria solo se non ha né categorie manuali
+né automatiche. Il filtro e il totale del padre includono i figli, contando ogni spesa una sola volta
+nel ramo. Categorie di rami diversi possono sovrapporsi: i loro totali non sono sommabili e le percentuali
+possono superare complessivamente il 100%. Il totale generale e i conteggi restano unici.
 L’anno è condiviso con la Panoramica finanziaria, include gli anni bancari ed è solo stato UI.
 L’import acquisisce tutti gli anni del file; Categorie è indipendente dall’anno.
 
 I movimenti bancari restano separati dai documenti e dai KPI Fatture in Cloud: nessuna somma,
-riconciliazione o categorizzazione automatica. Lettura XLSX e filesystem restano nel processo Electron;
+riconciliazione o categorizzazione automatica non configurata dall’utente. Lettura XLSX e filesystem restano nel processo Electron;
 il renderer riceve solo righe normalizzate e applica un’unica mutazione dell’archivio.
 
 **Aggiorna dati Fatture in Cloud** acquisisce manualmente tutte le pagine di invoice, credit_note,

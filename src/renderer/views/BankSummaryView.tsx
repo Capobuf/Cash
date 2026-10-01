@@ -12,7 +12,7 @@ const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', '
 const config = { amount: { label: 'Spese', color: 'var(--chart-1)' } };
 
 export function BankSummaryView({ doc, year }: { doc: CashDocument; year: number | undefined }) {
-  const summary = useMemo(() => summarizeBankExpenses(doc.bankExpenses, doc.bankExpenseCategories, year), [doc.bankExpenses, doc.bankExpenseCategories, year]);
+  const summary = useMemo(() => summarizeBankExpenses(doc.bankExpenses, doc.bankExpenseCategories, year, doc.bankExpenseRules), [doc.bankExpenses, doc.bankExpenseCategories, doc.bankExpenseRules, year]);
   const monthly = summary.monthly.map(row => ({ name: months[row.month - 1], amount: Number(row.amount) }));
   const categories = [...summary.categories.filter(row => row.count).map(row => ({ name: row.name, amount: Number(row.amount) })),
     ...(summary.uncategorized.count ? [{ name: 'Senza categoria', amount: Number(summary.uncategorized.amount) }] : [])];
@@ -24,6 +24,7 @@ export function BankSummaryView({ doc, year }: { doc: CashDocument; year: number
       <Card><CardHeader><CardDescription>Senza categoria</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(summary.uncategorized.amount)}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{summary.uncategorized.count} {summary.uncategorized.count === 1 ? 'movimento' : 'movimenti'} da classificare</CardContent></Card>
     </div>
     {!summary.count ? <p className="text-sm text-muted-foreground">Nessuna spesa nell’anno selezionato. Puoi importare un XLSX dalla pagina Movimenti.</p> : null}
+    <p className="text-sm text-muted-foreground">Una spesa può appartenere a più categorie; i valori delle categorie possono quindi sovrapporsi. I totali per categoria non sono sommabili tra loro e le percentuali possono complessivamente superare il 100%.</p>
     <div className="grid gap-4 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>Spese mensili</CardTitle><CardDescription>Da gennaio a dicembre · data valuta</CardDescription></CardHeader><CardContent>
         <ChartContainer config={config} className="h-72 w-full"><BarChart accessibilityLayer data={monthly}><CartesianGrid vertical={false} /><XAxis dataKey="name" tickLine={false} axisLine={false} /><YAxis tickLine={false} axisLine={false} width={72} /><ChartTooltip content={<ChartTooltipContent formatter={value => eur(String(value))} />} /><Bar dataKey="amount" fill="var(--color-amount)" radius={[4, 4, 0, 0]} /></BarChart></ChartContainer>

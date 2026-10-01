@@ -37,7 +37,7 @@ function expenseDate(value: unknown, date1904: boolean): string {
   return italian ? `${italian[3]}-${italian[2]!.padStart(2, '0')}-${italian[1]!.padStart(2, '0')}` : text;
 }
 
-function expenseAmount(value: unknown): string {
+function expenseAmount(value: unknown): string | undefined {
   let text: string;
   if (typeof value === 'number' && Number.isFinite(value)) text = String(value);
   else if (typeof value === 'string') {
@@ -46,9 +46,11 @@ function expenseAmount(value: unknown): string {
     if (/^[+-]?(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(text)) text = text.replace(/\./g, '').replace(',', '.');
     else if (!/^[+-]?\d+\.\d{1,2}$/.test(text)) throw new Error('Uscite: importo non valido.');
   } else throw new Error('Uscite: importo non valido.');
-  const amount = new Decimal(text).abs();
-  if (!amount.isFinite() || amount.lte(0) || amount.decimalPlaces() > 2) throw new Error('Uscite: serve un importo maggiore di zero con massimo due decimali.');
-  return amount.toFixed(2);
+  const amount = new Decimal(text);
+  if (!amount.isFinite()) throw new Error('Uscite: importo non valido.');
+  if (amount.gte(0)) return undefined;
+  if (amount.decimalPlaces() > 2) throw new Error('Uscite: massimo due decimali.');
+  return amount.abs().toFixed(2);
 }
 
 export function parseBankExpenseWorkbook(workbook: ExcelJS.Workbook): Result<BankExpenseImport> {
@@ -73,12 +75,14 @@ export function parseBankExpenseWorkbook(workbook: ExcelJS.Workbook): Result<Ban
     // Income rows are outside scope; their dates and descriptions are deliberately not parsed.
     if (blank(raw('Uscite'))) { if (!blank(raw('Entrate'))) result.ignoredIncome++; continue; }
     try {
+      const amount = expenseAmount(cellValue(raw('Uscite')));
+      if (amount === undefined) { if (!blank(raw('Entrate'))) result.ignoredIncome++; continue; }
       const full = cellValue(raw('Descrizione_Completa'));
       const description = blank(full) ? cellValue(raw('Descrizione')) : full;
       if (typeof description !== 'string') throw new Error('Descrizione assente o non valida.');
       const parsed = bankExpenseRowSchema.safeParse({
         date: expenseDate(cellValue(raw('Data_Valuta')), Boolean(workbook.properties.date1904)),
-        description: normalizeBankDescription(description), amount: expenseAmount(cellValue(raw('Uscite'))),
+        description: normalizeBankDescription(description), amount,
       });
       if (!parsed.success) throw new Error(parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
       result.rows.push(parsed.data);

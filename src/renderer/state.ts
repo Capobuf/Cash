@@ -121,15 +121,15 @@ export class AppState {
   }
   setArchiveDecisionHandler(handler: () => Promise<ArchiveDecision>): void { this.requestArchiveDecision = handler; }
 
-  mutate(mutator: (document: CashDocument) => void): void {
-    if (!this.session?.document || this.session.readOnly || this.status === 'Conflitto esterno') return;
+  mutate(mutator: (document: CashDocument) => void): boolean {
+    if (!this.session?.document || this.session.readOnly || this.status === 'Conflitto esterno') return false;
     const next = structuredClone(this.session.document);
     mutator(next);
     const validation = cashDocumentSchema.safeParse(next);
     if (!validation.success) {
       this.error = validationErrorFromIssues(validation.error.issues);
       this.emit();
-      return;
+      return false;
     }
     this.mutationVersion += 1;
     this.session = { ...this.session, document: validation.data };
@@ -139,6 +139,7 @@ export class AppState {
     this.emit();
     if (this.timer) window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => { void this.save(); }, 350);
+    return true;
   }
 
   async save(): Promise<void> {

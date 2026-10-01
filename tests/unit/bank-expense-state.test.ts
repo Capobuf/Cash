@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, err, meta, ok, type BankExpenseImport, type CashDocument, type Result } from '../../src/domain/model';
 import type { ArchiveSession } from '../../src/native/persistence';
 import { AppState } from '../../src/renderer/state';
+import { changeBankManualCategories, deleteBankExpenses } from '../../src/domain/bank-expense-editing';
 
 const session = (document: CashDocument, path = 'C:\\cash.json'): ArchiveSession => ({ path, document, readOnly: false, token: { documentId: document.documentId, revision: document.revision, fingerprint: 'hash' } });
 const imported: BankExpenseImport = { rows: [{ date: '2026-09-30', description: 'Servizio', amount: '10.00' }], ignoredIncome: 2 };
@@ -17,12 +18,36 @@ describe('import atomico e autosalvataggio spese', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+  it('autosalva operazioni di massa in un solo passaggio e respinge mutazioni invalide o in sola lettura', async () => {
+    const { state, save } = setup();
+    await state.importBankExpenses(); await vi.runAllTimersAsync();
+    const category = { ...meta(), name: 'Software' };
+    state.mutate(document => { document.bankExpenseCategories.push(category); document.bankExpenses.push({ ...meta(), date: '2026-01-01', description: 'Altra', amount: '5.00', categoryIds: [] }); });
+    await vi.runAllTimersAsync(); save.mockClear();
+    const ids = state.document!.bankExpenses.map(expense => expense.id);
+    expect(state.mutate(document => changeBankManualCategories(document, ids, [category.id], 'add'))).toBe(true);
+    await vi.runAllTimersAsync(); expect(save).toHaveBeenCalledTimes(1);
+    expect(state.document!.bankExpenses.every(row => row.categoryIds.includes(category.id))).toBe(true);
+    const before = structuredClone(state.document);
+    expect(state.mutate(document => changeBankManualCategories(document, ids, [meta().id], 'replace'))).toBe(false);
+    expect(state.document).toEqual(before);
+    state.session!.readOnly = true;
+    expect(state.mutate(document => deleteBankExpenses(document, ids))).toBe(false);
+    state.session!.readOnly = false; state.status = 'Conflitto esterno';
+    expect(state.mutate(document => deleteBankExpenses(document, ids))).toBe(false);
+    expect(state.document).toEqual(before);
+    state.status = 'Salvato'; save.mockClear();
+    expect(state.mutate(document => deleteBankExpenses(document, ids))).toBe(true);
+    await vi.runAllTimersAsync(); expect(save).toHaveBeenCalledTimes(1);
+    expect(state.document!.bankExpenses).toEqual([]);
+  });
+
   it('applica una sola mutazione, autosalva, ignora reimportazioni e preserva le categorie', async () => {
     const { state, save } = setup(); const mutate = vi.spyOn(state, 'mutate');
     await state.importBankExpenses();
     expect(mutate).toHaveBeenCalledTimes(1); expect(state.bankExpenseImportSummary).toEqual({ imported: 1, duplicates: 0, ignoredIncome: 2 });
     await vi.runAllTimersAsync(); expect(save).toHaveBeenCalledTimes(1); expect(state.status).toBe('Salvato');
-    state.mutate(document => { const category = { ...meta(), name: 'Software' }; document.bankExpenseCategories.push(category); document.bankExpenses[0]!.categoryId = category.id; });
+    state.mutate(document => { const category = { ...meta(), name: 'Software' }; document.bankExpenseCategories.push(category); document.bankExpenses[0]!.categoryIds = [category.id]; });
     await vi.runAllTimersAsync(); const before = structuredClone(state.document); mutate.mockClear(); save.mockClear();
     await state.importBankExpenses(); await vi.runAllTimersAsync();
     expect(state.bankExpenseImportSummary).toEqual({ imported: 0, duplicates: 1, ignoredIncome: 2 });

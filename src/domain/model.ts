@@ -307,12 +307,17 @@ export interface BankExpense extends EntityMeta {
   date: string;
   description: string;
   amount: DecimalString;
-  categoryId?: string;
+  categoryIds: string[];
 }
 
 export interface BankExpenseCategory extends EntityMeta {
   name: string;
   parentId?: string;
+}
+
+export interface BankExpenseRule extends EntityMeta {
+  matchText: string;
+  categoryId: string;
 }
 
 export type BankExpenseRow = Pick<BankExpense, 'date' | 'description' | 'amount'>;
@@ -335,6 +340,7 @@ export interface CashDocument {
   financialSnapshot?: FicFinancialSnapshot;
   bankExpenseCategories: BankExpenseCategory[];
   bankExpenses: BankExpense[];
+  bankExpenseRules: BankExpenseRule[];
 }
 
 export const nowIso = (): string => new Date().toISOString();
@@ -359,6 +365,7 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   quotes: [],
   bankExpenseCategories: [],
   bankExpenses: [],
+  bankExpenseRules: [],
 });
 
 export const createFiscalPreset2026 = (): EconomicProfile => ({
