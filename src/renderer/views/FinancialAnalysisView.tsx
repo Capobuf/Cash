@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { calculateFinancialAnalysis } from '../../domain/financial-analysis';
+import { calculateFinancialOverview } from '../../domain/financial-overview';
 import type { CashDocument } from '../../domain/model';
 import type { AppState } from '../state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FinancialDocuments } from '@/components/FinancialDocuments';
 import { dateIt, eur } from '@/lib/format';
-import { FinancialKpis, FinancialCharts, FinancialAggregates } from '@/components/FinancialDashboard';
+import { FinancialCharts, FinancialAggregates } from '@/components/FinancialDashboard';
+import { FinancialOverviewDashboard } from '@/components/FinancialOverviewDashboard';
 
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 
@@ -19,9 +20,8 @@ export function FinancialAnalysisView({ doc, appState, hasToken, year }: { doc: 
   const snapshot = doc.financialSnapshot;
   const now = new Date(); const currentYear = now.getFullYear();
   const today = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const analysis = useMemo(() => snapshot && year !== undefined
-    ? calculateFinancialAnalysis(snapshot, year, doc.profiles.find(profile => profile.year === year), doc.businessCosts, today)
-    : undefined, [snapshot, year, doc.profiles, doc.businessCosts, today]);
+  const overview = useMemo(() => year !== undefined ? calculateFinancialOverview(doc, year, today) : undefined, [doc, year, today]);
+  const analysis = overview?.analysis;
   const fic = doc.settings.fic;
   const unavailable = !fic.enabled ? 'Fatture in Cloud disattivato. I dati già acquisiti restano consultabili offline.'
     : !hasToken ? 'Questa postazione richiede configurazione: aggiungi il token in Impostazioni → Integrazioni.'
@@ -41,25 +41,26 @@ export function FinancialAnalysisView({ doc, appState, hasToken, year }: { doc: 
         </Button>
       </div>
     </CardContent></Card>
-    {analysis ? <div className="space-y-3">
-      <FinancialKpis analysis={analysis} year={year!} />
-      <p className="text-xs text-muted-foreground">Stima forfettaria sull’incassato · profilo fiscale {year}. I costi documentati non riducono la base imponibile.</p>
-      {analysis.fiscalWarnings.map(warning => <Alert key={warning}><AlertTitle>Stima fiscale</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
-    </div> : null}
     {unavailable ? <Alert><AlertTitle>Aggiornamento live non disponibile</AlertTitle><AlertDescription>{unavailable}{snapshot ? ` Snapshot aggiornato al ${dateIt(snapshot.acquiredAt)}.` : ''}</AlertDescription></Alert> : null}
     {appState.financialSyncError ? <Alert><AlertTitle>Ultimo aggiornamento non riuscito</AlertTitle><AlertDescription>Stai consultando lo snapshot precedente. Puoi ripetere l’aggiornamento manuale.</AlertDescription></Alert> : null}
     {mismatch ? <Alert><AlertTitle>Azienda diversa dallo snapshot</AlertTitle><AlertDescription>Stai consultando {snapshot.company.name}. Il collegamento attuale è con {fic.company?.name}. Un aggiornamento riuscito sostituirà integralmente questi dati con quelli dell’azienda configurata.</AlertDescription></Alert> : null}
+    {overview ? <FinancialOverviewDashboard overview={overview} /> : <Alert><AlertDescription>Nessun anno disponibile. Aggiungi un profilo annuale, un movimento bancario o sincronizza Fatture in Cloud.</AlertDescription></Alert>}
     {!snapshot ? <Card><CardContent className="py-12 text-center"><h2 className="text-lg font-semibold">Nessun dato finanziario sincronizzato</h2><p className="mt-2 text-sm text-muted-foreground">{canSync ? 'Usa Aggiorna dati Fatture in Cloud per acquisire fatture, spese e pagamenti registrati.' : 'Configura Fatture in Cloud per acquisire il primo snapshot.'}</p></CardContent></Card> : null}
     {snapshot && !analysis ? <Alert><AlertDescription>Lo snapshot non contiene documenti registrati o pagamenti con un anno disponibile e non sono presenti profili annuali. Gli eventuali documenti in ingresso restano consultabili sotto.</AlertDescription></Alert> : null}
-    {analysis ? <>
-      <p className="text-xs text-muted-foreground">Da incassare e scaduto riguardano le fatture emesse nell’anno. Le note di credito restano separate. I costi pianificati Cash sono il piano annuale corrente, non sommato ai costi FIC.</p>
-      <FinancialCharts analysis={analysis} />
-      <FinancialAggregates analysis={analysis} year={year!} />
-      <Card><CardContent><Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}>Dettaglio mensile · {year} · mostra / nascondi</CollapsibleTrigger><CollapsibleContent><Table><TableHeader><TableRow><TableHead>Mese</TableHead>{['Fatturato emesso', 'Incassato', 'Costi documentati', 'Costi pagati'].map(label => <TableHead key={label} className="text-right">{label}</TableHead>)}</TableRow></TableHeader><TableBody>
-        {analysis.monthly.map(month => <TableRow key={month.month}><TableCell>{months[month.month - 1]}</TableCell>{[month.issuedRevenue, month.collectedRevenue, month.documentedCosts, month.paidCosts].map((value, index) => <TableCell key={index} className="text-right tabular-nums">{eur(value)}</TableCell>)}</TableRow>)}
-      </TableBody></Table></CollapsibleContent></Collapsible></CardContent></Card>
-    </> : null}
-    {snapshot ? <FinancialDocuments key={`${snapshot.company.id}:${snapshot.acquiredAt}:${year}`} snapshot={snapshot} year={year} today={today} /> : null}
+    {snapshot ? <Collapsible className="space-y-4">
+      <CollapsibleTrigger render={<Button variant="outline" className="h-auto whitespace-normal text-left" />}>Dettaglio Fatture in Cloud · mostra / nascondi</CollapsibleTrigger>
+      <CollapsibleContent className="space-y-4">
+        {analysis ? <>
+          <p className="text-xs text-muted-foreground">Da incassare e scaduto riguardano le fatture emesse nell’anno. Le note di credito restano separate. I costi pianificati Cash sono il piano annuale corrente, non sommato ai costi FIC.</p>
+          <FinancialCharts analysis={analysis} />
+          <FinancialAggregates analysis={analysis} year={year!} />
+          <Card><CardContent><Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}>Dettaglio mensile FIC · {year} · mostra / nascondi</CollapsibleTrigger><CollapsibleContent><Table><TableHeader><TableRow><TableHead>Mese</TableHead>{['Fatturato emesso', 'Incassato', 'Costi documentati', 'Costi pagati'].map(label => <TableHead key={label} className="text-right">{label}</TableHead>)}</TableRow></TableHeader><TableBody>
+            {analysis.monthly.map(month => <TableRow key={month.month}><TableCell>{months[month.month - 1]}</TableCell>{[month.issuedRevenue, month.collectedRevenue, month.documentedCosts, month.paidCosts].map((value, index) => <TableCell key={index} className="text-right tabular-nums">{eur(value)}</TableCell>)}</TableRow>)}
+          </TableBody></Table></CollapsibleContent></Collapsible></CardContent></Card>
+        </> : null}
+        <FinancialDocuments key={`${snapshot.company.id}:${snapshot.acquiredAt}:${year}`} snapshot={snapshot} year={year} today={today} />
+      </CollapsibleContent>
+    </Collapsible> : null}
     <p className="text-xs text-muted-foreground">Cash utilizza dati amministrativi provenienti da Fatture in Cloud per analisi e pianificazione. I documenti si gestiscono in Fatture in Cloud; Cash non è un software contabile e non sostituisce il commercialista.</p>
   </div>;
 }

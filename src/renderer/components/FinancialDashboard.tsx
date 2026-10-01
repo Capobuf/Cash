@@ -1,10 +1,7 @@
 import type { ReactNode } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import type { FinancialAnalysis } from '../../domain/financial-analysis';
-import { d, money } from '../../domain/decimal';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,47 +10,6 @@ import { eur, formatNumber } from '@/lib/format';
 const percentage = (value: string | undefined) => value === undefined ? 'Non disponibile' : `${formatNumber(value, 2)}%`;
 const days = (value: number | undefined) => value === undefined ? 'Non disponibile' : `${formatNumber(String(value), 1)} gg`;
 const compactEuro = (value: number) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: 0 }).format(value);
-
-function Kpi({ title, value, children, principal = false }: { title: string; value: string; children: ReactNode; principal?: boolean }) {
-  return <Card className={principal ? 'min-w-0 bg-primary/5 ring-primary/50' : 'min-w-0'}>
-    <CardHeader><CardDescription className={principal ? 'text-foreground' : undefined}>{title}</CardDescription>
-      <CardTitle className="text-2xl font-semibold tabular-nums tracking-tight">{value}</CardTitle></CardHeader>
-    <CardContent className="space-y-2 text-xs text-muted-foreground">{children}</CardContent>
-  </Card>;
-}
-
-function TargetProgress({ value, label }: { value?: string; label: string }) {
-  return value === undefined ? <p>Obiettivo non configurato o nullo</p> : <>
-    <Progress aria-label={label} value={Math.min(100, Number(value))} /><p>{percentage(value)} dell’obiettivo</p>
-  </>;
-}
-
-export function FinancialKpis({ analysis: a, year }: { analysis: FinancialAnalysis; year: number }) {
-  return <section aria-label="Indicatori principali" className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-    <Kpi title="Fatturato emesso" value={eur(a.issuedRevenue)}>
-      <p>Obiettivo {year}: {eur(a.revenueTarget)}</p>
-      <TargetProgress value={a.percentIssuedVsTarget} label="Fatturato emesso rispetto all’obiettivo" /><p>{a.invoiceCount} fatture emesse nel {year}</p>
-    </Kpi>
-    <Kpi title="Incassato" value={eur(a.collectedRevenue)} principal>
-      <TargetProgress value={a.percentCollectedVsTarget} label="Incassato rispetto all’obiettivo" />
-      {a.percentCollectedVsTarget !== undefined && a.gapToTarget !== undefined ? <p className="font-medium text-foreground">{d(a.gapToTarget).lt(0)
-        ? `Obiettivo superato di ${eur(money(d(a.gapToTarget).abs()))}` : d(a.gapToTarget).isZero() ? 'Obiettivo raggiunto' : `Residuo obiettivo ${eur(a.gapToTarget)}`}</p> : null}
-    </Kpi>
-    <Kpi title="Da incassare" value={eur(a.outstandingRevenue)}>
-      <Badge variant={d(a.overdueRevenue).gt(0) ? 'destructive' : 'secondary'}>Scaduto {eur(a.overdueRevenue)}</Badge>
-      <p>{a.outstandingInvoiceCount} fatture aperte · {a.overdueInvoiceCount} scadute</p>
-    </Kpi>
-    <Kpi title="Costi documentati FIC" value={eur(a.documentedCosts)}>
-      <p>{a.costDocumentCount} documenti · {year}</p><p>Costi pagati FIC: {eur(a.paidCosts)}</p><p>Costi pianificati Cash: {eur(a.plannedBusinessCosts)} / anno</p>
-    </Kpi>
-    <Kpi title="Da accantonare · stima fiscale" value={a.fiscalProjection ? eur(a.fiscalProjection.totalToReserve) : 'Non disponibile'}>
-      {a.fiscalProjection ? <><p>Sull’incassato del {year}</p><p>Contributi: {eur(a.fiscalProjection.contributions)}</p><p>Imposta sostitutiva: {eur(a.fiscalProjection.substituteTax)}</p></> : <p>{a.fiscalUnavailableReason}</p>}
-    </Kpi>
-    <Kpi title="Netto fiscale stimato" value={a.fiscalProjection ? eur(a.fiscalProjection.fiscalNet) : 'Non disponibile'}>
-      <p>Incassato meno contributi e imposta sostitutiva.</p><p>Prima dei costi aziendali.</p>
-    </Kpi>
-  </section>;
-}
 
 type ChartRow = { label: string; [key: string]: string | number };
 
@@ -112,9 +68,9 @@ export function FinancialCharts({ analysis: a }: { analysis: FinancialAnalysis }
   const monthly = a.monthly.map(row => ({ label: ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'][row.month - 1]!,
     issued: Number(row.issuedRevenue), collected: Number(row.collectedRevenue), documented: Number(row.documentedCosts), paid: Number(row.paidCosts) }));
   return <section aria-label="Grafici finanziari" className="grid min-w-0 gap-4 xl:grid-cols-2">
-    <AnalysisChart title="Ricavi mensili" description="Emesso per data fattura; incassato per data pagamento, anche su fatture di anni precedenti." data={monthly}
+    <AnalysisChart title="Ricavi mensili FIC" description="Emesso per data fattura; incassato per data pagamento, anche su fatture di anni precedenti." data={monthly}
       config={{ issued: { label: 'Fatturato emesso', color: 'var(--chart-1)' }, collected: { label: 'Incassato', color: 'var(--chart-2)' } }} />
-    <AnalysisChart title="Costi mensili" description="Spese FIC: documentati per data documento; pagati per data pagamento, anche su documenti di anni precedenti." data={monthly}
+    <AnalysisChart title="Costi mensili FIC" description="Spese FIC: documentati per data documento; pagati per data pagamento, anche su documenti di anni precedenti." data={monthly}
       config={{ documented: { label: 'Costi documentati', color: 'var(--chart-1)' }, paid: { label: 'Costi pagati', color: 'var(--chart-2)' } }} />
     <RankingChart title="Top 10 clienti per fatturato" description="Fatture dell’anno selezionato e relativi incassi presenti nello snapshot."
       data={a.clientAnalysis.slice(0, 10).map(row => ({ key: row.key, label: row.name, values: { issued: Number(row.issuedRevenue), collected: Number(row.collectedRevenue) } }))}
@@ -122,7 +78,7 @@ export function FinancialCharts({ analysis: a }: { analysis: FinancialAnalysis }
     <RankingChart title="Clienti con maggior ritardo medio" description="Top 10 · pagamenti conclusi delle fatture dell’anno. Insoluti attuali separati nella tabella Pagamenti." dayValues
       data={a.clientPaymentAnalysis.filter(row => row.analyzedPaymentCount > 0).slice(0, 10).map(row => ({ key: row.key, label: row.name, values: { delay: row.averageDelayDays! } }))}
       series={[{ key: 'delay', label: 'Giorni medi di ritardo', color: 'var(--chart-1)' }]} />
-    <div className="min-w-0 xl:col-span-2"><RankingChart title="Costi per categoria" description="Prime 10 categorie FIC per costo documentato. Tutte le categorie sono consultabili nella tabella Costi."
+    <div className="min-w-0 xl:col-span-2"><RankingChart title="Costi per categoria FIC" description="Prime 10 categorie FIC per costo documentato. Tutte le categorie sono consultabili nella tabella Costi."
       data={a.costCategoryAnalysis.slice(0, 10).map(row => ({ key: row.key, label: row.category, values: { documented: Number(row.documentedCosts) } }))}
       series={[{ key: 'documented', label: 'Costi documentati', color: 'var(--chart-1)' }]} /></div>
   </section>;

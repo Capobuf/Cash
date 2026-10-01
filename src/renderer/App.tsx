@@ -130,7 +130,7 @@ export function App() {
   return <>
     <AppShell appState={appState} view={view} onView={navigate}>
       {['financial-analysis', 'bank-summary', 'bank-movements'].includes(view) ? <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{view === 'financial-analysis' ? 'Panoramica dei dati Fatture in Cloud' : 'Spese effettive importate dalla banca'}</p>
+        <p className="text-sm text-muted-foreground">{view === 'financial-analysis' ? 'Incassi, uscite bancarie e fiscalità stimata' : 'Spese effettive importate dalla banca'}</p>
         <div className="flex items-center gap-3"><label htmlFor="financial-year" className="text-sm font-medium">Anno</label><NativeSelect id="financial-year" value={financialYear ?? ''} disabled={!years.length} onChange={event => setFinancialSelection({ documentId: doc.documentId, year: Number(event.target.value) })}>
           {!years.length ? <NativeSelectOption value="">Nessun anno disponibile</NativeSelectOption> : years.map(year => <NativeSelectOption key={year} value={year}>{year}</NativeSelectOption>)}
         </NativeSelect></div>

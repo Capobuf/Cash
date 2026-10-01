@@ -4,6 +4,11 @@ import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, 
 
 type FinancialDocument = FicIssuedDocument | FicReceivedDocument;
 const inYear = (date: string | undefined, year: number) => date?.slice(0, 4) === String(year);
+const paidInYear = (documents: FinancialDocument[], year: number) => documents.flatMap(document => document.payments)
+  .filter(payment => payment.status === 'paid' && inYear(payment.paidDate, year));
+
+export const annualPlannedBusinessCosts = (costs: BusinessCost[]) =>
+  money(costs.reduce((sum, cost) => sum.plus(d(cost.monthlyAmount).mul(12)), d(0)));
 
 export function financialYears(snapshot: FicFinancialSnapshot | undefined, profiles: EconomicProfile[], bankExpenses: BankExpense[] = []): number[] {
   const years = new Set(profiles.map(profile => profile.year));
@@ -97,6 +102,16 @@ export function aggregateClients(invoices: FicIssuedDocument[], today: string) {
   }).sort((a, b) => d(b.issuedRevenue).cmp(a.issuedRevenue) || a.key.localeCompare(b.key));
 }
 
+// Cash-year collections include invoices from any issue year. Reuse client identity
+// resolution across all invoices, including documents without an ID or readable name.
+export function aggregateCollectionsByClient(snapshot: FicFinancialSnapshot, year: number) {
+  return groupClientDocuments(snapshot.issuedDocuments.filter(document => document.type === 'invoice'))
+    .map(({ documents, key }) => ({ ...identity(documents, key),
+      amount: sumMoney(paidInYear(documents, year).map(payment => payment.amount)) }))
+    .filter(client => !d(client.amount).isZero())
+    .sort((a, b) => d(b.amount).cmp(a.amount) || a.key.localeCompare(b.key));
+}
+
 export function analyzeClientPayments(invoices: FicIssuedDocument[], today: string) {
   return groupClientDocuments(invoices).map(({ documents, key }) => {
     const payments = documents.flatMap(document => document.payments);
@@ -147,9 +162,7 @@ export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year:
   const annualInvoices = invoices.filter(document => inYear(document.date, year));
   const annualExpenses = expenses.filter(document => inYear(document.date, year));
   const total = (documents: FinancialDocument[]) => sumMoney(documents.map(document => document.amountGross));
-  const paidInYear = (documents: FinancialDocument[]) => documents.flatMap(document => document.payments)
-    .filter(payment => payment.status === 'paid' && inYear(payment.paidDate, year));
-  const collections = paidInYear(invoices); const paidExpenses = paidInYear(expenses);
+  const collections = paidInYear(invoices, year); const paidExpenses = paidInYear(expenses, year);
   const issuedRevenue = total(annualInvoices); const collectedRevenue = sumMoney(collections.map(payment => payment.amount));
   const invoiceDetails = annualInvoices.map(document => ({ document, ...financialPaymentSummary(document, today) }));
   const costDetails = annualExpenses.map(document => ({ document, ...financialPaymentSummary(document, today) }));
@@ -197,7 +210,7 @@ export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year:
     outstandingRevenue: sumMoney(invoiceDetails.map(detail => detail.outstanding)),
     overdueRevenue: sumMoney(invoiceDetails.map(detail => detail.overdue)),
     issuedCreditNotes: total(snapshot.issuedDocuments.filter(document => document.type === 'credit_note' && inYear(document.date, year))),
-    plannedBusinessCosts: money(costs.reduce((sum, cost) => sum.plus(d(cost.monthlyAmount).mul(12)), d(0))),
+    plannedBusinessCosts: annualPlannedBusinessCosts(costs),
     documentedCosts: total(annualExpenses), paidCosts: sumMoney(paidExpenses.map(payment => payment.amount)),
     receivedCreditNotes: total(snapshot.receivedDocuments.filter(document => document.type === 'passive_credit_note' && inYear(document.date, year))),
     gapToTarget: revenueTarget === undefined ? undefined : money(d(revenueTarget).minus(collectedRevenue)),
