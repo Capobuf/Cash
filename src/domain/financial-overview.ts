@@ -1,7 +1,15 @@
 import { summarizeBankExpenses } from './bank-expenses';
 import { aggregateCollectionsByClient, annualPlannedBusinessCosts, calculateFinancialAnalysis } from './financial-analysis';
 import { d, money, percentOut, sumMoney } from './decimal';
-import type { CashDocument } from './model';
+import type { CashDocument, FinancialProvision } from './model';
+
+export function calculateFiscalReserve(automaticEstimate: string | undefined, provision?: FinancialProvision) {
+  const additions = sumMoney(provision?.additions.map(row => row.amount) ?? []);
+  const covered = provision?.covered ?? '0.00';
+  const total = automaticEstimate === undefined ? undefined : money(d(automaticEstimate).plus(additions));
+  const remaining = total === undefined ? undefined : money(d(total).minus(covered).clamp(0, Infinity));
+  return { automaticEstimate, additions, total, covered, remaining };
+}
 
 export function calculateFinancialOverview(doc: CashDocument, year: number, today: string) {
   const analysis = doc.financialSnapshot
@@ -11,16 +19,23 @@ export function calculateFinancialOverview(doc: CashDocument, year: number, toda
   const collectedRevenue = analysis?.collectedRevenue;
   const cashMarginBeforeTax = collectedRevenue === undefined ? undefined : money(d(collectedRevenue).minus(bankSummary.total));
   const fiscal = analysis?.fiscalProjection;
-  const availableAfterTaxAndExpenses = cashMarginBeforeTax === undefined || !fiscal
-    ? undefined : money(d(cashMarginBeforeTax).minus(fiscal.totalToReserve));
+  const provision = doc.financialProvisions.find(entry => entry.year === year);
+  const fiscalSituation = calculateFiscalReserve(fiscal?.totalToReserve, provision);
+  // The manually supplied balance already includes all real payments. Never
+  // subtract imported expenses from it, or infer coverage from their categories.
+  const bankBalance = provision?.bankBalance;
+  const effectiveAvailability = bankBalance === undefined || fiscalSituation.remaining === undefined
+    ? undefined : money(d(bankBalance.amount).minus(fiscalSituation.remaining));
+  const availableAfterTaxAndExpenses = cashMarginBeforeTax === undefined || fiscalSituation.remaining === undefined
+    ? undefined : money(d(cashMarginBeforeTax).minus(fiscalSituation.remaining));
   const share = (amount: string | undefined) => amount !== undefined && collectedRevenue !== undefined && d(collectedRevenue).gt(0)
     ? percentOut(d(amount).div(collectedRevenue).mul(100)) : undefined;
   return {
-    year, analysis, bankSummary,
+    year, analysis, bankSummary, bankBalance, effectiveAvailability,
     issuedRevenue: analysis?.issuedRevenue, collectedRevenue,
     outstandingRevenue: analysis?.outstandingRevenue, overdueRevenue: analysis?.overdueRevenue,
     bankExpenses: bankSummary.total, cashMarginBeforeTax,
-    fiscalReserve: fiscal?.totalToReserve, fiscalContributions: fiscal?.contributions, fiscalSubstituteTax: fiscal?.substituteTax,
+    fiscalSituation, fiscalReserve: fiscalSituation.remaining, fiscalContributions: fiscal?.contributions, fiscalSubstituteTax: fiscal?.substituteTax,
     fiscalUnavailableReason: analysis?.fiscalUnavailableReason ?? (!analysis ? 'Nessuno snapshot Fatture in Cloud disponibile.' : undefined),
     availableAfterTaxAndExpenses,
     bankExpenseShareOfCollections: share(bankSummary.total), availableShareOfCollections: share(availableAfterTaxAndExpenses),
@@ -67,11 +82,11 @@ export function buildFinancialOverviewFlow(overview: FinancialOverview): Overvie
     const marginNode = node('margin', 'Margine prima della fiscalità', margin);
     link(collectedNode, marginNode, margin);
     if (reserve !== undefined && available !== undefined && d(available).gte(0)) {
-      if (d(reserve).gt(0)) link(marginNode, node('fiscal', 'Fiscalità e contributi stimati', reserve), reserve);
-      if (d(available).gt(0)) link(marginNode, node('available', 'Disponibile stimato', available), available);
+      if (d(reserve).gt(0)) link(marginNode, node('fiscal', 'Da accantonare', reserve), reserve);
+      if (d(available).gt(0)) link(marginNode, node('available', 'Margine dopo accantonamento', available), available);
     }
   }
   if (reserve === undefined) flow.message = `Ripartizione fiscale non disponibile. ${overview.fiscalUnavailableReason ?? ''}`;
-  else if (available !== undefined && d(available).lt(0)) flow.message = 'La fiscalità stimata supera il margine: il diagramma si ferma prima della fiscalità. Il disavanzo stimato è indicato nel riepilogo.';
+  else if (available !== undefined && d(available).lt(0)) flow.message = 'Il residuo da accantonare supera il margine: il diagramma si ferma prima dell’accantonamento. Il disavanzo annuale è indicato nel riepilogo.';
   return flow;
 }

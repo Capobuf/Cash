@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aggregateCollectionsByClient } from '../../src/domain/financial-analysis';
-import { buildFinancialOverviewFlow, calculateFinancialOverview } from '../../src/domain/financial-overview';
+import { buildFinancialOverviewFlow, calculateFinancialOverview, calculateFiscalReserve } from '../../src/domain/financial-overview';
 import { d, money, sumMoney } from '../../src/domain/decimal';
 import { createEmptyDocument, createFiscalPreset2026, meta, type FicIssuedDocument } from '../../src/domain/model';
 
@@ -23,6 +23,52 @@ function fixture(collected = '40000.00', spent = '10000.00') {
 const overview = (doc = fixture(), year = 2026) => calculateFinancialOverview(doc, year, '2026-10-01');
 
 describe('panoramica finanziaria unificata', () => {
+  it.each([
+    ['0.00', '10000.00'], ['4000.00', '6000.00'], ['10000.00', '0.00'], ['12000.00', '0.00'],
+  ])('stima 10000, copertura %s: residuo %s', (covered, remaining) => {
+    expect(calculateFiscalReserve('10000.00', { year: 2026, covered, additions: [] }))
+      .toEqual({ automaticEstimate: '10000.00', additions: '0.00', total: '10000.00', covered, remaining });
+  });
+
+  it('nessuna copertura e integrazioni multiple, senza crediti impliciti', () => {
+    expect(calculateFiscalReserve('10000.00')).toMatchObject({ covered: '0.00', additions: '0.00', remaining: '10000.00' });
+    expect(calculateFiscalReserve('10000.00', { year: 2026, covered: '4000.00', additions: [
+      { description: 'Acconto futuro', amount: '2500.00' }, { description: 'Bollo previsto', amount: '180.00' },
+    ] })).toMatchObject({ total: '12680.00', additions: '2680.00', remaining: '8680.00' });
+    expect(calculateFiscalReserve('5000.00', { year: 2026, covered: '7000.00', additions: [] }).remaining).toBe('0.00');
+    expect(calculateFiscalReserve(undefined, { year: 2026, covered: '4000.00', additions: [{ description: 'Bollo', amount: '180.00' }] }))
+      .toMatchObject({ additions: '180.00', total: undefined, remaining: undefined });
+  });
+
+  it('un versamento fiscale resta nei flussi ma non viene sottratto di nuovo dal saldo né coperto automaticamente', () => {
+    const doc = fixture('40000.00', '6000.00');
+    const category = { ...meta(), name: 'Versamenti fiscali' };
+    doc.bankExpenseCategories = [category];
+    doc.bankExpenseRules = [{ ...meta(), matchText: 'F24', categoryId: category.id }];
+    doc.bankExpenses[0]!.description = 'Versamento F24';
+    // 40000 on the bank account minus the already paid 6000 = 34000.
+    doc.financialProvisions = [{ year: 2026, covered: '0.00', additions: [], bankBalance: { amount: '34000.00', date: '2026-10-01' } }];
+    expect(overview(doc)).toMatchObject({ fiscalReserve: '9000.00', effectiveAvailability: '25000.00' });
+    doc.financialProvisions[0]!.covered = '4000.00';
+    const result = overview(doc);
+    expect(result).toMatchObject({ bankExpenses: '6000.00', cashMarginBeforeTax: '34000.00', fiscalReserve: '5000.00',
+      fiscalSituation: { automaticEstimate: '9000.00', covered: '4000.00' }, effectiveAvailability: '29000.00', availableAfterTaxAndExpenses: '29000.00' });
+    expect(result.monthly[1]!.bankExpenses).toBe('6000.00');
+    expect(result.bankSummary.categories[0]!.amount).toBe('6000.00');
+    expect(buildFinancialOverviewFlow(result).nodes.find(node => node.key === 'fiscal')?.amount).toBe('5000.00');
+    doc.bankExpenses = [];
+    expect(overview(doc).effectiveAvailability).toBe('29000.00');
+    expect(overview(doc).fiscalSituation.covered).toBe('4000.00');
+  });
+
+  it('separa saldo e margine, preserva saldo negativo e non riporta la copertura tra anni', () => {
+    const doc = fixture();
+    expect(overview(doc).effectiveAvailability).toBeUndefined();
+    doc.financialProvisions = [{ year: 2026, covered: '9000.00', additions: [], bankBalance: { amount: '-100.00', date: '2026-10-01' } }];
+    expect(overview(doc)).toMatchObject({ effectiveAvailability: '-100.00', fiscalReserve: '0.00', availableAfterTaxAndExpenses: '30000.00' });
+    expect(overview(doc, 2027)).toMatchObject({ effectiveAvailability: undefined, fiscalSituation: { covered: '0.00', additions: '0.00' } });
+  });
+
   it('calcola margine e disponibile con la sola stima fiscale esistente', () => {
     const result = overview();
     expect(result).toMatchObject({ collectedRevenue: '40000.00', bankExpenses: '10000.00', cashMarginBeforeTax: '30000.00',

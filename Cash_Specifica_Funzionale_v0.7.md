@@ -1670,6 +1670,39 @@ Per issued_documents.quotes:a viene mostrato il permesso azienda rilevato; l’a
 
 Contratti ufficiali: [PendingReceivedDocument](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/PendingReceivedDocument.md), [ReceivedDocumentsApi](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/ReceivedDocumentsApi.md), [Permissions](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/Permissions.md) e [PermissionsFicIssuedDocumentsDetailed](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/PermissionsFicIssuedDocumentsDetailed.md).
 
+### 31.9 Previsione fiscale e disponibilità (aggiornamento 1 ottobre 2026)
+
+Questa sezione prevale sulle precedenti indicazioni in conflitto relative a disponibilità e versamenti fiscali.
+Il motore fiscale esistente rimane una stima finanziaria sull’incassato, potenzialmente incompleta,
+senza pretendere di rappresentare la posizione fiscale definitiva.
+
+Per la previsione dell’anno selezionato l’utente può indicare **Già coperto** e gestire integrazioni
+manuali con soli descrizione e importo, modificabili ed eliminabili. Non sono movimenti bancari.
+
+> Previsione totale = Stima automatica + Somma integrazioni
+>
+> Da accantonare = max(0, Previsione totale − Già coperto)
+>
+> Disponibilità effettiva = Saldo bancario di riferimento − Da accantonare
+
+Il saldo non è ricostruibile dall’importazione delle sole uscite: viene inserito manualmente con la
+data di riferimento, mostrata accanto al KPI. È responsabilità dell’utente aggiornarlo; l’import non
+lo modifica. Senza saldo o senza stima automatica la disponibilità resta non disponibile.
+Il margine annuale (incassi FIC − uscite bancarie − residuo da accantonare) rimane separato dal saldo.
+Costi FIC e costi pianificati non vengono sommati alle uscite; la preventivazione resta invariata.
+
+I versamenti fiscali sono uscite reali già comprese nel saldo: restano in storico, grafici e analisi
+per le categorie liberamente assegnate dall’utente. Non aumentano automaticamente Già coperto.
+Cash non determina composizione, periodo, saldo/acconto o pertinenza di F24 e non li acquisisce da FIC.
+Il bollo previsto si inserisce come normale integrazione, senza utilizzare `stamp_duty` o soglie
+d’importo delle fatture. Copertura eccedente non genera crediti, compensazioni o riporti.
+
+Lo schema 7 aggiunge la raccolta `financialProvisions`, inizialmente vuota, con anno della previsione,
+copertura e integrazioni; il saldo datato è facoltativo. Le integrazioni non hanno un proprio anno
+fiscale né categorie. Nessuna copia automatica dei valori tra anni, sincronizzazione FIC o
+riclassificazione retroattiva. La migrazione v6→v7 conserva tutti i dati preesistenti con backup,
+riutilizzando la procedura esplicita dell’archivio. La UI usa i componenti shadcn già presenti.
+
 ## Appendice A - Esempio di preventivo
 
 Esempio: installazione e configurazione di un server, con altre attività nello stesso preventivo.

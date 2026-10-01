@@ -1,6 +1,6 @@
 import { calculateFiscalProjection, type FiscalProjection } from './calculations';
 import { d, money, percentOut, sumMoney } from './decimal';
-import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, FicIssuedDocument, FicReceivedDocument } from './model';
+import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, FicIssuedDocument, FicReceivedDocument, FinancialProvision } from './model';
 
 type FinancialDocument = FicIssuedDocument | FicReceivedDocument;
 const inYear = (date: string | undefined, year: number) => date?.slice(0, 4) === String(year);
@@ -10,8 +10,9 @@ const paidInYear = (documents: FinancialDocument[], year: number) => documents.f
 export const annualPlannedBusinessCosts = (costs: BusinessCost[]) =>
   money(costs.reduce((sum, cost) => sum.plus(d(cost.monthlyAmount).mul(12)), d(0)));
 
-export function financialYears(snapshot: FicFinancialSnapshot | undefined, profiles: EconomicProfile[], bankExpenses: BankExpense[] = []): number[] {
+export function financialYears(snapshot: FicFinancialSnapshot | undefined, profiles: EconomicProfile[], bankExpenses: BankExpense[] = [], provisions: FinancialProvision[] = []): number[] {
   const years = new Set(profiles.map(profile => profile.year));
+  for (const provision of provisions) years.add(provision.year);
   for (const expense of bankExpenses) years.add(Number(expense.date.slice(0, 4)));
   for (const document of [...(snapshot?.issuedDocuments ?? []), ...(snapshot?.receivedDocuments ?? [])]) {
     years.add(Number(document.date.slice(0, 4)));

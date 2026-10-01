@@ -17,7 +17,7 @@ const dirs: string[] = [];
 async function directory() { const dir = await mkdtemp(join(tmpdir(), 'cash-bank-')); dirs.push(dir); return dir; }
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 
-describe('XLSX bancario nativo e archivio v6', () => {
+describe('XLSX bancario nativo e archivio v7', () => {
   it('legge un vero XLSX con preambolo, date Excel/testo, descrizioni complete/fallback, stati diversi e primo foglio', async () => {
     const { book, sheet } = workbook();
     sheet.addRow(['01/01/2027', '31/12/2026', '', '-1.234,50', 'Breve', '  Testo  completo\n banca  ', 'Autorizzato']);
@@ -77,7 +77,7 @@ describe('XLSX bancario nativo e archivio v6', () => {
     const legacy: Record<string, unknown> = { ...document, schemaVersion: 5 }; delete legacy.bankExpenses; delete legacy.bankExpenseCategories; delete legacy.bankExpenseRules;
     const path = join(await directory(), 'cash.json'); const bytes = JSON.stringify(legacy, null, 2); await writeFile(path, bytes);
     expect(await openArchive(path)).toMatchObject({ ok: false, error: { code: 'MIGRATION_REQUIRED' } });
-    expect(await previewMigration(path)).toMatchObject({ ok: true, value: { fromVersion: 5, toVersion: 6, blockers: [] } });
+    expect(await previewMigration(path)).toMatchObject({ ok: true, value: { fromVersion: 5, toVersion: 7, blockers: [] } });
     const migrated = await migrateArchive(path); if (!migrated.ok) throw new Error(migrated.error.message);
     expect(migrated.value.document).toEqual(document); expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
     const updated = structuredClone(migrated.value.document!); const category = { ...meta(), name: 'Software' };
@@ -90,12 +90,12 @@ describe('XLSX bancario nativo e archivio v6', () => {
 
   it('gli archivi con schema futuro restano in sola lettura', async () => {
     const path = join(await directory(), 'future.json');
-    await writeFile(path, JSON.stringify({ ...createEmptyDocument(), schemaVersion: 7 }));
+    await writeFile(path, JSON.stringify({ ...createEmptyDocument(), schemaVersion: 99 }));
     expect(await openArchive(path)).toMatchObject({ ok: true, value: { readOnly: true, headerOnly: true } });
     expect((await createArchive(join(await directory(), 'empty.json'), createEmptyDocument())).ok).toBe(true);
   });
 
-  it('apre v6 con raccolte bancarie assenti senza riscriverlo e le salva con backup dei byte originali', async () => {
+  it('apre lo schema corrente con raccolte bancarie assenti senza riscriverlo e le salva con backup dei byte originali', async () => {
     const document = createEmptyDocument();
     document.bankExpenseCategories.push({ ...meta(), name: 'Esistente' });
     const legacy: Record<string, unknown> = { ...document };
@@ -111,7 +111,7 @@ describe('XLSX bancario nativo e archivio v6', () => {
     expect(await openArchive(path)).toMatchObject({ ok: true, value: { document: { bankExpenses: [], bankExpenseRules: [], bankExpenseCategories: document.bankExpenseCategories } } });
   });
 
-  it('conserva categorie singole v6 come manuali e persiste solo il modello canonico', async () => {
+  it('conserva categorie singole legacy come manuali e persiste solo il modello canonico', async () => {
     const document = createEmptyDocument();
     const category = { ...meta(), name: 'Software' };
     document.bankExpenseCategories.push(category);

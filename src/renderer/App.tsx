@@ -28,7 +28,7 @@ export function App() {
   const [view, setView] = useState<View>("dashboard")
   const [financialSelection, setFinancialSelection] = useState<{ documentId: string; year: number }>()
   const financialDoc = appState.document
-  const years = useMemo(() => financialDoc ? financialYears(financialDoc.financialSnapshot, financialDoc.profiles, financialDoc.bankExpenses) : [],
+  const years = useMemo(() => financialDoc ? financialYears(financialDoc.financialSnapshot, financialDoc.profiles, financialDoc.bankExpenses, financialDoc.financialProvisions) : [],
     [financialDoc])
   const currentYear = new Date().getFullYear()
   const selectedYear = financialSelection?.documentId === financialDoc?.documentId ? financialSelection?.year : undefined

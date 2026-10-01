@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -324,6 +324,13 @@ export type BankExpenseRow = Pick<BankExpense, 'date' | 'description' | 'amount'
 export interface BankExpenseImport { rows: BankExpenseRow[]; ignoredIncome: number }
 export interface BankExpenseImportSummary { imported: number; duplicates: number; ignoredIncome: number }
 
+export interface FinancialProvision {
+  year: number;
+  covered: DecimalString;
+  additions: { description: string; amount: DecimalString }[];
+  bankBalance?: { amount: DecimalString; date: string };
+}
+
 export interface CashDocument {
   schemaVersion: number;
   documentId: string;
@@ -338,6 +345,7 @@ export interface CashDocument {
   catalog: Catalog;
   quotes: Quote[];
   financialSnapshot?: FicFinancialSnapshot;
+  financialProvisions: FinancialProvision[];
   bankExpenseCategories: BankExpenseCategory[];
   bankExpenses: BankExpense[];
   bankExpenseRules: BankExpenseRule[];
@@ -363,6 +371,7 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   sites: [],
   catalog: { subItems: [], templates: [] },
   quotes: [],
+  financialProvisions: [],
   bankExpenseCategories: [],
   bankExpenses: [],
   bankExpenseRules: [],

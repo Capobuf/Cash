@@ -5,6 +5,7 @@ import { bankExpenseIdentity, normalizeBankDescription, normalizeBankRuleText } 
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
+  financialProvisions: 'Previsioni fiscali', covered: 'già coperto', additions: 'integrazioni',
   bankExpenses: 'Movimenti bancari', bankExpenseCategories: 'Categorie spese', bankExpenseRules: 'Regole automatiche', categoryIds: 'categorie manuali', matchText: 'testo da riconoscere', categoryId: 'categoria', parentId: 'categoria principale',
   vehicles: 'Veicoli', businessCosts: 'Costi aziendali', sites: 'Sedi', profiles: 'Profili', quotes: 'Preventivi',
   catalog: 'Catalogo', settings: 'Impostazioni', name: 'nome', displayName: 'denominazione', category: 'categoria',
@@ -159,7 +160,15 @@ const bankExpenseSchema = z.preprocess(input => {
   return { ...row, categoryIds };
 }, bankExpenseRowSchema.extend({ ...entity, categoryIds: z.array(uuid) }));
 
+export const financialProvisionSchema = z.object({
+  year: z.number().int().min(1900).max(9999),
+  covered: moneyInput.default('0.00'),
+  additions: z.array(z.object({ description: z.string().trim().min(1), amount: moneyInput })).default([]),
+  bankBalance: z.object({ amount: boundedDecimal(2), date: z.string().date() }).optional(),
+});
+
 export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
+  financialProvisions: z.array(financialProvisionSchema).default([]),
   bankExpenses: z.array(bankExpenseSchema).default([]),
   bankExpenseCategories: z.array(z.object({ ...entity, name: z.string().trim().min(1), parentId: uuid.optional() })).default([]),
   bankExpenseRules: z.array(bankExpenseRuleSchema).default([]),
@@ -172,6 +181,11 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
   catalog: z.object({ subItems: z.array(reusableSubItemSchema), templates: z.array(templateSchema) }),
   quotes: z.array(z.object({ ...entity, date: z.string().date(), profileId: uuid.optional(), profileSnapshot: profileSnapshotSchema.optional(), client: clientSnapshotSchema.optional(), mainSite: siteSnapshotSchema.optional(), items: z.array(quoteItemSchema), commission: moneyInput.optional(), snapshotRevision: z.number().int().nonnegative(), snapshotUpdatedAt: iso.optional(), exportAttempts: z.array(exportAttemptSchema) })),
 }).superRefine((document, ctx) => {
+  const provisionYears = new Set<number>();
+  document.financialProvisions.forEach((provision, index) => {
+    if (provisionYears.has(provision.year)) ctx.addIssue({ code: 'custom', path: ['financialProvisions', index, 'year'], message: 'esiste già una previsione per questo anno' });
+    provisionYears.add(provision.year);
+  });
   const categories = new Map(document.bankExpenseCategories.map(category => [category.id, category]));
   const names = new Set<string>();
   const ids = new Set<string>();

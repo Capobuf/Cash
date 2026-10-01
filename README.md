@@ -39,10 +39,14 @@ Ogni salvataggio valido incrementa la revisione, conserva la versione precedente
 revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
-Gli archivi schema 1–5 richiedono anteprima e conferma prima della migrazione allo schema 6.
+Gli archivi schema 1–6 richiedono anteprima e conferma prima della migrazione allo schema 7.
 Il passaggio v5→v6 aggiunge `bankExpenseCategories`, `bankExpenses` e `bankExpenseRules` vuoti e conserva tutti i dati,
-incluso lo snapshot Fatture in Cloud. Le migrazioni storiche proseguono fino a v6.
-Gli archivi già v6 con raccolte bancarie assenti vengono letti con liste vuote; le vecchie
+incluso lo snapshot Fatture in Cloud. Le migrazioni storiche proseguono fino a v7.
+Il passaggio v6→v7 conserva movimenti, categorie, regole e snapshot e aggiunge `financialProvisions: []`:
+copertura iniziale zero, nessuna integrazione e nessun saldo presunto. Ogni previsione riguarda l’anno
+selezionato e contiene `covered`, `additions` (solo descrizione/importo) e l’eventuale `bankBalance`
+(importo/data inseriti manualmente). Non si copia la copertura all’anno successivo.
+Le raccolte bancarie assenti vengono lette con liste vuote; le vecchie
 assegnazioni `categoryId` diventano categorie manuali in `categoryIds`. L’apertura non riscrive
 il file: il successivo salvataggio conserva il formato precedente nel consueto backup.
 Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando i dati nuovi. La migrazione
@@ -146,7 +150,27 @@ con il profilo confermato dello stesso anno. Sono disponibili tabella mensile e 
 
 Lo snapshot rimane consultabile offline, con integrazione disattivata o rimossa e su postazioni senza token.
 La data dell’ultimo aggiornamento è sempre mostrata. Un cambio azienda viene segnalato e una sincronizzazione
-riuscita sostituisce interamente i dati, senza mescolarli. Cash non calcola saldi bancari e non gestisce contabilità.
+riuscita sostituisce interamente i dati, senza mescolarli. Cash non ricostruisce saldi bancari dai movimenti e non gestisce contabilità.
+
+La **Situazione fiscale** distingue Stima automatica, Integrazioni, Previsione totale, Già coperto e
+Da accantonare. **Modifica situazione** permette di gestire copertura e integrazioni (aggiunta,
+modifica, rimozione) con un unico salvataggio. Il motore forfettario rimane una stima finanziaria
+incompleta, non una posizione fiscale definitiva. Il bollo previsto è una normale integrazione:
+nessun uso di `stamp_duty`, soglie d’importo delle fatture o lettura F24 da FIC.
+
+`Da accantonare = max(0, stima automatica + integrazioni − già coperto)`.
+La copertura è sempre decisa dall’utente: le uscite fiscali non la aggiornano automaticamente,
+anche se categorizzate tramite le regole esistenti. Restano comprese in storico, flussi mensili,
+totali bancari e analisi per categoria. Nessuna modifica o riclassificazione dei vecchi movimenti.
+Una copertura superiore alla previsione azzera il residuo senza creare crediti o riporti.
+
+`Disponibilità effettiva = saldo bancario di riferimento − da accantonare`.
+Poiché l’import bancario acquisisce solo uscite, il saldo reale viene inserito manualmente con
+la sua data nella situazione dell’anno selezionato. Include già i pagamenti effettuati: non si
+sottraggono nuovamente le uscite importate. L’import non aggiorna il saldo; l’utente deve mantenerlo
+aggiornato. Senza saldo o stima fiscale il KPI resta non disponibile, senza fallback.
+Il **Margine dei flussi annuali** resta separato: incassato FIC − uscite bancarie − da accantonare.
+Costi pianificati, costi FIC e preventivazione mantengono le loro logiche precedenti.
 
 ## OpenRouteService
 

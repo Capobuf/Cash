@@ -156,7 +156,7 @@ describe('pending nella sincronizzazione finanziaria', () => {
     const document = { ...createEmptyDocument(), financialSnapshot: { source: 'fatture_in_cloud', company: { id: '1', name: 'Studio' },
       acquiredAt: '2026-09-30T10:00:00Z', issuedDocuments: [], receivedDocuments: [] } };
     expect(parseDocument(document)).toEqual(document);
-    expect(parseDocument(document).schemaVersion).toBe(6);
+    expect(parseDocument(document).schemaVersion).toBe(7);
   });
 });
 

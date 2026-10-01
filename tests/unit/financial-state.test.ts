@@ -20,6 +20,22 @@ describe('applicazione atomica dello snapshot', () => {
     return { state, sync, save };
   }
 
+  it('autosalva la previsione, la conserva al sync e rispetta validazione, sola lettura e conflitto', async () => {
+    const { state, save } = setup();
+    const provisions = [{ year: 2026, covered: '4000.00', additions: [{ description: 'Bollo', amount: '180.00' }] }];
+    expect(state.mutate(document => { document.financialProvisions = provisions; })).toBe(true);
+    await vi.runAllTimersAsync(); expect(save).toHaveBeenCalledTimes(1);
+    await state.syncFinancialData(); await vi.runAllTimersAsync();
+    expect(state.document?.financialProvisions).toEqual(provisions);
+    const before = structuredClone(state.document);
+    expect(state.mutate(document => { document.financialProvisions[0]!.covered = '-1.00'; })).toBe(false);
+    state.session!.readOnly = true;
+    expect(state.mutate(document => { document.financialProvisions = []; })).toBe(false);
+    state.session!.readOnly = false; state.status = 'Conflitto esterno';
+    expect(state.mutate(document => { document.financialProvisions = []; })).toBe(false);
+    expect(state.document).toEqual(before);
+  });
+
   it('applica una sola mutazione e autosalva solo dopo successo completo', async () => {
     const { state, sync, save } = setup(); const mutate = vi.spyOn(state, 'mutate');
     await state.syncFinancialData();

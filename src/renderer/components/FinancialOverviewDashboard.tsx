@@ -4,11 +4,12 @@ import { buildFinancialOverviewFlow, type FinancialOverview } from '../../domain
 import { d } from '../../domain/decimal';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
-import { eur, formatNumber } from '@/lib/format';
+import { dateIt, eur, formatNumber } from '@/lib/format';
 
 const amount = (value?: string) => value === undefined ? 'Non disponibile' : eur(value);
 const percentage = (value: string) => `${formatNumber(value, 2)}%`;
@@ -40,18 +41,18 @@ function AmountRow({ label, value, strong = false }: { label: string; value?: st
 
 function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
   const a = o.analysis;
-  const deficit = o.availableAfterTaxAndExpenses !== undefined && d(o.availableAfterTaxAndExpenses).lt(0);
+  const deficit = o.effectiveAvailability !== undefined && d(o.effectiveAvailability).lt(0);
   return <section aria-label="Indicatori principali" className="space-y-4">
     <Card className={deficit ? 'border-destructive bg-destructive/5 ring-destructive/30' : 'bg-primary/5 ring-primary/40'}>
-      <CardHeader><CardDescription className="font-medium text-foreground">{deficit ? 'Disavanzo stimato' : 'Disponibile stimato'}</CardDescription>
-        <CardTitle className={`text-3xl tabular-nums sm:text-4xl ${deficit ? 'text-destructive' : ''}`}>{amount(o.availableAfterTaxAndExpenses)}</CardTitle>
-        <CardDescription>Incassato − Spese bancarie − Fiscalità e contributi stimati</CardDescription>
+      <CardHeader><CardDescription className="font-medium text-foreground">{deficit ? 'Disavanzo dopo accantonamento' : 'Disponibilità effettiva'}</CardDescription>
+        <CardTitle className={`text-3xl tabular-nums sm:text-4xl ${deficit ? 'text-destructive' : ''}`}>{amount(o.effectiveAvailability)}</CardTitle>
+        <CardDescription>Saldo bancario di riferimento − Residuo fiscale da accantonare</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        {o.availableAfterTaxAndExpenses === undefined ? <p>Disponibile dopo fiscalità: Non disponibile. {o.fiscalUnavailableReason}</p>
-          : deficit ? <p>Spese bancarie e accantonamento stimato superano l’incassato dell’anno.</p>
-            : o.availableShareOfCollections !== undefined && d(o.availableAfterTaxAndExpenses).gt(0) ? <p className="font-medium">Resta il {percentage(o.availableShareOfCollections)} dell’incassato.</p> : null}
-        <p className="text-xs text-muted-foreground">Indicazione prudenziale sui dati disponibili, non un saldo bancario. La fiscalità è una stima e non viene riconciliata con eventuali imposte o contributi già presenti tra le uscite bancarie: il disponibile può quindi sottostimare ciò che resta.</p>
+        {o.bankBalance ? <p>Saldo inserito manualmente al {dateIt(o.bankBalance.date)}: {eur(o.bankBalance.amount)}. Aggiornalo quando cambia.</p> : <p>Inserisci il saldo reale e la sua data in “Modifica situazione”.</p>}
+        {o.fiscalReserve === undefined ? <p>{o.fiscalUnavailableReason}</p> : null}
+        {deficit ? <p>Il saldo non copre il residuo da accantonare.</p> : null}
+        <p className="text-xs text-muted-foreground">Indicazione prudenziale sul saldo indicato e sulla previsione {o.year}. I versamenti già effettuati sono inclusi nel saldo; “Già coperto” è sotto il tuo controllo.</p>
       </CardContent>
     </Card>
     <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -77,8 +78,8 @@ function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
         <p>Incassato − Spese bancarie</p>
         {o.cashMarginBeforeTax !== undefined && d(o.cashMarginBeforeTax).lt(0) ? <Badge variant="destructive">Uscite superiori agli incassi</Badge> : null}
       </Kpi>
-      <Kpi title="Fiscalità e contributi stimati" value={o.fiscalReserve}>
-        {o.fiscalReserve !== undefined ? <><p>Contributi: {eur(o.fiscalContributions)}</p><p>Imposta sostitutiva: {eur(o.fiscalSubstituteTax)}</p></> : <p>{o.fiscalUnavailableReason}</p>}
+      <Kpi title="Da accantonare" value={o.fiscalReserve}>
+        {o.fiscalReserve !== undefined ? <><p>Previsione totale: {eur(o.fiscalSituation.total)}</p><p>Già coperto: {eur(o.fiscalSituation.covered)}</p></> : <p>{o.fiscalUnavailableReason}</p>}
       </Kpi>
     </div>
     {a?.fiscalWarnings.map(warning => <Alert key={warning}><AlertTitle>Stima fiscale</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
@@ -86,18 +87,37 @@ function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
 }
 
 function CashFormation({ overview: o }: { overview: FinancialOverview }) {
-  return <Card><CardHeader><CardTitle>Come si forma il disponibile</CardTitle>
-    <CardDescription>Solo le uscite bancarie riducono il margine. La stima forfettaria usa l’incassato e il profilo fiscale {o.year}.</CardDescription>
+  return <Card><CardHeader><CardTitle>Margine dei flussi annuali · {o.year}</CardTitle>
+    <CardDescription>Incassi FIC meno uscite bancarie dell’anno e residuo da accantonare. Questo margine non è il saldo del conto.</CardDescription>
   </CardHeader><CardContent><dl className="max-w-3xl space-y-3 text-sm">
     <AmountRow label="Incassato" value={o.collectedRevenue} />
     <AmountRow label="− Spese bancarie" value={o.bankExpenses} />
     <Separator />
     <AmountRow label="Margine prima della fiscalità" value={o.cashMarginBeforeTax} strong />
-    <AmountRow label="− Contributi stimati" value={o.fiscalContributions} />
-    <AmountRow label="− Imposta sostitutiva stimata" value={o.fiscalSubstituteTax} />
+    <AmountRow label="− Da accantonare" value={o.fiscalReserve} />
     <Separator />
-    <AmountRow label="Disponibile stimato" value={o.availableAfterTaxAndExpenses} strong />
+    <AmountRow label="Margine dopo accantonamento" value={o.availableAfterTaxAndExpenses} strong />
   </dl></CardContent></Card>;
+}
+
+function FiscalSituation({ overview: o, onEdit, readOnly }: { overview: FinancialOverview; onEdit(): void; readOnly: boolean }) {
+  return <Card><CardHeader><CardTitle>Situazione fiscale · {o.year}</CardTitle>
+    <CardDescription>Stima finanziaria prudenziale, non una posizione fiscale definitiva. Può non comprendere elementi di anni precedenti.</CardDescription>
+    <Button variant="outline" className="w-fit" disabled={readOnly} onClick={onEdit}>Modifica situazione</Button>
+  </CardHeader><CardContent className="space-y-4"><dl className="max-w-3xl space-y-3 text-sm">
+    <AmountRow label="Stima automatica" value={o.fiscalSituation.automaticEstimate} />
+    <AmountRow label="+ Integrazioni" value={o.fiscalSituation.additions} />
+    <AmountRow label="Previsione fiscale totale" value={o.fiscalSituation.total} strong />
+    <Separator />
+    <AmountRow label="− Già coperto" value={o.fiscalSituation.covered} />
+    <AmountRow label="Da accantonare" value={o.fiscalReserve} strong />
+    <Separator />
+    <AmountRow label="Saldo bancario di riferimento" value={o.bankBalance?.amount} />
+    <AmountRow label="Disponibilità effettiva (saldo − da accantonare)" value={o.effectiveAvailability} strong />
+  </dl>
+    <p className="text-xs text-muted-foreground">La stima automatica comprende contributi ({amount(o.fiscalContributions)}) e imposta sostitutiva ({amount(o.fiscalSubstituteTax)}). I pagamenti fiscali restano nelle uscite bancarie e nelle categorie assegnate; non determinano automaticamente la copertura.</p>
+    {d(o.fiscalSituation.covered).gt(o.fiscalSituation.total ?? Infinity) ? <p className="text-sm text-muted-foreground">La copertura supera la previsione: da accantonare è zero. Non viene calcolato alcun credito o riporto.</p> : null}
+  </CardContent></Card>;
 }
 
 function FlowNode({ x, y, width, height, payload }: SankeyNodeProps) {
@@ -113,7 +133,7 @@ function FlowNode({ x, y, width, height, payload }: SankeyNodeProps) {
 function AnnualFlow({ overview }: { overview: FinancialOverview }) {
   const flow = useMemo(() => buildFinancialOverviewFlow(overview), [overview]);
   return <Card className="min-w-0"><CardHeader><CardTitle>Flusso finanziario · {overview.year}</CardTitle>
-    <CardDescription>Top 5 clienti e altri clienti → Incassato → Spese e margine → Accantonamento e disponibile. I rami a zero sono omessi.</CardDescription>
+    <CardDescription>Top 5 clienti e altri clienti → Incassato → Spese e margine → Residuo da accantonare e margine annuale. Il saldo manuale non entra nei flussi. I rami a zero sono omessi.</CardDescription>
   </CardHeader><CardContent className="space-y-4">
     {flow.links.length ? <div className="overflow-x-auto"><ChartContainer config={{}} className="h-100 min-w-216 w-full aspect-auto" role="img" aria-label="Ripartizione degli incassi annuali; importi riportati nei KPI e nel riepilogo del disponibile">
       <Sankey data={flow} node={FlowNode} nodeWidth={12} nodePadding={52} sort={false} align="left" margin={{ top: 24, bottom: 24, left: 8, right: 8 }} link={{ stroke: 'var(--chart-1)', strokeOpacity: 0.18 }}>
@@ -177,7 +197,7 @@ function SourceComparison({ overview: o }: { overview: FinancialOverview }) {
   </dl></CardContent></Card>;
 }
 
-export function FinancialOverviewDashboard({ overview }: { overview: FinancialOverview }) {
+export function FinancialOverviewDashboard({ overview, onEdit, readOnly }: { overview: FinancialOverview; onEdit(): void; readOnly: boolean }) {
   const categories = [
     ...overview.bankSummary.categories.map(category => ({ key: category.id, name: category.name, amount: category.amount })),
     { key: 'uncategorized', name: 'Senza categoria', amount: overview.bankSummary.uncategorized.amount },
@@ -185,6 +205,7 @@ export function FinancialOverviewDashboard({ overview }: { overview: FinancialOv
   return <div className="min-w-0 space-y-6">
     <h2 className="text-lg font-semibold">Panoramica finanziaria · {overview.year}</h2>
     <OverviewKpis overview={overview} />
+    <FiscalSituation overview={overview} onEdit={onEdit} readOnly={readOnly} />
     <CashFormation overview={overview} />
     <section aria-label="Flussi" className="min-w-0 space-y-4"><h2 className="text-lg font-semibold">Flussi</h2>
       <AnnualFlow overview={overview} /><MonthlyFlow overview={overview} />
