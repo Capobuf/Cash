@@ -51,21 +51,44 @@ function groupDocuments<T extends FinancialDocument>(documents: T[], keyOf: (doc
 
 const entityKey = (document: FinancialDocument) => document.entityId
   ? `entity:${document.entityId}` : `document:${document.type}:${document.id}`;
-function identity(documents: FinancialDocument[]) {
+const cleanEntityName = (name: string | undefined) => name?.normalize('NFC').trim().replace(/\s+/g, ' ') ?? '';
+const clientNameKey = (document: FicIssuedDocument) => cleanEntityName(document.entityName).toLocaleLowerCase('it-IT');
+
+function groupClientDocuments(invoices: FicIssuedDocument[]) {
+  const idsByName = new Map<string, Set<string>>();
+  for (const invoice of invoices) {
+    const name = clientNameKey(invoice);
+    if (!name || !invoice.entityId) continue;
+    const ids = idsByName.get(name) ?? new Set<string>();
+    ids.add(invoice.entityId);
+    idsByName.set(name, ids);
+  }
+  const keyOf = (invoice: FicIssuedDocument) => {
+    if (invoice.entityId) return entityKey(invoice);
+    const name = clientNameKey(invoice);
+    if (!name) return entityKey(invoice);
+    const ids = idsByName.get(name);
+    // Attach a document without an ID only when its name identifies one FIC client.
+    return ids?.size === 1 ? `entity:${[...ids][0]}` : `name:${name}`;
+  };
+  return groupDocuments(invoices, keyOf).map(documents => ({ documents, key: keyOf(documents[0]!) }));
+}
+
+function identity(documents: FinancialDocument[], key = entityKey(documents[0]!)) {
   const first = documents[0]!;
-  return { key: entityKey(first), entityId: first.entityId,
-    name: documents.find(document => document.entityName?.trim())?.entityName ?? 'Controparte non disponibile',
-    ungroupedDocumentId: first.entityId ? undefined : first.id };
+  return { key, entityId: documents.find(document => document.entityId)?.entityId,
+    name: cleanEntityName(documents.find(document => document.entityName?.trim())?.entityName) || 'Controparte non disponibile',
+    ungroupedDocumentId: key.startsWith('document:') ? first.id : undefined };
 }
 
 // Aggregates refer to documents issued in the selected year and their complete
 // payment schedules. Calendar-year cash flows remain separate in the KPI/months.
 export function aggregateClients(invoices: FicIssuedDocument[], today: string) {
   const total = sumMoney(invoices.map(document => document.amountGross));
-  return groupDocuments(invoices, entityKey).map(documents => {
+  return groupClientDocuments(invoices).map(({ documents, key }) => {
     const summaries = documents.map(document => financialPaymentSummary(document, today));
     const issuedRevenue = sumMoney(documents.map(document => document.amountGross));
-    return { ...identity(documents), invoiceCount: documents.length, issuedRevenue,
+    return { ...identity(documents, key), invoiceCount: documents.length, issuedRevenue,
       collectedRevenue: sumMoney(summaries.map(summary => summary.paid)),
       outstandingRevenue: sumMoney(summaries.map(summary => summary.outstanding)),
       overdueRevenue: sumMoney(summaries.map(summary => summary.overdue)),
@@ -74,14 +97,14 @@ export function aggregateClients(invoices: FicIssuedDocument[], today: string) {
 }
 
 export function analyzeClientPayments(invoices: FicIssuedDocument[], today: string) {
-  return groupDocuments(invoices, entityKey).map(documents => {
+  return groupClientDocuments(invoices).map(({ documents, key }) => {
     const payments = documents.flatMap(document => document.payments);
     const delays = payments.flatMap(payment => payment.status === 'paid' && payment.dueDate && payment.paidDate
       ? [Math.max(0, calendarDaysBetween(payment.dueDate, payment.paidDate))] : []);
     const openDueDates = payments.flatMap(payment => payment.status !== 'paid' && d(payment.amount).gt(0)
       && payment.dueDate && payment.dueDate < today ? [payment.dueDate] : []).sort();
     const summaries = documents.map(document => financialPaymentSummary(document, today));
-    return { ...identity(documents), analyzedPaymentCount: delays.length,
+    return { ...identity(documents, key), analyzedPaymentCount: delays.length,
       averageDelayDays: delays.length ? delays.reduce((sum, delay) => sum + delay, 0) / delays.length : undefined,
       maxDelayDays: delays.length ? Math.max(...delays) : undefined,
       onTimePercentage: delays.length ? percentOut(d(delays.filter(delay => delay === 0).length).div(delays.length).mul(100)) : undefined,

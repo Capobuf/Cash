@@ -251,15 +251,26 @@ const remoteFinancialDocument = z.object({
 });
 const financialPage = z.object({ data: z.array(remoteFinancialDocument), current_page: z.number().int().positive(), last_page: z.number().int().positive() });
 
+// Pending dates are optional metadata: accept date-only and timestamp forms,
+// validating the entire value before retaining its calendar day (no UTC shift).
+const remotePendingDate = z.preprocess(value => {
+  if (typeof value !== 'string') return value;
+  return value.trim().replace(/^(\d{4}-\d{2}-\d{2}) /, '$1T') || undefined;
+}, z.union([
+  z.string().date(),
+  z.string().datetime({ offset: true, local: true }).transform(value => value.slice(0, 10)),
+]).nullish());
+
 const remotePending = z.object({
   id: remoteId, type: z.enum(['agyo', 'mail', 'browser']).nullish(), document_type: z.string().nullish(),
-  date: z.string().date().nullish(), subject: z.string().nullish(), supplier_name: z.string().nullish(),
+  date: remotePendingDate, subject: z.string().nullish(), supplier_name: z.string().nullish(),
   amount_gross: remoteMoney.nullish(), category: z.string().nullish(),
 });
 const pendingPage = z.object({ data: z.array(remotePending), current_page: z.number().int().positive(), last_page: z.number().int().positive() });
 
 async function listPendingDocuments(companyId: string, token: string, source: 'agyo' | 'mail' | 'browser', fetcher: typeof fetch) {
   const documents: NonNullable<FicFinancialSnapshot['pendingReceivedDocuments']> = [];
+  const seen = new Set<string>();
   const fields = 'id,type,document_type,date,subject,supplier_name,amount_gross,category';
   let lastPage = 1;
   for (let page = 1; page <= lastPage; page++) {
@@ -275,8 +286,13 @@ async function listPendingDocuments(companyId: string, token: string, source: 'a
         throw new Error('Paginazione pending incoerente.');
       lastPage = result.last_page;
       for (const document of result.data) {
-        if (document.type != null && document.type !== source) throw new Error('Sorgente pending diversa da quella richiesta.');
-        documents.push({ id: document.id, source,
+        // A pending response can contain sources other than the requested one.
+        // Prefer the document's declared source; the query is only a fallback.
+        const documentSource = document.type ?? source;
+        const key = `${documentSource}:${document.id}`;
+        if (seen.has(key)) throw new Error('ID pending FIC duplicato nella stessa lettura.');
+        seen.add(key);
+        documents.push({ id: document.id, source: documentSource,
           ...(document.document_type != null ? { documentType: document.document_type } : {}),
           ...(document.date != null ? { date: document.date } : {}), ...(document.subject != null ? { subject: document.subject } : {}),
           ...(document.supplier_name != null ? { supplierName: document.supplier_name } : {}),
@@ -355,10 +371,21 @@ export async function syncFinancialData(companyId: string, token: string, fetche
       }
     }
     snapshot.pendingReceivedDocuments = [];
+    const pendingByKey = new Map<string, string>();
     for (const source of ['agyo', 'mail', 'browser'] as const) {
       const pending = await listPendingDocuments(companyId, token, source, fetcher);
       if (!pending.ok) return pending;
-      snapshot.pendingReceivedDocuments.push(...pending.value);
+      for (const document of pending.value) {
+        const key = `${document.source}:${document.id}`;
+        const normalized = JSON.stringify(document);
+        const previous = pendingByKey.get(key);
+        if (previous !== undefined) {
+          if (previous !== normalized) throw new Error('Dati pending FIC discordanti tra richieste. Ripetere l’aggiornamento.');
+          continue;
+        }
+        pendingByKey.set(key, normalized);
+        snapshot.pendingReceivedDocuments.push(document);
+      }
     }
     snapshot.acquiredAt = new Date().toISOString();
     return ok(financialSnapshotSchema.parse(snapshot));

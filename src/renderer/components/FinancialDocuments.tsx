@@ -36,13 +36,13 @@ export function FinancialDocuments({ snapshot, year, today }: { snapshot: FicFin
   const amounts = pending.flatMap(document => document.amountGross === undefined ? [] : [document.amountGross]);
   const detail = selected?.kind === 'registered' ? financialPaymentSummary(selected.document, today) : undefined;
   const fields: Array<[string, string | undefined]> = !selected ? [] : selected.kind === 'pending' ? [
-    ['Tipo', selected.document.documentType], ['FIC ID', selected.document.id], ['Sorgente pending', selected.document.source],
+    ['Tipo', selected.document.documentType], ['Sorgente pending', selected.document.source],
     ['Data', selected.document.date ? dateIt(selected.document.date) : undefined], ['Fornitore', selected.document.supplierName],
     ['Importo', selected.document.amountGross === undefined ? undefined : eur(selected.document.amountGross)],
     ['Oggetto', selected.document.subject], ['Categoria', selected.document.category], ['Stato', 'Da registrare in Fatture in Cloud'],
   ] : [
-    ['Tipo', typeLabels[selected.document.type]], ['FIC ID', selected.document.id], ['Data', dateIt(selected.document.date)],
-    ['Numero', numberOf(selected.document)], ['Cliente / fornitore', selected.document.entityName], ['ID controparte FIC', selected.document.entityId], ['Importo', eur(selected.document.amountGross)],
+    ['Tipo', typeLabels[selected.document.type]], ['Data', dateIt(selected.document.date)],
+    ['Numero', numberOf(selected.document)], ['Cliente / fornitore', selected.document.entityName], ['Importo', eur(selected.document.amountGross)],
     ['Descrizione', 'description' in selected.document ? selected.document.description : undefined],
     ['Categoria', 'category' in selected.document ? selected.document.category : undefined],
     ['Stato derivato', statusOf(selected.document, today)], ['Totale pagato', eur(detail?.paid)], ['Residuo', eur(detail?.outstanding)],
@@ -60,7 +60,7 @@ export function FinancialDocuments({ snapshot, year, today }: { snapshot: FicFin
             <TableCell className="max-w-60 whitespace-normal">{document.entityName ?? '—'}{group.id === 'credits' ? <p className="text-xs text-muted-foreground">{typeLabels[document.type]}</p> : null}</TableCell>
             <TableCell className="tabular-nums">{eur(document.amountGross)}</TableCell><TableCell className="tabular-nums">{eur(summary.paid)}</TableCell><TableCell className="tabular-nums">{eur(summary.outstanding)}</TableCell>
             <TableCell><Badge variant={summary.status === 'Scaduta' ? 'destructive' : 'secondary'}>{statusOf(document, today)}</Badge></TableCell>
-            <TableCell><Button variant="ghost" size="sm" aria-label={`Apri documento ${numberOf(document) ?? document.id}`} onClick={event => { event.stopPropagation(); setSelected({ kind: 'registered', document }); }}>Dettaglio</Button></TableCell>
+            <TableCell><Button variant="ghost" size="sm" aria-label={`Apri documento ${numberOf(document) ?? dateIt(document.date)}${document.entityName ? ` · ${document.entityName}` : ''}`} onClick={event => { event.stopPropagation(); setSelected({ kind: 'registered', document }); }}>Dettaglio</Button></TableCell>
           </TableRow>; })}
         </TableBody></Table> : <p className="py-6 text-sm text-muted-foreground">Nessun documento in questa sezione per l’anno selezionato.</p>}</TabsContent>)}
         <TabsContent value="pending"><div className="space-y-2 py-4"><h3 className="font-medium">Da registrare in Fatture in Cloud</h3>
@@ -71,7 +71,7 @@ export function FinancialDocuments({ snapshot, year, today }: { snapshot: FicFin
           {pending.map(document => <TableRow key={`${document.source}:${document.id}`} className="cursor-pointer" onClick={() => setSelected({ kind: 'pending', document })}>
             <TableCell>{document.date ? dateIt(document.date) : '—'}</TableCell><TableCell className="max-w-80 whitespace-normal">{document.supplierName ?? '—'}<p className="text-xs text-muted-foreground">{document.subject}</p></TableCell>
             <TableCell><Badge variant="outline">{document.source}</Badge></TableCell><TableCell>{document.amountGross === undefined ? '—' : eur(document.amountGross)}</TableCell>
-            <TableCell><Button variant="ghost" size="sm" aria-label={`Apri documento in ingresso ${document.id}`} onClick={event => { event.stopPropagation(); setSelected({ kind: 'pending', document }); }}>Dettaglio</Button></TableCell>
+            <TableCell><Button variant="ghost" size="sm" aria-label={`Apri documento in ingresso${document.supplierName ? ` · ${document.supplierName}` : ''}${document.subject ? ` · ${document.subject}` : ''}`} onClick={event => { event.stopPropagation(); setSelected({ kind: 'pending', document }); }}>Dettaglio</Button></TableCell>
           </TableRow>)}
         </TableBody></Table> : <p className="pb-4 text-sm text-muted-foreground">Nessun documento in ingresso nello snapshot.</p>}</TabsContent>
       </Tabs>

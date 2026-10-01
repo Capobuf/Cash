@@ -6,7 +6,7 @@ import type { AppState } from '../state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -36,7 +36,7 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
   return <div className="min-w-0 space-y-5">
     <Card><CardContent className="flex flex-wrap items-center justify-between gap-3">
       <div className="space-y-1"><Badge variant="secondary">{unavailable || appState.financialSyncError ? 'Snapshot offline' : 'Snapshot · aggiornamento live manuale'}</Badge>
-        <p className="font-medium">{snapshot ? `${snapshot.company.name} · ID ${snapshot.company.id}` : 'Nessuna azienda sincronizzata'}</p>
+        <p className="font-medium">{snapshot?.company.name ?? 'Nessuna azienda sincronizzata'}</p>
         <p className="text-sm text-muted-foreground">{snapshot ? `Ultimo aggiornamento: ${new Date(snapshot.acquiredAt).toLocaleString('it-IT')}` : 'Aggiornamento completo solo su richiesta.'}</p>
       </div>
       <div className="flex flex-wrap items-center gap-3"><label htmlFor="financial-year" className="text-sm">Anno</label>
@@ -48,7 +48,11 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
         </Button>
       </div>
     </CardContent></Card>
-    {analysis ? <FinancialKpis analysis={analysis} year={year!} /> : null}
+    {analysis ? <div className="space-y-3">
+      <FinancialKpis analysis={analysis} year={year!} />
+      <p className="text-xs text-muted-foreground">Stima forfettaria sull’incassato · profilo fiscale {year}. I costi documentati non riducono la base imponibile.</p>
+      {analysis.fiscalWarnings.map(warning => <Alert key={warning}><AlertTitle>Stima fiscale</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
+    </div> : null}
     {unavailable ? <Alert><AlertTitle>Aggiornamento live non disponibile</AlertTitle><AlertDescription>{unavailable}{snapshot ? ` Snapshot aggiornato al ${dateIt(snapshot.acquiredAt)}.` : ''}</AlertDescription></Alert> : null}
     {appState.financialSyncError ? <Alert><AlertTitle>Ultimo aggiornamento non riuscito</AlertTitle><AlertDescription>Stai consultando lo snapshot precedente. Puoi ripetere l’aggiornamento manuale.</AlertDescription></Alert> : null}
     {mismatch ? <Alert><AlertTitle>Azienda diversa dallo snapshot</AlertTitle><AlertDescription>Stai consultando {snapshot.company.name}. Il collegamento attuale è con {fic.company?.name}. Un aggiornamento riuscito sostituirà integralmente questi dati con quelli dell’azienda configurata.</AlertDescription></Alert> : null}
@@ -58,14 +62,6 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
       <p className="text-xs text-muted-foreground">Da incassare e scaduto riguardano le fatture emesse nell’anno. Le note di credito restano separate. I costi pianificati Cash sono il piano annuale corrente, non sommato ai costi FIC.</p>
       <FinancialCharts analysis={analysis} />
       <FinancialAggregates analysis={analysis} year={year!} />
-      <Card><CardHeader><CardTitle>Stima fiscale sull’incassato</CardTitle><CardDescription>Profilo fiscale {year}. Stima forfettaria: i costi documentati non riducono la base imponibile.</CardDescription></CardHeader><CardContent>
-        {analysis.fiscalProjection ? <dl className="grid grid-cols-2 gap-5 xl:grid-cols-3">{[
-          ['Reddito forfettario', analysis.fiscalProjection.forfaitIncome], ['Contributi stimati', analysis.fiscalProjection.contributions], ['Imposta sostitutiva stimata', analysis.fiscalProjection.substituteTax],
-          ['Totale stimato da accantonare', analysis.fiscalProjection.totalToReserve], ['Netto fiscale stimato', analysis.fiscalProjection.fiscalNet],
-        ].map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{eur(value)}</dd></div>)}</dl>
-          : <Alert><AlertTitle>Stima fiscale non disponibile</AlertTitle><AlertDescription>{analysis.fiscalUnavailableReason} Gli altri dati finanziari restano disponibili.</AlertDescription></Alert>}
-        {analysis.fiscalWarnings.map(warning => <p key={warning} className="mt-3 text-sm">{warning}</p>)}
-      </CardContent></Card>
       <Card><CardContent><Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}>Dettaglio mensile · {year} · mostra / nascondi</CollapsibleTrigger><CollapsibleContent><Table><TableHeader><TableRow><TableHead>Mese</TableHead>{['Fatturato emesso', 'Incassato', 'Costi documentati', 'Costi pagati'].map(label => <TableHead key={label} className="text-right">{label}</TableHead>)}</TableRow></TableHeader><TableBody>
         {analysis.monthly.map(month => <TableRow key={month.month}><TableCell>{months[month.month - 1]}</TableCell>{[month.issuedRevenue, month.collectedRevenue, month.documentedCosts, month.paidCosts].map((value, index) => <TableCell key={index} className="text-right tabular-nums">{eur(value)}</TableCell>)}</TableRow>)}
       </TableBody></Table></CollapsibleContent></Collapsible></CardContent></Card>

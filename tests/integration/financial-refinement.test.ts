@@ -19,6 +19,45 @@ const company = { id: 1, name: 'Studio', access_info: { permissions } };
 const page = (data: unknown[], current_page = 1, last_page = 1) => response({ data, current_page, last_page });
 
 describe('pending nella sincronizzazione finanziaria', () => {
+  function fetchPendingDate(date: unknown) {
+    return vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/company/info')) return response({ data: company });
+      if (url.pathname.endsWith('/pending')) return page([{ id: 1, date }]);
+      return page([]);
+    });
+  }
+
+  it.each([
+    ['2026-03-01', '2026-03-01'],
+    ['2026-03-01 14:02:02', '2026-03-01'],
+    ['2026-03-01T14:02:02', '2026-03-01'],
+    ['2026-03-01T14:02:02.123Z', '2026-03-01'],
+    ['2026-03-01T00:30:00+02:00', '2026-03-01'],
+    ['2026-03-01T23:30:00-03:00', '2026-03-01'],
+    ['2024-02-29 00:00:00', '2024-02-29'],
+    [' 2026-03-01 14:02:02 ', '2026-03-01'],
+  ])('normalizza la data pending %s senza spostare il giorno per il fuso orario', async (date, expected) => {
+    const result = await syncFinancialData('1', 'token', fetchPendingDate(date) as typeof fetch);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    expect(result.value.pendingReceivedDocuments).toEqual(['agyo', 'mail', 'browser'].map(source => ({ id: '1', source, date: expected })));
+    expect(parseDocument({ ...createEmptyDocument(), financialSnapshot: result.value }).financialSnapshot).toEqual(result.value);
+  });
+
+  it.each([undefined, null, '', '   '])('omette la data pending assente o vuota: %j', async date => {
+    const result = await syncFinancialData('1', 'token', fetchPendingDate(date) as typeof fetch);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    expect(result.value.pendingReceivedDocuments).toEqual(['agyo', 'mail', 'browser'].map(source => ({ id: '1', source })));
+  });
+
+  it.each(['2026-02-30', '2026-02-30 12:00:00', '2026-02-29T12:00:00Z',
+    '2026-03-01 25:00:00', '2026-03-01T12:60:00Z', '2026-03-01junk', 'not-a-date', 12345])(
+    'rifiuta una data pending non valida senza restituire snapshot parziali: %j', async date => {
+      const result = await syncFinancialData('1', 'token', fetchPendingDate(date) as typeof fetch);
+      expect(result).toMatchObject({ ok: false, error: { code: 'SOURCE_INVALID', message: expect.stringContaining('pending agyo') } });
+      expect(result).not.toHaveProperty('value');
+    });
+
   function fetchPending(failure?: string) {
     return vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
@@ -56,6 +95,45 @@ describe('pending nella sincronizzazione finanziaria', () => {
 
   it.each(['http', 'duplicate', 'invalid', 'page'])('fallisce senza snapshot parziale su pending %s', async failure => {
     expect(await syncFinancialData('1', 'token', fetchPending(failure) as typeof fetch)).toMatchObject({ ok: false });
+  });
+
+  function fetchOverlappingPending(failure?: string) {
+    return vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/company/info')) return response({ data: company });
+      if (!url.pathname.endsWith('/pending')) return page([]);
+      const source = url.searchParams.get('type');
+      const current = Number(url.searchParams.get('page'));
+      if (source === 'agyo') return page([{ id: 1, type: 'agyo', amount_gross: 10 }]);
+      if (source === 'browser') return page([]);
+      // The mail request may return documents with other declared sources.
+      if (current === 1) return page([
+        { id: 1, type: 'agyo', amount_gross: failure === 'conflict' ? 20 : 10 },
+        { id: 1, type: 'mail', amount_gross: 30 },
+      ], current, 2);
+      return page([{ id: 1, type: failure === 'duplicate' ? 'mail' : failure === 'invalid' ? 'unknown' : 'browser', amount_gross: 40 }], current, 2);
+    });
+  }
+
+  it('usa la sorgente restituita e unisce le copie identiche tra richieste senza perdere documenti', async () => {
+    const fetcher = fetchOverlappingPending();
+    const result = await syncFinancialData('1', 'token', fetcher as typeof fetch);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    expect(result.value.pendingReceivedDocuments).toEqual([
+      { id: '1', source: 'agyo', amountGross: '10.00' },
+      { id: '1', source: 'mail', amountGross: '30.00' },
+      { id: '1', source: 'browser', amountGross: '40.00' },
+    ]);
+    expect(parseDocument({ ...createEmptyDocument(), financialSnapshot: result.value }).financialSnapshot).toEqual(result.value);
+    expect(fetcher).toHaveBeenCalledTimes(9);
+  });
+
+  it.each(['conflict', 'duplicate', 'invalid'])('rifiuta pending sovrapposti con %s senza snapshot parziale', async failure => {
+    const result = await syncFinancialData('1', 'token', fetchOverlappingPending(failure) as typeof fetch);
+    expect(result).toMatchObject({ ok: false, error: { code: 'SOURCE_INVALID' } });
+    expect(result).not.toHaveProperty('value');
+    if (!result.ok) expect(result.error.details?.join(' ')).toContain(
+      failure === 'conflict' ? 'discordanti' : failure === 'duplicate' ? 'duplicato' : 'type');
   });
 
   it('accetta un pending senza campi opzionali e sostituisce i pending dopo registrazione', async () => {

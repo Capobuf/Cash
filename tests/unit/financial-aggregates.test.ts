@@ -13,7 +13,7 @@ const analyze = (issuedDocuments: FicIssuedDocument[] = [], receivedDocuments: F
     2026, undefined, [], today);
 
 describe('clienti e identità FIC', () => {
-  it('aggrega per ID, distingue omonimi e documenti senza identità, calcola quote e contatori', () => {
+  it('aggrega per ID, distingue ID omonimi e raggruppa per nome i documenti senza ID', () => {
     const a = analyze([
       invoice('1', { entityId: '10', entityName: 'Omonimo', payments: [
         { amount: '40.00', status: 'paid', paidDate: '2026-02-01' },
@@ -24,10 +24,44 @@ describe('clienti e identità FIC', () => {
       invoice('4', { entityName: 'Omonimo' }), invoice('5', { entityName: 'Omonimo' }),
       invoice('6', { entityId: '10', type: 'credit_note' }), invoice('7', { entityId: '10', date: '2025-01-01' }),
     ]);
-    expect(a.clientAnalysis).toHaveLength(4);
+    expect(a.clientAnalysis).toHaveLength(3);
     expect(a.clientAnalysis[0]).toMatchObject({ entityId: '10', invoiceCount: 2, issuedRevenue: '200.00', collectedRevenue: '140.00', outstandingRevenue: '60.00', overdueRevenue: '60.00', revenueShare: '40.00' });
-    expect(a.clientAnalysis.filter(row => row.ungroupedDocumentId).map(row => row.ungroupedDocumentId)).toEqual(['4', '5']);
+    expect(a.clientAnalysis.find(row => row.key === 'name:omonimo')).toMatchObject({ entityId: undefined, ungroupedDocumentId: undefined, invoiceCount: 2, issuedRevenue: '200.00' });
     expect(a).toMatchObject({ invoiceCount: 5, outstandingInvoiceCount: 4, overdueInvoiceCount: 1 });
+  });
+
+  it('raggruppa nomi senza ID prima di ordinare e selezionare i primi dieci clienti', () => {
+    const docs = [
+      ...Array.from({ length: 11 }, (_, index) => invoice(`other-${index}`, { entityName: `Altro ${index}`, amountGross: '150.00' })),
+      invoice('1', { entityName: '  Studio   Caffè  ', payments: [{ amount: '40.00', status: 'paid', paidDate: '2026-02-01' }, { amount: '60.00', status: 'not_paid', dueDate: '2026-03-01' }] }),
+      invoice('2', { entityName: 'STUDIO CAFFE\u0300', payments: [{ amount: '100.00', status: 'paid', paidDate: '2026-02-01' }] }),
+    ];
+    const before = structuredClone(docs);
+    const a = analyze(docs);
+    expect(a.clientAnalysis).toHaveLength(12);
+    expect(a.clientAnalysis.slice(0, 10)[0]).toMatchObject({ key: 'name:studio caffè', name: 'Studio Caffè', invoiceCount: 2,
+      issuedRevenue: '200.00', collectedRevenue: '140.00', outstandingRevenue: '60.00', overdueRevenue: '60.00', revenueShare: '10.81' });
+    expect(a.clientPaymentAnalysis).toHaveLength(12);
+    expect(docs).toEqual(before);
+  });
+
+  it('collega i nomi a un ID univoco anche se il documento senza ID viene prima', () => {
+    const docs = [invoice('1', { entityName: ' studio alfa ' }), invoice('2', { entityId: '10', entityName: 'Studio Alfa' }),
+      invoice('3', { entityId: '10', entityName: 'Nome aggiornato' }), invoice('4', { entityName: 'NOME AGGIORNATO' })];
+    for (const ordered of [docs, [...docs].reverse()]) {
+      const a = analyze(ordered);
+      expect(a.clientAnalysis).toHaveLength(1);
+      expect(a.clientAnalysis[0]).toMatchObject({ key: 'entity:10', entityId: '10', ungroupedDocumentId: undefined, invoiceCount: 4, issuedRevenue: '400.00' });
+      expect(a.clientPaymentAnalysis).toHaveLength(1);
+      expect(a.clientPaymentAnalysis[0]).toMatchObject({ key: 'entity:10', entityId: '10' });
+    }
+  });
+
+  it('mantiene separati i documenti senza ID e senza nome', () => {
+    const a = analyze([invoice('1'), invoice('2', { entityName: '   ' }), invoice('3', { entityName: 'Cliente' })]);
+    expect(a.clientAnalysis).toHaveLength(3);
+    expect(a.clientAnalysis.filter(row => row.ungroupedDocumentId).map(row => row.ungroupedDocumentId)).toEqual(['1', '2']);
+    expect(a.clientPaymentAnalysis).toHaveLength(3);
   });
 
   it('separa il cohort documentale dai flussi di cassa annuali', () => {
@@ -42,6 +76,25 @@ describe('clienti e identità FIC', () => {
 });
 
 describe('ritardi storici e insoluti attuali', () => {
+  it('calcola il ritardo del cliente su tutti i pagamenti delle fatture raggruppate per nome', () => {
+    const a = analyze([
+      invoice('1', { entityName: 'Studio Alfa', payments: [
+        { amount: '30.00', status: 'paid', dueDate: '2026-03-01', paidDate: '2026-03-01' },
+        { amount: '30.00', status: 'paid', dueDate: '2026-03-01', paidDate: '2026-03-01' },
+        { amount: '40.00', status: 'not_paid', dueDate: '2026-03-01' },
+      ] }),
+      invoice('2', { entityName: ' STUDIO  ALFA ', payments: [
+        { amount: '80.00', status: 'paid', dueDate: '2026-03-01', paidDate: '2026-03-31' },
+        { amount: '20.00', status: 'not_paid', dueDate: '2026-03-20' },
+      ] }),
+      invoice('3', { entityName: 'Beta', payments: [{ amount: '100.00', status: 'paid', dueDate: '2026-03-01', paidDate: '2026-03-13' }] }),
+    ]);
+    expect(a.clientPaymentAnalysis).toHaveLength(2);
+    expect(a.clientPaymentAnalysis.map(row => row.name)).toEqual(['Beta', 'Studio Alfa']);
+    expect(a.clientPaymentAnalysis[1]).toMatchObject({ analyzedPaymentCount: 3, averageDelayDays: 10, maxDelayDays: 30,
+      onTimePercentage: '66.67', overdueRevenue: '60.00', overdueInvoiceCount: 2, oldestOpenDueDays: 40 });
+  });
+
   it('calcola media semplice, massimo e puntuali escludendo pagamenti non analizzabili', () => {
     const a = analyze([invoice('1', { entityId: '10', amountGross: '1010.00', payments: [
       { amount: '1.00', status: 'paid', dueDate: '2026-03-10', paidDate: '2026-03-01' },
