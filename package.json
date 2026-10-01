@@ -22,6 +22,7 @@
     "package:win": "npm run build && electron-builder --win portable --x64 --publish never"
   },
   "dependencies": {
+    "exceljs": "4.4.0",
     "keytar": "7.9.0",
     "recharts": "^3.8.0"
   },
@@ -77,5 +78,10 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "keytar@7.9.0": true
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

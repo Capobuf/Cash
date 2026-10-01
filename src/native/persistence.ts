@@ -59,8 +59,8 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
   const inspection = await inspectArchive(path);
   if (!inspection.ok) return inspection;
   const fromVersion = inspection.value.header.schemaVersion;
-  if (fromVersion < 1 || fromVersion > 4)
-    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 4.' });
+  if (fromVersion < 1 || fromVersion > 5)
+    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 5.' });
   const changes = fromVersion === 1 ? [
     'Aggiunge l’anagrafica Clienti locali vuota.',
     'Imposta Fatture in Cloud su Disattivata conservando i riferimenti non segreti.',
@@ -69,9 +69,10 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
   ] : [];
   if(fromVersion<=2)changes.push('Converte automaticamente i consumi dei carburanti liquidi da l/100 km a km/l.');
   if (fromVersion <= 3) changes.push('Rimuove velocità media e anagrafica clienti locale non previste dalla v0.6.', 'Introduce coordinate delle Sedi, default globali e Trasferte con Partenza/Destinazione.');
-  changes.push('Aggiorna allo schema 5 senza modificare i dati esistenti; snapshot finanziario assente.');
+  if (fromVersion < 5) changes.push('Aggiorna allo schema 5 senza modificare i dati esistenti.');
+  changes.push('Aggiunge categorie e movimenti bancari vuoti nello schema 6, conservando lo snapshot finanziario esistente.');
   const bytes=await readFile(path);const raw=JSON.parse(bytes.toString('utf8')) as Record<string,unknown>;
-  const blockers=fromVersion === 4 ? [] : findV3Blockers(fromVersion===1?migrateV2Record(migrateV1(raw)):fromVersion===2?migrateV2Record(raw):raw);
+  const blockers=fromVersion >= 4 ? [] : findV3Blockers(fromVersion===1?migrateV2Record(migrateV1(raw)):fromVersion===2?migrateV2Record(raw):raw);
   return ok({ fromVersion, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes, blockers });
 }
 
@@ -144,8 +145,8 @@ export async function migrateArchive(path: string): Promise<Result<ArchiveSessio
     const raw = parsed.value as Record<string, unknown>;
     if(preview.value.blockers.length)return err({code:'MIGRATION_REQUIRED',source:'archive',message:'La migrazione automatica è bloccata per evitare una conversione arbitraria dei dati storici.',action:'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.',details:preview.value.blockers});
     const v3=preview.value.fromVersion===1?migrateV2Record(migrateV1(raw)):preview.value.fromVersion===2?migrateV2Record(raw):raw;
-    const v4 = preview.value.fromVersion === 4 ? raw : migrateV3(v3);
-    const migrated = parseDocument({ ...v4, schemaVersion: 5 });
+    const v4 = preview.value.fromVersion >= 4 ? raw : migrateV3(v3);
+    const migrated = parseDocument({ ...v4, schemaVersion: CURRENT_SCHEMA_VERSION, bankExpenseCategories: [], bankExpenses: [] });
     await copyFile(path, preview.value.backupPath);
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
     const bytes = encode(migrated);

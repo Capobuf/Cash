@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -303,6 +303,22 @@ export interface FicFinancialSnapshot {
   pendingReceivedDocuments?: FicPendingReceivedDocument[];
 }
 
+export interface BankExpense extends EntityMeta {
+  date: string;
+  description: string;
+  amount: DecimalString;
+  categoryId?: string;
+}
+
+export interface BankExpenseCategory extends EntityMeta {
+  name: string;
+  parentId?: string;
+}
+
+export type BankExpenseRow = Pick<BankExpense, 'date' | 'description' | 'amount'>;
+export interface BankExpenseImport { rows: BankExpenseRow[]; ignoredIncome: number }
+export interface BankExpenseImportSummary { imported: number; duplicates: number; ignoredIncome: number }
+
 export interface CashDocument {
   schemaVersion: number;
   documentId: string;
@@ -317,6 +333,8 @@ export interface CashDocument {
   catalog: Catalog;
   quotes: Quote[];
   financialSnapshot?: FicFinancialSnapshot;
+  bankExpenseCategories: BankExpenseCategory[];
+  bankExpenses: BankExpense[];
 }
 
 export const nowIso = (): string => new Date().toISOString();
@@ -339,6 +357,8 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   sites: [],
   catalog: { subItems: [], templates: [] },
   quotes: [],
+  bankExpenseCategories: [],
+  bankExpenses: [],
 });
 
 export const createFiscalPreset2026 = (): EconomicProfile => ({

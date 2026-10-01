@@ -1,13 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { calculateFinancialAnalysis, financialYears } from '../../domain/financial-analysis';
+import { calculateFinancialAnalysis } from '../../domain/financial-analysis';
 import type { CashDocument } from '../../domain/model';
 import type { AppState } from '../state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FinancialDocuments } from '@/components/FinancialDocuments';
@@ -16,13 +15,10 @@ import { FinancialKpis, FinancialCharts, FinancialAggregates } from '@/component
 
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 
-export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDocument; appState: AppState; hasToken: boolean }) {
+export function FinancialAnalysisView({ doc, appState, hasToken, year }: { doc: CashDocument; appState: AppState; hasToken: boolean; year: number | undefined }) {
   const snapshot = doc.financialSnapshot;
-  const years = useMemo(() => financialYears(snapshot, doc.profiles), [snapshot, doc.profiles]);
   const now = new Date(); const currentYear = now.getFullYear();
   const today = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const [selectedYear, setSelectedYear] = useState<number>();
-  const year = selectedYear !== undefined && years.includes(selectedYear) ? selectedYear : years.includes(currentYear) ? currentYear : years[0];
   const analysis = useMemo(() => snapshot && year !== undefined
     ? calculateFinancialAnalysis(snapshot, year, doc.profiles.find(profile => profile.year === year), doc.businessCosts, today)
     : undefined, [snapshot, year, doc.profiles, doc.businessCosts, today]);
@@ -39,10 +35,7 @@ export function FinancialAnalysisView({ doc, appState, hasToken }: { doc: CashDo
         <p className="font-medium">{snapshot?.company.name ?? 'Nessuna azienda sincronizzata'}</p>
         <p className="text-sm text-muted-foreground">{snapshot ? `Ultimo aggiornamento: ${new Date(snapshot.acquiredAt).toLocaleString('it-IT')}` : 'Aggiornamento completo solo su richiesta.'}</p>
       </div>
-      <div className="flex flex-wrap items-center gap-3"><label htmlFor="financial-year" className="text-sm">Anno</label>
-        <NativeSelect id="financial-year" value={year ?? ''} disabled={!years.length} onChange={event => setSelectedYear(Number(event.target.value))}>
-          {!years.length ? <NativeSelectOption value="">Nessun anno disponibile</NativeSelectOption> : years.map(value => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
-        </NativeSelect>
+      <div className="flex flex-wrap items-center gap-3">
         <Button disabled={!canSync || appState.financialSyncing} onClick={() => void appState.syncFinancialData()}>
           <RefreshCw className={appState.financialSyncing ? 'animate-spin' : undefined} />{appState.financialSyncing ? 'Aggiornamento in corso…' : 'Aggiorna dati Fatture in Cloud'}
         </Button>

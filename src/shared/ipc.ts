@@ -1,8 +1,10 @@
 import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
+import type { BankExpenseImport } from '../domain/model';
 import type { FicAccessVerification } from '../domain/integration';
 import type { CashDocument, CashError, FicFinancialSnapshot, Coordinates, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, GeocodingResult, Result, RouteResult } from '../domain/model';
 
 export const IPC = {
+  bankExpenseImport: 'cash:bank-expenses:import-xlsx',
   archiveCreate: 'cash:archive:create', archiveOpen: 'cash:archive:open', archiveOpenLast: 'cash:archive:open-last', archiveSave: 'cash:archive:save',
   archiveRecovery: 'cash:archive:recovery', archiveRestore: 'cash:archive:restore', archiveInspect: 'cash:archive:inspect',
   tokenHas: 'cash:token:has', tokenSet: 'cash:token:set',
@@ -17,6 +19,7 @@ export const IPC = {
 } as const;
 
 export interface CashNativeApi {
+  bankExpenses: { importXlsx(): Promise<Result<BankExpenseImport>> };
   archive: {
     create(document: CashDocument): Promise<Result<ArchiveSession>>;
     open(): Promise<Result<ArchiveSession>>;

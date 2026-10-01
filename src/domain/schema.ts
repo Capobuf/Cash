@@ -1,9 +1,11 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { CURRENT_SCHEMA_VERSION, type CashDocument, type CashError } from './model';
+import { bankExpenseIdentity, normalizeBankDescription } from './bank-expenses';
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
+  bankExpenses: 'Movimenti bancari', bankExpenseCategories: 'Categorie spese', categoryId: 'categoria', parentId: 'categoria principale',
   vehicles: 'Veicoli', businessCosts: 'Costi aziendali', sites: 'Sedi', profiles: 'Profili', quotes: 'Preventivi',
   catalog: 'Catalogo', settings: 'Impostazioni', name: 'nome', displayName: 'denominazione', category: 'categoria',
   description: 'descrizione', address: 'indirizzo', coordinates: 'coordinate', consumption: 'consumo', annualKm: 'km annui',
@@ -133,7 +135,16 @@ export const financialSnapshotSchema = z.object({
   }
 });
 
+export const bankExpenseRowSchema = z.object({
+  date: z.string().date(),
+  description: z.string().min(1).refine(value => value === normalizeBankDescription(value), 'descrizione non normalizzata'),
+  amount: z.string().regex(/^(?:0|[1-9]\d*)\.\d{2}$/).refine(value => /^(?:0|[1-9]\d*)\.\d{2}$/.test(value) && new Decimal(value).gt(0), 'importo non positivo'),
+});
+export const bankExpenseImportSchema = z.object({ rows: z.array(bankExpenseRowSchema), ignoredIncome: z.number().int().nonnegative() });
+
 export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
+  bankExpenses: z.array(bankExpenseRowSchema.extend({ ...entity, categoryId: uuid.optional() })),
+  bankExpenseCategories: z.array(z.object({ ...entity, name: z.string().trim().min(1), parentId: uuid.optional() })),
   financialSnapshot: financialSnapshotSchema.optional(),
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION), documentId: uuid, revision: z.number().int().positive(), createdAt: iso, updatedAt: iso,
   settings: z.object({ fuelTerritory: z.string().min(1).optional(), defaultDepartureSiteId: uuid.optional(), defaultVehicleId: uuid.optional(), fic: z.object({ enabled: z.boolean(), company: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), product: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), taxProfile: z.object({ acquiredAt: iso, companyType: z.string().optional(), companySubtype: z.string().optional(), profession: z.string().optional(), regime: z.string().optional(), profitCoefficient: decimal.optional(), contributionsPercentage: decimal.optional(), defaultVat: z.object({ id: z.string().min(1), value: z.number().optional(), description: z.string().optional() }).optional() }).optional(), legacyReferences: z.object({ companyId: z.string().min(1).optional(), productId: z.string().min(1).optional() }).optional(), lastVerification: z.object({ at: iso, result: z.enum(['success', 'error']), diagnostic: z.string().optional() }).optional() }) }),
@@ -143,6 +154,29 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
   catalog: z.object({ subItems: z.array(reusableSubItemSchema), templates: z.array(templateSchema) }),
   quotes: z.array(z.object({ ...entity, date: z.string().date(), profileId: uuid.optional(), profileSnapshot: profileSnapshotSchema.optional(), client: clientSnapshotSchema.optional(), mainSite: siteSnapshotSchema.optional(), items: z.array(quoteItemSchema), commission: moneyInput.optional(), snapshotRevision: z.number().int().nonnegative(), snapshotUpdatedAt: iso.optional(), exportAttempts: z.array(exportAttemptSchema) })),
 }).superRefine((document, ctx) => {
+  const categories = new Map(document.bankExpenseCategories.map(category => [category.id, category]));
+  const names = new Set<string>();
+  const ids = new Set<string>();
+  document.bankExpenseCategories.forEach((category, index) => {
+    const path = ['bankExpenseCategories', index];
+    if (ids.has(category.id)) ctx.addIssue({ code: 'custom', path, message: 'ID categoria duplicato' });
+    ids.add(category.id);
+    const key = JSON.stringify([category.parentId ?? '', category.name.trim().toLocaleLowerCase('it')]);
+    if (names.has(key)) ctx.addIssue({ code: 'custom', path, message: 'Nome categoria già presente nello stesso livello' });
+    names.add(key);
+    if (category.parentId && (category.parentId === category.id || !categories.has(category.parentId) || categories.get(category.parentId)?.parentId))
+      ctx.addIssue({ code: 'custom', path, message: 'Il padre deve essere una categoria principale esistente' });
+  });
+  const movements = new Set<string>();
+  document.bankExpenses.forEach((expense, index) => {
+    const path = ['bankExpenses', index];
+    if (ids.has(expense.id)) ctx.addIssue({ code: 'custom', path, message: 'ID movimento duplicato' });
+    ids.add(expense.id);
+    if (expense.categoryId && !categories.has(expense.categoryId)) ctx.addIssue({ code: 'custom', path, message: 'Categoria del movimento inesistente' });
+    const key = bankExpenseIdentity(expense);
+    if (movements.has(key)) ctx.addIssue({ code: 'custom', path, message: 'Movimento bancario duplicato' });
+    movements.add(key);
+  });
   const years = new Set<number>();
   for (const [index, profile] of document.profiles.entries()) { if (years.has(profile.year)) ctx.addIssue({ code: 'custom', path: ['profiles', index, 'year'], message: 'esiste già un profilo per questo anno' }); years.add(profile.year); }
   if (document.settings.fic.enabled && (!document.settings.fic.company || !document.settings.fic.product)) ctx.addIssue({ code: 'custom', path: ['settings', 'fic'], message: 'azienda e prodotto Consulenza sono obbligatori quando Fatture in Cloud è attivo' });

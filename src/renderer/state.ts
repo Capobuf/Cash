@@ -1,6 +1,7 @@
-import { createEmptyDocument, type CashDocument, type CashError } from '../domain/model';
-import { cashDocumentSchema, validationErrorFromIssues } from '../domain/schema';
+import { createEmptyDocument, type BankExpenseImportSummary, type CashDocument, type CashError } from '../domain/model';
+import { bankExpenseImportSchema, cashDocumentSchema, validationErrorFromIssues } from '../domain/schema';
 import type { ArchiveSession } from '../native/persistence';
+import { deduplicateBankExpenses } from '../domain/bank-expenses';
 
 export type SaveStatus = 'Nessun archivio' | 'Modifiche non salvate' | 'Salvataggio' | 'Salvato' | 'Dati da correggere' | 'Errore di salvataggio' | 'Conflitto esterno' | 'Sola lettura';
 export type ArchiveDecision = 'save' | 'recovery' | 'discard' | 'cancel';
@@ -16,6 +17,9 @@ export class AppState {
   private mutationVersion = 0;
   private sessionVersion = 0;
   financialSyncing = false;
+  bankExpenseImporting = false;
+  bankExpenseImportSummary: BankExpenseImportSummary | null = null;
+  private archiveContextVersion = 0;
   financialSyncError: CashError | null = null;
   private requestArchiveDecision?: () => Promise<ArchiveDecision>;
 
@@ -44,8 +48,11 @@ export class AppState {
   }
 
   private accept(session: ArchiveSession): void {
-    if (session.document?.documentId !== this.document?.documentId || session.path !== this.session?.path)
+    if (session.document?.documentId !== this.document?.documentId || session.path !== this.session?.path) {
       this.financialSyncError = null;
+      this.bankExpenseImportSummary = null;
+      this.archiveContextVersion++;
+    }
     this.session = session;
     this.mutationVersion = 0;
     this.sessionVersion += 1;
@@ -56,6 +63,33 @@ export class AppState {
   }
 
   acceptNativeSession(session: ArchiveSession): void { this.accept(session); }
+  async importBankExpenses(): Promise<void> {
+    if (this.bankExpenseImporting || !this.document || this.session?.readOnly || this.status === 'Conflitto esterno') return;
+    const context = this.archiveContextVersion;
+    const documentId = this.document.documentId;
+    const path = this.session?.path;
+    this.bankExpenseImporting = true; this.bankExpenseImportSummary = null; this.emit();
+    try {
+      const result = await window.cash.bankExpenses.importXlsx();
+      if (context !== this.archiveContextVersion || this.document?.documentId !== documentId || this.session?.path !== path) {
+        this.setError({ code: 'CONFLICT', message: 'Archivio cambiato durante l’importazione. Ripeti la selezione del file.' }); return;
+      }
+      if (!result.ok) { if (result.error.code !== 'CANCELLED') this.setError(result.error); return; }
+      if (!this.document || this.session?.readOnly || this.hasExternalConflict()) return;
+      const parsed = bankExpenseImportSchema.safeParse(result.value);
+      if (!parsed.success) { this.setError(validationErrorFromIssues(parsed.error.issues)); return; }
+      const { added, duplicates } = deduplicateBankExpenses(this.document.bankExpenses, parsed.data.rows);
+      if (added.length) {
+        const before = this.mutationVersion;
+        this.mutate(document => { document.bankExpenses = document.bankExpenses.concat(added); });
+        if (before === this.mutationVersion) return;
+      }
+      this.bankExpenseImportSummary = { imported: added.length, duplicates, ignoredIncome: parsed.data.ignoredIncome };
+    } catch {
+      this.setError({ code: 'IO', message: 'Importazione XLSX non riuscita. Nessun movimento è stato importato.' });
+    } finally { this.bankExpenseImporting = false; this.emit(); }
+  }
+  private hasExternalConflict(): boolean { return this.status === 'Conflitto esterno'; }
   async syncFinancialData(): Promise<void> {
     if (this.financialSyncing || !this.document || this.session?.readOnly || this.status === 'Conflitto esterno') return;
     const companyId = this.document.settings.fic.company?.id;

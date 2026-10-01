@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator"
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton,
-  SidebarMenuItem, SidebarProvider,
+  SidebarMenuItem, SidebarProvider, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
 } from "@/components/ui/sidebar"
 
 const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
@@ -26,13 +26,14 @@ const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
   { key: "quotes", label: "Preventivi", icon: FileText },
   { key: "clients", label: "Clienti", icon: Users },
   { key: "catalog", label: "Catalogo", icon: BookOpen },
-  { key: "financial-analysis", label: "Analisi finanziaria", icon: ChartNoAxesCombined },
+  { key: "financial-analysis", label: "Panoramica", icon: ChartNoAxesCombined },
   { key: "settings", label: "Impostazioni", icon: Settings },
 ]
 
 const titles: Record<View, string> = {
   dashboard: "Panoramica", quotes: "Preventivi", clients: "Clienti",
-  "financial-analysis": "Analisi finanziaria",
+  "financial-analysis": "Panoramica finanziaria",
+  "bank-summary": "Spese · Riepilogo", "bank-movements": "Spese · Movimenti", "bank-categories": "Spese · Categorie",
   catalog: "Catalogo", settings: "Impostazioni",
 }
 
@@ -40,6 +41,7 @@ const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
   clients: "Clienti Fatture in Cloud e sedi correlate",
   "financial-analysis": "Obiettivi e dati amministrativi registrati",
+  "bank-summary": "Analisi delle uscite bancarie", "bank-movements": "Importazione e categorizzazione delle spese", "bank-categories": "Organizza categorie e sottocategorie",
   catalog: "Template e contenuti riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 
@@ -106,7 +108,7 @@ export function AppShell({ appState, view, onView, children }: {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          {[{ label: "Preventivazione", keys: ["dashboard", "quotes", "clients", "catalog"] }, { label: "Analisi", keys: ["financial-analysis"] }, { label: "Configurazione", keys: ["settings"] }].map(group => <SidebarGroup key={group.label}>
+          {[{ label: "Preventivazione", keys: ["dashboard", "quotes", "clients", "catalog"] }, { label: "Analisi finanziaria", keys: ["financial-analysis"] }, { label: "Configurazione", keys: ["settings"] }].map(group => <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -117,6 +119,12 @@ export function AppShell({ appState, view, onView, children }: {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+                {group.label === 'Analisi finanziaria' ? <SidebarMenuItem>
+                  <SidebarMenuButton isActive={view.startsWith('bank-')} onClick={() => onView('bank-summary')}><ChartNoAxesCombined aria-hidden="true" /><span>Spese</span></SidebarMenuButton>
+                  <SidebarMenuSub>{([{ key: 'bank-summary', label: 'Riepilogo' }, { key: 'bank-movements', label: 'Movimenti' }, { key: 'bank-categories', label: 'Categorie' }] as const).map(entry => <SidebarMenuSubItem key={entry.key}>
+                    <SidebarMenuSubButton render={<button type="button" />} isActive={view === entry.key} aria-current={view === entry.key ? 'page' : undefined} onClick={() => onView(entry.key)}>{entry.label}</SidebarMenuSubButton>
+                  </SidebarMenuSubItem>)}</SidebarMenuSub>
+                </SidebarMenuItem> : null}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>)}

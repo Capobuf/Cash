@@ -1,7 +1,7 @@
 export const eur = (value?: string): string =>
   value === undefined
     ? "—"
-    : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(value))
+    : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(Number(value))
 
 export const formatNumber = (value?: string | number, decimals = 0): string =>
   value === undefined

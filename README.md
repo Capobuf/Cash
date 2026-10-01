@@ -39,9 +39,10 @@ Ogni salvataggio valido incrementa la revisione, conserva la versione precedente
 revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
-Gli archivi schema 1–4 richiedono anteprima e conferma prima della migrazione allo schema 5.
-Il passaggio v4→v5 conserva tutti i dati esistenti e aggiorna soltanto la versione, senza snapshot iniziale.
-Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando lo snapshot finanziario. La migrazione
+Gli archivi schema 1–5 richiedono anteprima e conferma prima della migrazione allo schema 6.
+Il passaggio v5→v6 aggiunge `bankExpenseCategories` e `bankExpenses` vuoti e conserva tutti i dati,
+incluso lo snapshot Fatture in Cloud. Le migrazioni storiche proseguono fino a v6.
+Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando i dati nuovi. La migrazione
 automatica procede solo per trasformazioni deterministiche. Se trova Clienti locali, `oneWayKm` o
 Trasferte del modello precedente, si arresta senza scrivere e indica i dati da ricostruire esplicitamente.
 Uno schema più nuovo viene aperto soltanto in lettura.
@@ -80,9 +81,29 @@ snapshot necessari a Sedi e Preventivi; non mantiene un’anagrafica Cliente loc
 
 ## Analisi finanziaria
 
-La pagina dedicata confronta Fatturato obiettivo e Costi pianificati Cash con fatture, spese registrate
+La sezione **Analisi finanziaria → Panoramica** confronta Fatturato obiettivo e Costi pianificati Cash con fatture, spese registrate
 e pagamenti FIC. Fatture in Cloud resta la source of truth: i documenti amministrativi sono in sola lettura.
-La Panoramica continua a riguardare esclusivamente la preventivazione.
+La Panoramica nell’area Preventivazione resta distinta dalla Panoramica finanziaria.
+
+**Spese → Movimenti** importa un XLSX della banca tramite dialog nativo. Il parser legge il primo
+foglio e cerca l’intestazione `Data_Operazione`, `Data_Valuta`, `Entrate`, `Uscite`, `Descrizione`,
+`Descrizione_Completa`, `Stato`, anche dopo un preambolo. Acquisisce solo le uscite, indipendentemente
+dallo stato, usando data valuta, descrizione completa (con fallback) e importo positivo a due decimali.
+Una riga di uscita non valida annulla l’intero import; le entrate sono ignorate. Il risultato riporta
+movimenti aggiunti, duplicati e entrate ignorate. La deduplica esatta data/descrizione/importo vale
+anche all’interno del file e conserva le categorie già assegnate. Due spese reali con la stessa terna
+sono intenzionalmente considerate duplicate.
+
+La tabella consente ricerca, filtri e assegnazione manuale della categoria con autosalvataggio.
+**Spese → Categorie** gestisce categorie e sottocategorie su due livelli; nomi univoci, senza distinzione
+maiuscole/minuscole, nello stesso padre. Categorie con figli o movimenti assegnati non sono eliminabili.
+**Spese → Riepilogo** mostra totali, quota categorizzata, spese mensili e totali per categoria principale.
+L’anno è condiviso con la Panoramica finanziaria, include gli anni bancari ed è solo stato UI.
+L’import acquisisce tutti gli anni del file; Categorie è indipendente dall’anno.
+
+I movimenti bancari restano separati dai documenti e dai KPI Fatture in Cloud: nessuna somma,
+riconciliazione o categorizzazione automatica. Lettura XLSX e filesystem restano nel processo Electron;
+il renderer riceve solo righe normalizzate e applica un’unica mutazione dell’archivio.
 
 **Aggiorna dati Fatture in Cloud** acquisisce manualmente tutte le pagine di invoice, credit_note,
 expense e passive_credit_note e sostituisce un unico snapshot finanziario nel file JSON. Un errore
