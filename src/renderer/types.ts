@@ -10,7 +10,16 @@ export type View =
   | 'settings';
 
 export interface DeleteTarget {
-  kind: string;
+  kind:
+    | 'cost'
+    | 'vehicle'
+    | 'site'
+    | 'catalog'
+    | 'template'
+    | 'profile'
+    | 'quote'
+    | 'item'
+    | 'sub';
   id: string;
   label?: string;
 }

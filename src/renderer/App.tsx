@@ -158,7 +158,6 @@ export function App() {
   };
 
   const deleteEntity = (doc: CashDocument, target: DeleteTarget) => {
-    if (target.kind === 'local-client') return false;
     if (target.kind === 'profile') {
       const references = doc.quotes
         .filter((quote) => quote.profileId === target.id)
@@ -241,6 +240,9 @@ export function App() {
           ?.items.find((entry) => entry.id === itemId);
         if (item)
           item.subItems = item.subItems.filter((entry) => entry.id !== subId);
+      } else {
+        const unsupportedKind: never = target.kind;
+        throw new Error(`Unsupported deletion target: ${unsupportedKind}`);
       }
     });
     if (!deleted) return false;
