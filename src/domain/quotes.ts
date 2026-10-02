@@ -1,5 +1,6 @@
 import { meta, type CashDocument, type Quote } from './model';
 import { snapshotProfile } from './refresh';
+import { localDate } from './calendar';
 
 export function createQuote(document: CashDocument): Quote {
   const profile = [...document.profiles]
@@ -10,7 +11,7 @@ export function createQuote(document: CashDocument): Quote {
     : undefined;
   return {
     ...meta(),
-    date: new Date().toISOString().slice(0, 10),
+    date: localDate(),
     ...(profile ? { profileId: profile.id } : {}),
     ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}),
     items: [],

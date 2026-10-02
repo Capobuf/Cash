@@ -21,6 +21,10 @@ export interface ItalianNationalHoliday {
 const dateKey = (year: number, month: number, day: number): string =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
+export function localDate(date = new Date()): string {
+  return dateKey(date.getFullYear(), date.getMonth() + 1, date.getDate());
+}
+
 export function easterSunday(year: number): Date {
   const a = year % 19,
     b = Math.floor(year / 100),

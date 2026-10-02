@@ -7,10 +7,23 @@ import { createQuote } from '../../src/domain/quotes';
 
 describe('creazione condivisa del preventivo', () => {
   beforeEach(() => {
+    vi.stubEnv('TZ', 'Europe/Rome');
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-02T12:00:00Z'));
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ['2026-07-14T22:30:00Z', '2026-07-15', -120],
+    ['2025-12-31T23:30:00Z', '2026-01-01', -60],
+  ])('usa il giorno locale a mezzanotte (%s)', (instant, expected, offset) => {
+    vi.setSystemTime(new Date(instant));
+    expect(new Date().getTimezoneOffset()).toBe(offset);
+    expect(createQuote(createEmptyDocument()).date).toBe(expected);
+  });
 
   it('crea uno snapshot indipendente del profilo confermato', () => {
     const document = createEmptyDocument();
