@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import { Bar, BarChart, CartesianGrid, ComposedChart, Layer, Line, Rectangle, ReferenceLine, Sankey, Text, XAxis, YAxis, type SankeyNodeProps } from 'recharts';
+import { Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { buildFinancialOverviewFlow, type FinancialOverview } from '../../domain/financial-overview';
 import { d } from '../../domain/decimal';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { eur, formatNumber } from '@/lib/format';
 import { FiscalCorrectionForm } from './FiscalCorrectionForm';
+import { MoneyFlowChart } from './MoneyFlowChart';
 
 interface FiscalCorrectionControls { onFiscalCorrection?: (total: string | undefined) => boolean; correctionDisabled?: boolean }
 
@@ -145,16 +146,6 @@ function FiscalSituation({ overview: o, onFiscalCorrection, correctionDisabled }
   </CardContent></Card>;
 }
 
-function FlowNode({ x, y, width, height, payload }: SankeyNodeProps) {
-  const terminal = !payload.targetNodes.length;
-  const labelX = terminal ? x - 8 : x + width + 8;
-  return <Layer>
-    <Rectangle x={x} y={y} width={width} height={height} fill="var(--chart-1)" />
-    <Text x={labelX} y={y + height / 2 - 8} width={155} maxLines={2} textAnchor={terminal ? 'end' : 'start'} verticalAnchor="middle" fill="var(--foreground)" fontSize={12}>{payload.name}</Text>
-    <Text x={labelX} y={y + height / 2 + 20} textAnchor={terminal ? 'end' : 'start'} fill="var(--muted-foreground)" fontSize={11}>{eur(String(payload.value))}</Text>
-  </Layer>;
-}
-
 function AnnualFlow({ overview }: { overview: FinancialOverview }) {
   const flow = useMemo(() => buildFinancialOverviewFlow(overview), [overview]);
   return <Card className="min-w-0"><CardHeader><CardTitle>Flusso finanziario · {overview.year}</CardTitle>
@@ -171,11 +162,7 @@ function AnnualFlow({ overview }: { overview: FinancialOverview }) {
       </dl>
       <p className="text-xs text-muted-foreground">Fatturato e incassato hanno perimetri diversi: l’incassato dell’anno può comprendere fatture emesse in anni precedenti. Da incassare riguarda i residui delle fatture emesse nell’anno.</p>
     </section>
-    {flow.links.length ? <div className="overflow-x-auto"><ChartContainer config={{}} className="h-120 min-w-280 w-full aspect-auto" role="img" aria-label="Ripartizione degli incassi annuali; importi riportati nei KPI e nel riepilogo del disponibile">
-      <Sankey data={flow} node={FlowNode} nodeWidth={12} nodePadding={52} sort={false} align="left" margin={{ top: 24, bottom: 24, left: 8, right: 8 }} link={{ stroke: 'var(--chart-1)', strokeOpacity: 0.18 }}>
-        <ChartTooltip formatter={(value, name) => [eur(String(value)), name]} />
-      </Sankey>
-    </ChartContainer></div> : null}
+    {flow.links.length ? <MoneyFlowChart flow={flow} label="Ripartizione degli incassi annuali; importi riportati nei KPI e nel riepilogo del disponibile" /> : null}
     {flow.message ? <p className="text-sm text-muted-foreground">{flow.message}</p> : null}
   </CardContent></Card>;
 }
