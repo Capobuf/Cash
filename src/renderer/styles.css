@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @source "./**/*.{ts,tsx}";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --font-sans: "Geist", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
@@ -40,6 +41,39 @@
 
 :root {
   --radius: .625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(.145 0 0);
+  --primary: oklch(.205 0 0);
+  --primary-foreground: oklch(.985 0 0);
+  --secondary: oklch(.97 0 0);
+  --secondary-foreground: oklch(.205 0 0);
+  --muted: oklch(.97 0 0);
+  --muted-foreground: oklch(.45 0 0);
+  --accent: oklch(.97 0 0);
+  --accent-foreground: oklch(.205 0 0);
+  --destructive: oklch(.577 .245 27.325);
+  --border: oklch(.922 0 0);
+  --input: oklch(.922 0 0);
+  --ring: oklch(.708 0 0);
+  --chart-1: oklch(.55 .12 210);
+  --chart-2: oklch(.55 .19 285);
+  --sidebar: oklch(.985 0 0);
+  --sidebar-foreground: oklch(.145 0 0);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  color-scheme: light;
+}
+
+.dark {
+  --radius: .625rem;
   --background: oklch(.145 0 0);
   --foreground: oklch(.985 0 0);
   --card: oklch(.205 0 0);
@@ -58,6 +92,8 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(.556 0 0);
+  --chart-1: oklch(.75 .13 210);
+  --chart-2: oklch(.73 .17 285);
   --sidebar: oklch(.205 0 0);
   --sidebar-foreground: oklch(.985 0 0);
   --sidebar-primary: oklch(.488 .243 264.376);
@@ -71,7 +107,7 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { min-width: 1024px; }
+  html { min-width: 0; }
   html, body, #app { min-height: 100%; }
   body { @apply bg-background text-foreground antialiased; }
 }

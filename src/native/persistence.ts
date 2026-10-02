@@ -59,8 +59,8 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
   const inspection = await inspectArchive(path);
   if (!inspection.ok) return inspection;
   const fromVersion = inspection.value.header.schemaVersion;
-  if (fromVersion < 1 || fromVersion > 3)
-    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 3.' });
+  if (fromVersion < 1 || fromVersion >= CURRENT_SCHEMA_VERSION)
+    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 6.' });
   const changes = fromVersion === 1 ? [
     'Aggiunge l’anagrafica Clienti locali vuota.',
     'Imposta Fatture in Cloud su Disattivata conservando i riferimenti non segreti.',
@@ -68,9 +68,12 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
     'Marca come Fatture in Cloud i riferimenti cliente e gli snapshot esistenti.',
   ] : [];
   if(fromVersion<=2)changes.push('Converte automaticamente i consumi dei carburanti liquidi da l/100 km a km/l.');
-  changes.push('Rimuove velocità media e anagrafica clienti locale non previste dalla v0.6.', 'Introduce coordinate delle Sedi, default globali e Trasferte con Partenza/Destinazione.');
+  if (fromVersion <= 3) changes.push('Rimuove velocità media e anagrafica clienti locale non previste dalla v0.6.', 'Introduce coordinate delle Sedi, default globali e Trasferte con Partenza/Destinazione.');
+  if (fromVersion < 5) changes.push('Aggiorna allo schema 5 senza modificare i dati esistenti.');
+  if (fromVersion < 6) changes.push('Aggiunge categorie, movimenti bancari e regole automatiche vuoti, conservando lo snapshot finanziario esistente.');
+  changes.push('Aggiorna allo schema 7: nessuna copertura fiscale o integrazione iniziale; conserva movimenti, categorie, regole e snapshot.');
   const bytes=await readFile(path);const raw=JSON.parse(bytes.toString('utf8')) as Record<string,unknown>;
-  const blockers=findV3Blockers(fromVersion===1?migrateV2Record(migrateV1(raw)):fromVersion===2?migrateV2Record(raw):raw);
+  const blockers=fromVersion >= 4 ? [] : findV3Blockers(fromVersion===1?migrateV2Record(migrateV1(raw)):fromVersion===2?migrateV2Record(raw):raw);
   return ok({ fromVersion, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes, blockers });
 }
 
@@ -126,12 +129,12 @@ function findV3Blockers(raw: Record<string, unknown>): string[] {
   return blockers;
 }
 
-function migrateV3(raw: Record<string, unknown>): CashDocument {
+function migrateV3(raw: Record<string, unknown>): Record<string, unknown> {
   const profiles=(raw.profiles as Array<Record<string,unknown>>??[]).map(profile=>({ ...profile, capacity:{...(profile.capacity as Record<string,unknown>),travelSpeedKmh:undefined} }));
   const sites=(raw.sites as Array<Record<string,unknown>>??[]).map(({oneWayKm:_oneWayKm,...site})=>site);
   const {localClients:_localClients,...withoutClients}=raw;
-  return parseDocument({ ...withoutClients, schemaVersion:CURRENT_SCHEMA_VERSION, profiles, sites,
-    settings:{...(raw.settings as Record<string,unknown>),defaultDepartureSiteId:undefined,defaultVehicleId:undefined} });
+  return { ...withoutClients, schemaVersion:4, profiles, sites,
+    settings:{...(raw.settings as Record<string,unknown>),defaultDepartureSiteId:undefined,defaultVehicleId:undefined} };
 }
 
 export async function migrateArchive(path: string): Promise<Result<ArchiveSession>> {
@@ -143,7 +146,10 @@ export async function migrateArchive(path: string): Promise<Result<ArchiveSessio
     const raw = parsed.value as Record<string, unknown>;
     if(preview.value.blockers.length)return err({code:'MIGRATION_REQUIRED',source:'archive',message:'La migrazione automatica è bloccata per evitare una conversione arbitraria dei dati storici.',action:'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.',details:preview.value.blockers});
     const v3=preview.value.fromVersion===1?migrateV2Record(migrateV1(raw)):preview.value.fromVersion===2?migrateV2Record(raw):raw;
-    const migrated = migrateV3(v3);
+    const v4 = preview.value.fromVersion >= 4 ? raw : migrateV3(v3);
+    const migrated = parseDocument({ ...v4, schemaVersion: CURRENT_SCHEMA_VERSION,
+      ...(preview.value.fromVersion < 6 ? { bankExpenseCategories: [], bankExpenses: [], bankExpenseRules: [] } : {}),
+      financialProvisions: [] });
     await copyFile(path, preview.value.backupPath);
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
     const bytes = encode(migrated);

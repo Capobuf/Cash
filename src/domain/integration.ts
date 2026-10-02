@@ -1,5 +1,20 @@
 import { err, ok, type Result, type SharedSettings } from './model';
 
+export const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a',
+  'issued_documents.invoices:r', 'issued_documents.credit_notes:r', 'received_documents:r'];
+
+// Live evidence only: company permissions are not the token's granted scopes.
+export interface FicAccessVerification {
+  company: { id: string; name: string };
+  checkedAt: string;
+  companyPermissions: Record<string, unknown>;
+  requiredAccess: Array<{
+    label: string; scope: string;
+    status: 'available' | 'unavailable' | 'unverifiable';
+    detail: string;
+  }>;
+}
+
 export type FicDeviceState = 'disabled' | 'requires_local_configuration' | 'active' | 'connection_error';
 
 export function ficDeviceState(settings: SharedSettings, hasLocalToken: boolean): FicDeviceState {

@@ -22,7 +22,9 @@
     "package:win": "npm run build && electron-builder --win portable --x64 --publish never"
   },
   "dependencies": {
-    "@zowe/secrets-for-zowe-sdk": "8.38.0"
+    "@zowe/secrets-for-zowe-sdk": "8.38.0",
+    "exceljs": "4.4.0",
+    "recharts": "^3.8.0"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
@@ -76,5 +78,10 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "@zowe/secrets-for-zowe-sdk@8.38.0": true
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

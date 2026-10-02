@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type CashNativeApi } from '../shared/ipc';
 
 const api: CashNativeApi = {
+  bankExpenses: { importXlsx: () => ipcRenderer.invoke(IPC.bankExpenseImport) },
   archive: {
     create: document => ipcRenderer.invoke(IPC.archiveCreate, document),
     open: () => ipcRenderer.invoke(IPC.archiveOpen),
@@ -26,6 +27,8 @@ const api: CashNativeApi = {
     route: input => ipcRenderer.invoke(IPC.orsRoute, input),
   },
   fic: {
+    verifyPermissions: input => ipcRenderer.invoke(IPC.ficVerifyPermissions, input),
+    syncFinancialData: input => ipcRenderer.invoke(IPC.ficFinancialSync, input),
     setupInfo: () => ipcRenderer.invoke(IPC.ficSetupInfo),
     setClientId: clientId => ipcRenderer.invoke(IPC.ficSetClientId, clientId),
     listCompaniesForActivation: token => ipcRenderer.invoke(IPC.ficWizardCompanies, token),

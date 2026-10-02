@@ -1,18 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { readBankExpenseXlsx } from './bank-expense-import';
 import { join } from 'node:path';
 import { createEmptyDocument, err, ok, type CashDocument, type Coordinates, type Fuel, type Result } from '../domain/model';
 import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigration, restoreBackup, saveArchive, saveRecoveryCopy, type ArchiveSession, type ConcurrencyToken } from './persistence';
 import { deleteFicToken, hasFicToken, hasOrsApiKey, requireFicToken, requireOrsApiKey, setFicToken, setOrsApiKey } from './credentials';
 import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
-import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, verifyActivation, verifyProduct } from './integrations/fatture-in-cloud';
+import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, syncFinancialData, verifyActivation, verifyProduct, verifyPermissions } from './integrations/fatture-in-cloud';
 import { IPC } from '../shared/ipc';
-import { requireActiveFic } from '../domain/integration';
+import { FIC_SCOPES, requireActiveFic } from '../domain/integration';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from './fic-link';
 import { readPreferences, rememberArchive, setFicClientId } from './preferences';
 import { calculateRoute, reverseCoordinates, searchAddress, verifyConnection } from './integrations/openrouteservice';
-
-const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a'];
 
 let window: BrowserWindow | null = null;
 let current: ArchiveSession | null = null;
@@ -55,6 +54,12 @@ async function selectOpen() {
 }
 
 function registerHandlers(): void {
+  ipcMain.handle(IPC.bankExpenseImport, async () => {
+    if (!current?.document || current.readOnly) return err({ code: 'VALIDATION', message: 'Apri un archivio modificabile prima di importare.' });
+    const choice = await dialog.showOpenDialog({ title: 'Importa spese bancarie', properties: ['openFile'], filters: [{ name: 'Movimenti bancari XLSX', extensions: ['xlsx'] }] });
+    if (choice.canceled || !choice.filePaths[0]) return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
+    return readBankExpenseXlsx(choice.filePaths[0]);
+  });
   ipcMain.handle(IPC.archiveOpen, () => selectOpen());
   ipcMain.handle(IPC.archiveOpenLast, async () => {
     const path = (await readPreferences()).lastArchivePath;
@@ -124,6 +129,28 @@ function registerHandlers(): void {
     current = saved.value;
     dirty = false;
     return saved;
+  });
+  ipcMain.handle(IPC.ficFinancialSync, async (_event, input: { companyId: string }) => {
+    if (!input || typeof input.companyId !== 'string' || !activeFicCompany(input.companyId) || current?.readOnly)
+      return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Aggiornamento non disponibile: verificare archivio e azienda Fatture in Cloud attiva.' });
+    const session = current;
+    const token = await requireFicToken();
+    if (!token.ok) return token;
+    const result = await syncFinancialData(input.companyId, token.value);
+    if (current?.path !== session?.path || current?.token.documentId !== session?.token.documentId || !activeFicCompany(input.companyId))
+      return err({ code: 'CONFLICT', source: 'archive', message: 'Archivio o collegamento cambiato durante la sincronizzazione. Ripetere l’aggiornamento.' });
+    return result;
+  });
+  ipcMain.handle(IPC.ficVerifyPermissions, async (_event, input: { companyId: string }) => {
+    if (!input || typeof input.companyId !== 'string' || !activeFicCompany(input.companyId))
+      return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Verifica non disponibile: attiva il collegamento all’azienda.' });
+    const session = current;
+    const token = await requireFicToken();
+    if (!token.ok) return token;
+    const result = await verifyPermissions(input.companyId, token.value);
+    if (current?.path !== session?.path || current?.token.documentId !== session?.token.documentId || !activeFicCompany(input.companyId))
+      return err({ code: 'CONFLICT', message: 'Archivio o azienda cambiato durante la verifica. Ripeti l’operazione.' });
+    return result;
   });
   ipcMain.handle(IPC.ficClients, async (_event, input: { companyId: string; query: string }) => {
     if (!activeFicCompany(input.companyId)) return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Integrazione Fatture in Cloud disattivata o azienda non configurata.' });

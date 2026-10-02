@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -253,6 +253,84 @@ export interface FicTaxProfileSnapshot {
   defaultVat?: { id: string; value?: number; description?: string };
 }
 
+export interface FicFinancialPayment {
+  id?: string;
+  amount: DecimalString;
+  dueDate?: string;
+  paidDate?: string;
+  status: 'paid' | 'not_paid' | 'reversed';
+}
+export interface FicIssuedDocument {
+  id: string;
+  type: 'invoice' | 'credit_note';
+  date: string;
+  number?: string;
+  numeration?: string;
+  description?: string;
+  entityId?: string;
+  entityName?: string;
+  amountGross: DecimalString;
+  payments: FicFinancialPayment[];
+}
+export interface FicReceivedDocument {
+  id: string;
+  type: 'expense' | 'passive_credit_note';
+  date: string;
+  invoiceNumber?: string;
+  entityId?: string;
+  entityName?: string;
+  description?: string;
+  category?: string;
+  amountGross: DecimalString;
+  payments: FicFinancialPayment[];
+}
+export interface FicPendingReceivedDocument {
+  id: string;
+  source: 'agyo' | 'mail' | 'browser';
+  documentType?: string;
+  date?: string;
+  subject?: string;
+  supplierName?: string;
+  amountGross?: DecimalString;
+  category?: string;
+}
+export interface FicFinancialSnapshot {
+  source: 'fatture_in_cloud';
+  company: { id: string; name: string };
+  acquiredAt: string;
+  issuedDocuments: FicIssuedDocument[];
+  receivedDocuments: FicReceivedDocument[];
+  pendingReceivedDocuments?: FicPendingReceivedDocument[];
+}
+
+export interface BankExpense extends EntityMeta {
+  date: string;
+  description: string;
+  amount: DecimalString;
+  categoryIds: string[];
+}
+
+export interface BankExpenseCategory extends EntityMeta {
+  name: string;
+  parentId?: string;
+}
+
+export interface BankExpenseRule extends EntityMeta {
+  matchText: string;
+  categoryId: string;
+}
+
+export type BankExpenseRow = Pick<BankExpense, 'date' | 'description' | 'amount'>;
+export interface BankExpenseImport { rows: BankExpenseRow[]; ignoredIncome: number }
+export interface BankExpenseImportSummary { imported: number; duplicates: number; ignoredIncome: number }
+
+export interface FinancialProvision {
+  year: number;
+  covered: DecimalString;
+  additions: { description: string; amount: DecimalString }[];
+  bankBalance?: { amount: DecimalString; date: string };
+}
+
 export interface CashDocument {
   schemaVersion: number;
   documentId: string;
@@ -266,6 +344,11 @@ export interface CashDocument {
   sites: Site[];
   catalog: Catalog;
   quotes: Quote[];
+  financialSnapshot?: FicFinancialSnapshot;
+  financialProvisions: FinancialProvision[];
+  bankExpenseCategories: BankExpenseCategory[];
+  bankExpenses: BankExpense[];
+  bankExpenseRules: BankExpenseRule[];
 }
 
 export const nowIso = (): string => new Date().toISOString();
@@ -288,6 +371,10 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   sites: [],
   catalog: { subItems: [], templates: [] },
   quotes: [],
+  financialProvisions: [],
+  bankExpenseCategories: [],
+  bankExpenses: [],
+  bankExpenseRules: [],
 });
 
 export const createFiscalPreset2026 = (): EconomicProfile => ({

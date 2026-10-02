@@ -1,4 +1,4 @@
-import { Archive, BookOpen, CheckCircle2, CircleAlert, CloudCog, Database, FileText, Gauge, LoaderCircle, MoreHorizontal, Save, Settings, Users, X } from "lucide-react"
+import { Archive, ChartNoAxesCombined, BookOpen, CheckCircle2, CircleAlert, CloudCog, Database, FileText, Gauge, LoaderCircle, MoreHorizontal, Save, Settings, Users, X } from "lucide-react"
 import type { ReactNode } from "react"
 import type { AppState } from "../state"
 import type { DeleteTarget, View } from "../types"
@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator"
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton,
-  SidebarMenuItem, SidebarProvider,
+  SidebarMenuItem, SidebarProvider, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
 } from "@/components/ui/sidebar"
 
 const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
@@ -26,17 +26,22 @@ const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
   { key: "quotes", label: "Preventivi", icon: FileText },
   { key: "clients", label: "Clienti", icon: Users },
   { key: "catalog", label: "Catalogo", icon: BookOpen },
+  { key: "financial-analysis", label: "Panoramica", icon: ChartNoAxesCombined },
   { key: "settings", label: "Impostazioni", icon: Settings },
 ]
 
 const titles: Record<View, string> = {
   dashboard: "Panoramica", quotes: "Preventivi", clients: "Clienti",
+  "financial-analysis": "Panoramica finanziaria",
+  "bank-summary": "Spese · Riepilogo", "bank-movements": "Spese · Movimenti", "bank-categories": "Spese · Categorie",
   catalog: "Catalogo", settings: "Impostazioni",
 }
 
 const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
   clients: "Clienti Fatture in Cloud e sedi correlate",
+  "financial-analysis": "Obiettivi e dati amministrativi registrati",
+  "bank-summary": "Analisi delle uscite bancarie", "bank-movements": "Importazione e categorizzazione delle spese", "bank-categories": "Organizza categorie e sottocategorie",
   catalog: "Template e contenuti riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 
@@ -103,20 +108,26 @@ export function AppShell({ appState, view, onView, children }: {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Applicazione</SidebarGroupLabel>
+          {[{ label: "Preventivazione", keys: ["dashboard", "quotes", "clients", "catalog"] }, { label: "Analisi finanziaria", keys: ["financial-analysis"] }, { label: "Configurazione", keys: ["settings"] }].map(group => <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {entries.map(({ key, label, icon: Icon }) => (
+                {entries.filter(entry => group.keys.includes(entry.key)).map(({ key, label, icon: Icon }) => (
                   <SidebarMenuItem key={key}>
                     <SidebarMenuButton isActive={view === key} aria-current={view === key ? "page" : undefined} onClick={() => onView(key)}>
                       <Icon aria-hidden="true" /><span>{label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+                {group.label === 'Analisi finanziaria' ? <SidebarMenuItem>
+                  <SidebarMenuButton isActive={view.startsWith('bank-')} onClick={() => onView('bank-summary')}><ChartNoAxesCombined aria-hidden="true" /><span>Spese</span></SidebarMenuButton>
+                  <SidebarMenuSub>{([{ key: 'bank-summary', label: 'Riepilogo' }, { key: 'bank-movements', label: 'Movimenti' }, { key: 'bank-categories', label: 'Categorie' }] as const).map(entry => <SidebarMenuSubItem key={entry.key}>
+                    <SidebarMenuSubButton render={<button type="button" />} isActive={view === entry.key} aria-current={view === entry.key ? 'page' : undefined} onClick={() => onView(entry.key)}>{entry.label}</SidebarMenuSubButton>
+                  </SidebarMenuSubItem>)}</SidebarMenuSub>
+                </SidebarMenuItem> : null}
               </SidebarMenu>
             </SidebarGroupContent>
-          </SidebarGroup>
+          </SidebarGroup>)}
         </SidebarContent>
         <SidebarFooter className="p-4">
           <div className="flex gap-3 rounded-lg border border-sidebar-border p-3 text-xs text-sidebar-foreground/70">
@@ -125,7 +136,7 @@ export function AppShell({ appState, view, onView, children }: {
           </div>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3 backdrop-blur 2xl:px-8">
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{descriptions[view]}</p>
