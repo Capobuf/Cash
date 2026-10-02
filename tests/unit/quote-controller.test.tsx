@@ -210,6 +210,24 @@ function setup() {
 }
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
+  it('richiede conferma esplicita per associare un profilo di un altro anno', () => {
+    const { state, document, controller, quote } = setup();
+    const profile = createFiscalPreset2026();
+    Object.assign(profile, {
+      year: 2025,
+      confirmed: true,
+      revenueTarget: '50000.00',
+    });
+    document.profiles.push(profile);
+    expect(controller.updateQuote({ profileId: profile.id })).toBe(
+      'year-mismatch',
+    );
+    expect(state.document?.quotes[0]?.profileId).toBe(quote.profileId);
+    expect(controller.updateQuote({ profileId: profile.id }, true)).toBe(
+      'updated',
+    );
+    expect(state.document?.quotes[0]?.profileSnapshot?.year).toBe(2025);
+  });
   it.each([false, true])(
     'salva una trasferta verso un fornitore (cliente presente: %s)',
     async (withClient) => {

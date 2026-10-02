@@ -50,6 +50,46 @@ describe('creazione condivisa del preventivo', () => {
     expect(createQuote(document).id).not.toBe(quote.id);
   });
 
+  it.each([2025, 2027])(
+    'non propone il profilo di un altro anno (%s)',
+    (year) => {
+      const document = createEmptyDocument();
+      const profile = createFiscalPreset2026();
+      Object.assign(profile, {
+        year,
+        confirmed: true,
+        revenueTarget: '50000.00',
+      });
+      document.profiles.push(profile);
+      expect(createQuote(document).profileId).toBeUndefined();
+      expect(createQuote(document).profileSnapshot).toBeUndefined();
+    },
+  );
+
+  it('preferisce lo stesso anno anche se esiste un profilo futuro', () => {
+    const document = createEmptyDocument();
+    for (const year of [2027, 2026]) {
+      const profile = createFiscalPreset2026();
+      Object.assign(profile, {
+        year,
+        confirmed: true,
+        revenueTarget: '50000.00',
+      });
+      document.profiles.push(profile);
+    }
+    expect(createQuote(document).profileSnapshot?.year).toBe(2026);
+  });
+
+  it('lascia vuoto un profilo corrente non utilizzabile', () => {
+    const document = createEmptyDocument();
+    const profile = createFiscalPreset2026();
+    Object.assign(profile, { confirmed: true, revenueTarget: '50000.00' });
+    profile.fiscal.contributionRate = '0';
+    document.profiles.push(profile);
+    expect(createQuote(document).profileId).toBeUndefined();
+    expect(createQuote(document).profileSnapshot).toBeUndefined();
+  });
+
   it.each([false, true])(
     'crea un preventivo incompleto senza profilo confermato (profilo presente: %s)',
     (hasProfile) => {

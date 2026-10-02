@@ -3,17 +3,19 @@ import { snapshotProfile } from './refresh';
 import { localDate } from './calendar';
 
 export function createQuote(document: CashDocument): Quote {
-  const profile = [...document.profiles]
-    .sort((a, b) => b.year - a.year)
-    .find((entry) => entry.confirmed);
+  const date = localDate();
+  const profile = document.profiles.find(
+    (entry) => entry.confirmed && entry.year === Number(date.slice(0, 4)),
+  );
   const snapshot = profile
     ? snapshotProfile(profile, document.businessCosts)
     : undefined;
   return {
     ...meta(),
-    date: localDate(),
-    ...(profile ? { profileId: profile.id } : {}),
-    ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}),
+    date,
+    ...(snapshot?.ok
+      ? { profileId: snapshot.value.sourceId, profileSnapshot: snapshot.value }
+      : {}),
     items: [],
     snapshotRevision: 0,
     exportAttempts: [],
