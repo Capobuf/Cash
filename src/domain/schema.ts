@@ -784,6 +784,68 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
     ),
   })
   .superRefine((document, ctx) => {
+    const entityIds = new Set<string>();
+    const register = (entity: { id: string }, path: (string | number)[]) => {
+      if (entityIds.has(entity.id))
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'id'],
+          message: 'UUID locale duplicato',
+        });
+      entityIds.add(entity.id);
+    };
+    const registerGroups = (
+      groups: z.infer<typeof variantGroupSchema>[],
+      path: (string | number)[],
+    ) => {
+      groups.forEach((group, index) => {
+        const groupPath = [...path, index];
+        register(group, groupPath);
+        group.options.forEach((option, optionIndex) =>
+          register(option, [...groupPath, 'options', optionIndex]),
+        );
+      });
+    };
+    for (const key of [
+      'profiles',
+      'businessCosts',
+      'vehicles',
+      'sites',
+      'bankExpenses',
+      'bankExpenseCategories',
+      'bankExpenseRules',
+    ] as const)
+      document[key].forEach((entity, index) => register(entity, [key, index]));
+    document.catalog.subItems.forEach((entity, index) =>
+      register(entity, ['catalog', 'subItems', index]),
+    );
+    document.catalog.templates.forEach((template, index) => {
+      const path = ['catalog', 'templates', index];
+      register(template, path);
+      template.items.forEach((item, itemIndex) => {
+        const itemPath = [...path, 'items', itemIndex];
+        register(item, itemPath);
+        item.subItems.forEach((subItem, subIndex) =>
+          register(subItem, [...itemPath, 'subItems', subIndex]),
+        );
+        registerGroups(item.variantGroups, [...itemPath, 'variantGroups']);
+      });
+    });
+    document.quotes.forEach((quote, index) => {
+      const path = ['quotes', index];
+      register(quote, path);
+      quote.items.forEach((item, itemIndex) => {
+        const itemPath = [...path, 'items', itemIndex];
+        register(item, itemPath);
+        item.subItems.forEach((subItem, subIndex) =>
+          register(subItem, [...itemPath, 'subItems', subIndex]),
+        );
+        registerGroups(item.variantGroups, [...itemPath, 'variantGroups']);
+      });
+      quote.exportAttempts.forEach((attempt, attemptIndex) =>
+        register(attempt, [...path, 'exportAttempts', attemptIndex]),
+      );
+    });
     if (
       document.bankExpenseCategories.filter(
         (category) => category.systemRole === 'vat_taxes',
@@ -799,16 +861,8 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
       document.bankExpenseCategories.map((category) => [category.id, category]),
     );
     const names = new Set<string>();
-    const ids = new Set<string>();
     document.bankExpenseCategories.forEach((category, index) => {
       const path = ['bankExpenseCategories', index];
-      if (ids.has(category.id))
-        ctx.addIssue({
-          code: 'custom',
-          path,
-          message: 'ID categoria duplicato',
-        });
-      ids.add(category.id);
       // A migrated user category may share the system category's display name.
       const key = JSON.stringify([
         category.systemRole ?? '',
@@ -837,13 +891,6 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
     const movements = new Set<string>();
     document.bankExpenses.forEach((expense, index) => {
       const path = ['bankExpenses', index];
-      if (ids.has(expense.id))
-        ctx.addIssue({
-          code: 'custom',
-          path,
-          message: 'ID movimento duplicato',
-        });
-      ids.add(expense.id);
       if (expense.categoryIds.some((id) => !categories.has(id)))
         ctx.addIssue({
           code: 'custom',
@@ -867,9 +914,6 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
     });
     document.bankExpenseRules.forEach((rule, index) => {
       const path = ['bankExpenseRules', index];
-      if (ids.has(rule.id))
-        ctx.addIssue({ code: 'custom', path, message: 'ID regola duplicato' });
-      ids.add(rule.id);
       if (!categories.has(rule.categoryId))
         ctx.addIssue({
           code: 'custom',
