@@ -18,12 +18,12 @@ export function BankSummaryView({ doc, year }: { doc: CashDocument; year: number
     ...(summary.uncategorized.count ? [{ name: 'Senza categoria', amount: Number(summary.uncategorized.amount) }] : [])];
   return <div className="space-y-5">
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Card><CardHeader><CardDescription>Totale spese</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(summary.total)}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">Uscite bancarie · {year ?? 'nessun anno'}</CardContent></Card>
+      <Card><CardHeader><CardDescription>Totale spese</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(summary.total)}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">Uscite dal conto · {year ?? 'nessun anno'}</CardContent></Card>
       <Card><CardHeader><CardDescription>Movimenti</CardDescription><CardTitle className="text-2xl tabular-nums">{summary.count}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">Spese importate nell’anno</CardContent></Card>
       <Card><CardHeader><CardDescription>Categorizzato</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(summary.categorized.amount)}</CardTitle></CardHeader><CardContent className="space-y-2"><p className="text-sm text-muted-foreground">{formatNumber(summary.categorized.percentage, 1)}% del totale</p><Progress aria-label="Percentuale spese categorizzate" value={Number(summary.categorized.percentage)} /></CardContent></Card>
       <Card><CardHeader><CardDescription>Senza categoria</CardDescription><CardTitle className="text-2xl tabular-nums">{eur(summary.uncategorized.amount)}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{summary.uncategorized.count} {summary.uncategorized.count === 1 ? 'movimento' : 'movimenti'} da classificare</CardContent></Card>
     </div>
-    {!summary.count ? <p className="text-sm text-muted-foreground">Nessuna spesa nell’anno selezionato. Puoi importare un XLSX dalla pagina Movimenti.</p> : null}
+    {!summary.count ? <p className="text-sm text-muted-foreground">Nessuna spesa nell’anno selezionato. Puoi importare un file XLSX o CSV dalla pagina Movimenti.</p> : null}
     <p className="text-sm text-muted-foreground">Una spesa può appartenere a più categorie; i valori delle categorie possono quindi sovrapporsi. I totali per categoria non sono sommabili tra loro e le percentuali possono complessivamente superare il 100%.</p>
     <div className="grid gap-4 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>Spese mensili</CardTitle><CardDescription>Da gennaio a dicembre · data valuta</CardDescription></CardHeader><CardContent>

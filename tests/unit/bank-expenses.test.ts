@@ -19,7 +19,7 @@ function fixture() {
   return { doc, software, hosting, travel };
 }
 
-describe('spese bancarie', () => {
+describe('uscite dal conto', () => {
   it.each(['OLD WAY', 'Oldway', 'old-way', 'OLD_WAY', ' old. / WAY '])('riconosce %s ignorando solo le differenze grafiche', value => {
     expect(normalizeBankRuleText(value)).toBe('oldway');
     expect(bankRuleMatches('OLD WAY DI VINCENZO F. CAMPOBASSO IT...', value)).toBe(true);

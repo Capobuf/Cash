@@ -51,14 +51,36 @@ describe('analisi finanziaria', () => {
     ];
     const result = calculateFinancialAnalysis(data, 2026, profile, [], '2026-10-01');
     expect(result.collectedRevenue).toBe('2082.00');
-    expect(result.fiscalProjection).toMatchObject({ forfaitIncome: '1394.94', stampDuty: '4.00' });
+    expect(result.fiscalProjection).toMatchObject({ forfaitIncome: '1394.94', stampDuty: '6.00' });
     delete data.issuedDocuments[1]!.stampDuty;
     const incomplete = calculateFinancialAnalysis(data, 2026, profile, [], '2026-10-01');
     expect(incomplete.collectedRevenue).toBe('2082.00');
     expect(incomplete.fiscalProjection?.contributions).toBeDefined();
-    expect(incomplete.fiscalProjection?.stampDuty).toBeUndefined();
-    expect(incomplete.fiscalProjection?.totalToReserve).toBeUndefined();
-    expect(incomplete.fiscalWarnings.join(' ')).toContain('Bollo non disponibile');
+    expect(incomplete.fiscalProjection).toEqual(result.fiscalProjection);
+    expect(incomplete.fiscalUnavailableReason).toBeUndefined();
+  });
+
+  it.each([
+    { amountGross: '77.45', expected: '0.00' },
+    { amountGross: '77.46', expected: '0.00' },
+    { amountGross: '77.47', expected: '2.00' },
+    { amountGross: '100.00', numeration: 'PA', number: '1', expected: '0.00' },
+    { amountGross: '100.00', numeration: 'PA/2026', expected: '0.00' },
+    { amountGross: '100.00', numeration: ' pa/2026 ', expected: '0.00' },
+    { amountGross: '100.00', number: 'PA-1', expected: '0.00' },
+    { amountGross: '100.00', numeration: 'SPA', expected: '2.00' },
+    { amountGross: '100.00', numeration: '/A', expected: '2.00' },
+    { amountGross: '100.00', numeration: '', expected: '2.00' },
+    { amountGross: '100.00', type: 'credit_note' as const, expected: '0.00' },
+    { amountGross: '100.00', date: '2025-12-31', expected: '0.00' },
+  ])('calcola il bollo per importo, prefisso e anno: %j', ({ expected, ...values }) => {
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    for (const stampDuty of [undefined, '0.00', '2.00', '4.00']) {
+      const data = { ...snapshot(), issuedDocuments: [invoice({ ...values, stampDuty })] };
+      const result = calculateFinancialAnalysis(data, 2026, profile, [], '2026-10-01');
+      expect(result.fiscalProjection).toMatchObject({ stampDuty: expected, annualTotal: expected, totalToReserve: expected });
+      expect(result.fiscalUnavailableReason).toBeUndefined();
+    }
   });
 
   it.each([
@@ -96,6 +118,19 @@ describe('analisi finanziaria', () => {
     expect(calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-10-01', undefined,
       { acquiredAt: '2026-01-01T00:00:00Z', regime: 'ordinario' }).fiscalProjection).toBeUndefined();
   });
+  it.each([
+    { companyType: 'company' },
+    { companyType: 'independent_contractor', hasProfessionalFund: true },
+    { companyType: 'independent_contractor', regime: 'ordinario' },
+    { companyType: 'individual', companySubtype: 'artigiano' },
+  ])('mantiene il blocco per profili non supportati: %j', values => {
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    const result = calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-10-01', undefined,
+      { acquiredAt: '2026-09-30T17:24:53.927Z', ...values });
+    expect(result.fiscalProjection).toBeUndefined();
+    expect(result.fiscalUnavailableReason).toContain('fuori dal perimetro');
+    expect(result.collectedRevenue).toBe('300.00');
+  });
   it('separa emesso, incassato per anno pagamento, note di credito e costi', () => {
     const profile = createFiscalPreset2026(); profile.revenueTarget = '1000.00'; profile.confirmed = true;
     const result = calculateFinancialAnalysis(snapshot(), 2026, profile, [{ ...meta(), category: 'Software', description: 'Suite', monthlyAmount: '10.00' }], '2026-09-30');
@@ -116,7 +151,7 @@ describe('analisi finanziaria', () => {
       expect(result.fiscalProjection?.contributions).toBe(planning.value.contributions);
       expect(result.fiscalProjection?.substituteTax).toBe(planning.value.substituteTax);
     }
-    expect(result.fiscalProjection?.totalToReserve).toBe('116.61');
+    expect(result.fiscalProjection?.totalToReserve).toBe('120.61');
   });
 
   it('deriva residui e scadenze senza inventare date, ignorando reversed nell’incassato', () => {
@@ -153,6 +188,11 @@ describe('analisi finanziaria', () => {
   it('unisce gli anni di profili, documenti e pagamenti e mantiene precisione decimale', () => {
     const data = snapshot(); data.issuedDocuments[0]!.payments[0]!.paidDate = '2027-01-01';
     expect(financialYears(data, [{ ...createFiscalPreset2026(), year: 2024 }])).toEqual([2027, 2026, 2025, 2024]);
+    expect(financialYears(undefined, [], [], [{ year: 2023 }])).toEqual([2023]);
+    data.issuedDocuments[2]!.payments[1]!.dueDate = '2028-01-01';
+    expect(financialYears(data, [{ ...createFiscalPreset2026(), year: 2024 }], [
+      { ...meta(), date: '2023-01-01', amount: '1.00', description: 'Uscita', categoryIds: [] },
+    ])).toEqual([2028, 2027, 2026, 2025, 2024, 2023]);
     data.issuedDocuments = [invoice({ id: '1', amountGross: '0.10' }), invoice({ id: '2', amountGross: '0.20' })];
     expect(calculateFinancialAnalysis(data, 2026, undefined, [], '2026-09-30').issuedRevenue).toBe('0.30');
   });

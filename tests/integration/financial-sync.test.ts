@@ -37,7 +37,7 @@ describe('snapshot finanziario FIC completo', () => {
   });
   // Contract-shaped fixture: stamp_duty is an amount, while payment.amount is
   // the amount actually collected, including rivalsa and any charged stamp duty.
-  it.each([2, 0, null, undefined, 'invalid', -2])('importa bollo esplicito %s senza euristiche o duplicazioni dei ricavi', async stamp => {
+  it.each([2, 0, null, undefined, 'invalid', -2])('calcola il bollo anche con stamp_duty %s senza duplicare i ricavi', async stamp => {
     const collected = stamp === 0 ? 1040 : 1042;
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
@@ -58,14 +58,10 @@ describe('snapshot finanziario FIC completo', () => {
     expect(analysis.fiscalProjection?.forfaitIncome).toBe(stamp === 0 ? '696.80' : '698.14');
     expect(result.value.issuedDocuments[0]).not.toHaveProperty('items_list');
     expect(result.value.issuedDocuments[0]).not.toHaveProperty('rivalsa');
-    if (stamp === 0 || stamp === 2) {
-      expect(analysis.fiscalProjection?.stampDuty).toBe(stamp === 0 ? '0.00' : '2.00');
-      expect(analysis.fiscalProjection?.totalToReserve).toBeDefined();
-    } else {
-      expect(analysis.fiscalProjection?.stampDuty).toBeUndefined();
-      expect(analysis.fiscalProjection?.totalToReserve).toBeUndefined();
-      expect(analysis.fiscalUnavailableReason).toContain('Bollo non disponibile');
-    }
+    expect(result.value.issuedDocuments[0]?.stampDuty).toBe(stamp === 0 ? '0.00' : stamp === 2 ? '2.00' : undefined);
+    expect(analysis.fiscalProjection?.stampDuty).toBe('2.00');
+    expect(analysis.fiscalProjection?.totalToReserve).toBeDefined();
+    expect(analysis.fiscalUnavailableReason).toBeUndefined();
   });
   it.each([{ id: 42, name: 'Controparte' }, { id: '42' }, { name: 'Controparte' }, { id: null, name: null }, null])('conserva entity.id e name opzionali per emessi e ricevuti: %j', async entity => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {

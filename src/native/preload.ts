@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type CashNativeApi } from '../shared/ipc';
 
 const api: CashNativeApi = {
-  bankExpenses: { importXlsx: () => ipcRenderer.invoke(IPC.bankExpenseImport) },
+  bankExpenses: { importFile: () => ipcRenderer.invoke(IPC.bankExpenseImport) },
   archive: {
     create: document => ipcRenderer.invoke(IPC.archiveCreate, document),
     open: () => ipcRenderer.invoke(IPC.archiveOpen),

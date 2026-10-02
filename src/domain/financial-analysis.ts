@@ -1,6 +1,6 @@
 import { calculateFiscalAdvances, calculateFiscalProjection, type FiscalProjection } from './calculations';
 import { d, money, percentOut, sumMoney } from './decimal';
-import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, FicIssuedDocument, FicReceivedDocument, FicTaxProfileSnapshot, FinancialProvision } from './model';
+import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, FicIssuedDocument, FicReceivedDocument, FicTaxProfileSnapshot } from './model';
 
 type FinancialDocument = FicIssuedDocument | FicReceivedDocument;
 const inYear = (date: string | undefined, year: number) => date?.slice(0, 4) === String(year);
@@ -10,9 +10,9 @@ const paidInYear = (documents: FinancialDocument[], year: number) => documents.f
 export const annualPlannedBusinessCosts = (costs: BusinessCost[]) =>
   money(costs.reduce((sum, cost) => sum.plus(d(cost.monthlyAmount).mul(12)), d(0)));
 
-export function financialYears(snapshot: FicFinancialSnapshot | undefined, profiles: EconomicProfile[], bankExpenses: BankExpense[] = [], provisions: FinancialProvision[] = []): number[] {
+export function financialYears(snapshot: FicFinancialSnapshot | undefined, profiles: EconomicProfile[], bankExpenses: BankExpense[] = [], fiscalOverrides: { year: number }[] = []): number[] {
   const years = new Set(profiles.map(profile => profile.year));
-  for (const provision of provisions) years.add(provision.year);
+  for (const entry of fiscalOverrides) years.add(entry.year);
   for (const expense of bankExpenses) years.add(Number(expense.date.slice(0, 4)));
   for (const document of [...(snapshot?.issuedDocuments ?? []), ...(snapshot?.receivedDocuments ?? [])]) {
     years.add(Number(document.date.slice(0, 4)));
@@ -182,7 +182,7 @@ export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year:
   else if (!annualProfile.confirmed) fiscalUnavailableReason = `Il profilo fiscale ${year} non è confermato.`;
   else {
     const fiscal = annualProfile.fiscal;
-    if (taxProfile?.hasProfessionalFund || (taxProfile?.companyType && taxProfile.companyType !== 'individual')
+    if (taxProfile?.hasProfessionalFund || (taxProfile?.companyType && !['individual', 'independent_contractor'].includes(taxProfile.companyType))
       || (taxProfile?.regime && !['forfettario', 'forfettario_5', 'forfettario_15'].includes(taxProfile.regime.trim().toLowerCase()))
       || (taxProfile?.companySubtype && taxProfile.companySubtype !== 'professionista'))
       fiscalUnavailableReason = 'Profilo Fatture in Cloud fuori dal perimetro forfettario professionista in Gestione Separata.';
@@ -200,18 +200,15 @@ export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year:
         } else {
           const advanceContributionRate = confirmedNext?.fiscal.contributionRate ?? fiscal.contributionRate;
           const advances = calculateFiscalAdvances(result.value, advanceContributionRate);
-          const missingStamp = annualInvoices.filter(document => document.stampDuty === undefined);
-          const stampDuty = missingStamp.length ? undefined : sumMoney(annualInvoices.map(document => document.stampDuty!));
-          const annualTotal = stampDuty === undefined ? undefined : money(d(result.value.totalToReserve).plus(stampDuty));
+          const stampInvoices = annualInvoices.filter(document => d(document.amountGross).gt('77.46')
+            && ![document.numeration, document.number].some(value => value?.trim().toUpperCase().startsWith('PA')));
+          const stampDuty = money(d(stampInvoices.length).mul(2));
+          const annualTotal = money(d(result.value.totalToReserve).plus(stampDuty));
           fiscalProjection = { ...result.value, ...advances, atecoCode: fiscal.atecoCode,
             profitabilityCoefficient: fiscal.profitabilityCoefficient, contributionRate: fiscal.contributionRate,
             contributionCeiling: fiscal.contributionCeiling, advanceContributionRate, advanceRateProjected: !confirmedNext,
-            stampDuty, annualTotal, totalToReserve: annualTotal === undefined ? undefined : money(d(annualTotal).plus(advances.totalAdvances)) };
+            stampDuty, annualTotal, totalToReserve: money(d(annualTotal).plus(advances.totalAdvances)) };
           if (!confirmedNext) fiscalWarnings.push(`Aliquota INPS dell’anno successivo non disponibile: proiezione effettuata con l’aliquota ${year}.`);
-          if (missingStamp.length) {
-            fiscalUnavailableReason = `Bollo non disponibile per ${missingStamp.length} fatture del ${year}: aggiorna i dati Fatture in Cloud. Il totale fiscale non è determinabile senza questo dato.`;
-            fiscalWarnings.push(fiscalUnavailableReason);
-          }
         }
       } else fiscalUnavailableReason = result.error.message;
     }

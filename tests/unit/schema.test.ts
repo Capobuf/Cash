@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBlankProfile, createEmptyDocument, createFiscalPreset2026, meta } from '../../src/domain/model';
 import { cashDocumentSchema } from '../../src/domain/schema';
 
-describe('schema archivio v6',()=>{
+describe('schema archivio v9',()=>{
   it('richiede una sola categoria di sistema e conserva il significato dopo rename', () => {
     const doc = createEmptyDocument();
     expect(doc.bankExpenseCategories).toHaveLength(1);

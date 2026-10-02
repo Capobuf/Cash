@@ -58,7 +58,7 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
         </NativeSelect></div>
       <label className="flex h-8 items-center gap-2 text-sm"><Checkbox checked={uncategorized} onCheckedChange={value => { setUncategorized(value === true); clearSelection(); }} />Solo non categorizzati</label>
       <Button disabled={readOnly} onClick={() => setExpenseEditor({})}><Plus />Nuova spesa</Button>
-      <Button disabled={readOnly || appState.bankExpenseImporting} onClick={() => void appState.importBankExpenses()}><Upload />{appState.bankExpenseImporting ? 'Importazione in corso…' : 'Importa XLSX'}</Button>
+      <Button disabled={readOnly || appState.bankExpenseImporting} onClick={() => void appState.importBankExpenses()}><Upload />{appState.bankExpenseImporting ? 'Importazione in corso…' : 'Importa XLSX / CSV'}</Button>
     </CardContent></Card>
     {notice ? <Alert role="status"><AlertDescription>{notice}</AlertDescription></Alert> : null}
     {summary ? <Alert role="status"><AlertTitle>Importazione completata</AlertTitle><AlertDescription>
@@ -94,7 +94,7 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
             <Button variant="outline" size="sm" disabled={readOnly} onClick={() => setRuleExpense(expense)}>Crea regola</Button>
           </div></TableCell>
         </TableRow>;
-        })}{!rows.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">{doc.bankExpenses.length ? 'Nessun movimento corrisponde all’anno e ai filtri selezionati.' : 'Crea una spesa oppure importa un XLSX della banca per iniziare.'}</TableCell></TableRow> : null}</TableBody>
+        })}{!rows.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">{doc.bankExpenses.length ? 'Nessun movimento corrisponde all’anno e ai filtri selezionati.' : 'Crea una spesa oppure importa un file XLSX o CSV della banca per iniziare.'}</TableCell></TableRow> : null}</TableBody>
       </Table>
     </CardContent></Card>
     {editing ? <BankManualCategoriesDialog expense={editing} doc={doc} appState={appState} onClose={() => setEditing(undefined)} /> : null}
@@ -108,7 +108,7 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
     }} /> : null}
     <AlertDialog open={Boolean(deleting)} onOpenChange={open => { if (!open) setDeleting(undefined); }}><AlertDialogContent><AlertDialogHeader>
       <AlertDialogTitle>{deleting?.length === 1 ? 'Eliminare questa spesa?' : `Eliminare ${deleting?.length ?? 0} spese?`}</AlertDialogTitle>
-      <AlertDialogDescription>Le spese saranno rimosse dall’archivio. Le categorie e le regole restano disponibili. Una successiva importazione dello stesso XLSX può inserire nuovamente le spese eliminate.</AlertDialogDescription>
+      <AlertDialogDescription>Le spese saranno rimosse dall’archivio. Le categorie e le regole restano disponibili. Una successiva importazione dello stesso file può inserire nuovamente le spese eliminate.</AlertDialogDescription>
     </AlertDialogHeader><div className="max-h-48 space-y-2 overflow-y-auto text-sm">{deleting?.map(expense => <p key={expense.id}>{dateIt(expense.date)} · {expense.description} · {eur(expense.amount)}</p>)}</div>
       <AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={readOnly} onClick={() => {
         if (!deleting || readOnly) return;

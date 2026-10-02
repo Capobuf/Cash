@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { calculateFinancialOverview } from '../../domain/financial-overview';
 import type { CashDocument } from '../../domain/model';
@@ -13,13 +13,10 @@ import { FinancialDocuments } from '@/components/FinancialDocuments';
 import { dateIt, eur } from '@/lib/format';
 import { FinancialCharts, FinancialAggregates } from '@/components/FinancialDashboard';
 import { FinancialOverviewDashboard } from '@/components/FinancialOverviewDashboard';
-import { FinancialProvisionDialog } from '@/components/FinancialProvisionDialog';
 
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 
 export function FinancialAnalysisView({ doc, appState, hasToken, year }: { doc: CashDocument; appState: AppState; hasToken: boolean; year: number | undefined }) {
-  const [editing, setEditing] = useState<{ documentId: string; year: number }>();
-  const readOnly = Boolean(appState.session?.readOnly || appState.status === 'Conflitto esterno');
   const snapshot = doc.financialSnapshot;
   const now = new Date(); const currentYear = now.getFullYear();
   const today = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -47,8 +44,12 @@ export function FinancialAnalysisView({ doc, appState, hasToken, year }: { doc: 
     {unavailable ? <Alert><AlertTitle>Aggiornamento live non disponibile</AlertTitle><AlertDescription>{unavailable}{snapshot ? ` Snapshot aggiornato al ${dateIt(snapshot.acquiredAt)}.` : ''}</AlertDescription></Alert> : null}
     {appState.financialSyncError ? <Alert><AlertTitle>Ultimo aggiornamento non riuscito</AlertTitle><AlertDescription>Stai consultando lo snapshot precedente. Puoi ripetere l’aggiornamento manuale.</AlertDescription></Alert> : null}
     {mismatch ? <Alert><AlertTitle>Azienda diversa dallo snapshot</AlertTitle><AlertDescription>Stai consultando {snapshot.company.name}. Il collegamento attuale è con {fic.company?.name}. Un aggiornamento riuscito sostituirà integralmente questi dati con quelli dell’azienda configurata.</AlertDescription></Alert> : null}
-    {overview ? <FinancialOverviewDashboard overview={overview} readOnly={readOnly} onEdit={() => setEditing({ documentId: doc.documentId, year: overview.year })} /> : <Alert><AlertDescription>Nessun anno disponibile. Aggiungi un profilo annuale, un movimento bancario o sincronizza Fatture in Cloud.</AlertDescription></Alert>}
-    {editing && editing.documentId === doc.documentId && editing.year === year ? <FinancialProvisionDialog key={`${doc.documentId}:${year}`} year={editing.year} provision={doc.financialProvisions.find(entry => entry.year === year)} appState={appState} onClose={() => setEditing(undefined)} /> : null}
+    {overview ? <FinancialOverviewDashboard overview={overview} correctionDisabled={appState.session?.readOnly || appState.status === 'Conflitto esterno'} onFiscalCorrection={(total) => appState.mutate(document => {
+      const entries = (document.fiscalPaymentOverrides ?? []).filter(entry => entry.year !== overview.year);
+      if (total !== undefined) entries.push({ year: overview.year, total });
+      if (entries.length) document.fiscalPaymentOverrides = entries;
+      else delete document.fiscalPaymentOverrides;
+    })} /> : <Alert><AlertDescription>Nessun anno disponibile. Aggiungi un profilo annuale, un movimento bancario o sincronizza Fatture in Cloud.</AlertDescription></Alert>}
     {!snapshot ? <Card><CardContent className="py-12 text-center"><h2 className="text-lg font-semibold">Nessun dato finanziario sincronizzato</h2><p className="mt-2 text-sm text-muted-foreground">{canSync ? 'Usa Aggiorna dati Fatture in Cloud per acquisire fatture, spese e pagamenti registrati.' : 'Configura Fatture in Cloud per acquisire il primo snapshot.'}</p></CardContent></Card> : null}
     {snapshot && !analysis ? <Alert><AlertDescription>Lo snapshot non contiene documenti registrati o pagamenti con un anno disponibile e non sono presenti profili annuali. Gli eventuali documenti in ingresso restano consultabili sotto.</AlertDescription></Alert> : null}
     {snapshot ? <Collapsible className="space-y-4">

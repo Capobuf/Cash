@@ -26,6 +26,8 @@ export function calculateFiscalProjection(revenueAmount: string, fiscal: FiscalP
     if (!['62.20.10', '62.02.00'].includes(fiscal.atecoCode.trim()) || !d(fiscal.ordinarySubstituteTaxRate).eq(15) || !d(fiscal.reducedSubstituteTaxRate).eq(5))
       return fail('Profilo fuori perimetro: previsione disponibile solo per consulenza informatica in regime forfettario, Gestione Separata e aliquote 5%/15%.', 'fiscal');
     const profitability = d(fiscal.profitabilityCoefficient).div(100); const contributionRate = d(fiscal.contributionRate).div(100);
+    if (!contributionRate.isFinite() || contributionRate.lte(0) || contributionRate.gt(1))
+      return fail('Configura l’aliquota INPS dell’anno in Impostazioni → Profili annuali → Fiscalità: deve essere maggiore di 0% e non superiore a 100%.', 'contributionRate');
     const effectiveRate = fiscal.activityPhase === 'reduced_eligible' && fiscal.reducedEligibilityConfirmed ? fiscal.reducedSubstituteTaxRate : fiscal.ordinarySubstituteTaxRate;
     const taxRate = d(effectiveRate).div(100);
     if (profitability.lte(0) || profitability.gt(1) || contributionRate.lt(0) || contributionRate.gt(1) || taxRate.lt(0) || taxRate.gt(1)) return fail('Coefficienti e aliquote fiscali non validi.', 'fiscal');
