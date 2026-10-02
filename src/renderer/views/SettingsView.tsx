@@ -471,9 +471,25 @@ export function SettingsView({
                       Disattiva
                     </Button>
                   ) : null}
+                  {!fic.enabled &&
+                  fic.company &&
+                  fic.product &&
+                  ficUi.hasToken ? (
+                    <Button
+                      onClick={() =>
+                        appState.mutate((document) => {
+                          document.settings.fic.enabled = true;
+                        })
+                      }
+                    >
+                      Riattiva
+                    </Button>
+                  ) : null}
                   <Button onClick={() => setWizardOpen(true)}>
-                    {fic.enabled
-                      ? 'Riconfigura postazione'
+                    {fic.company && fic.product
+                      ? ficUi.hasToken
+                        ? 'Riconfigura postazione'
+                        : 'Configura questa postazione'
                       : 'Configura Fatture in Cloud'}
                   </Button>
                   <Button
