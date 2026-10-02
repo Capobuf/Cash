@@ -14,6 +14,7 @@ const native = vi.hoisted(() => ({
   send: vi.fn(),
   openArchive: vi.fn(),
   saveArchive: vi.fn(),
+  inspectArchive: vi.fn(),
 }));
 vi.mock('electron', () => ({
   app: {
@@ -50,7 +51,7 @@ vi.mock('../../src/native/persistence', () => ({
   openArchive: native.openArchive,
   saveArchive: native.saveArchive,
   createArchive: vi.fn(),
-  inspectArchive: vi.fn(),
+  inspectArchive: native.inspectArchive,
   migrateArchive: vi.fn(),
   previewMigration: vi.fn(),
   restoreBackup: vi.fn(),
@@ -84,6 +85,58 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it('keeps the replacement archive current when an earlier save finishes', async () => {
+  const document = createEmptyDocument();
+  const session: ArchiveSession = {
+    path: 'A.json',
+    document,
+    readOnly: false,
+    token: { documentId: document.documentId, revision: 1, fingerprint: 'A' },
+  };
+  const replacement = { ...session, path: 'B.json' };
+  native.openArchive
+    .mockResolvedValueOnce(ok(session))
+    .mockResolvedValueOnce(ok(replacement));
+  let finish!: (value: ReturnType<typeof ok<ArchiveSession>>) => void;
+  native.saveArchive.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  native.inspectArchive.mockResolvedValue(ok({}));
+  await import('../../src/native/main');
+  await native.handlers.get(IPC.archiveOpenLast)!();
+  const saving = native.handlers.get(IPC.archiveSave)!(
+    {},
+    session.path,
+    document,
+    session.token,
+  );
+  await native.handlers.get(IPC.archiveOpenLast)!();
+  finish(ok({ ...session, token: { ...session.token, revision: 2 } }));
+  expect((await saving).ok).toBe(true);
+  expect(
+    (await native.handlers.get(IPC.archiveInspect)!({}, replacement.path)).ok,
+  ).toBe(true);
+  expect(
+    (await native.handlers.get(IPC.archiveInspect)!({}, session.path)).ok,
+  ).toBe(false);
+  const saved = {
+    ...replacement,
+    token: { ...replacement.token, revision: 2 },
+  };
+  native.saveArchive.mockResolvedValueOnce(ok(saved));
+  expect(
+    await native.handlers.get(IPC.archiveSave)!(
+      {},
+      replacement.path,
+      document,
+      replacement.token,
+    ),
+  ).toEqual(ok(saved));
 });
 
 it.each([false, true])(

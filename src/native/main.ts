@@ -212,8 +212,9 @@ function registerHandlers(): void {
           source: 'archive',
           message: 'Sessione archivio non valida o in sola lettura.',
         });
+      const savingSession = current;
       const result = await saveArchive(path, document, token);
-      if (result.ok) {
+      if (result.ok && current === savingSession) {
         current = result.value;
       }
       return result;
