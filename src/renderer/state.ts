@@ -24,6 +24,7 @@ export class AppState {
   private requestArchiveDecision?: () => Promise<ArchiveDecision>;
 
   get document(): CashDocument | undefined { return this.session?.document; }
+  get archiveContext(): number { return this.archiveContextVersion; }
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private emit(): void { for (const listener of this.listeners) listener(); }
 

@@ -38,6 +38,24 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 }) {
   const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([])
   const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId)
+  const archivePath = appState.session?.path
+  const archiveContext = appState.archiveContext
+
+  const guardQuoteContext = (expectedQuote = quote) => {
+    const expected = JSON.stringify(expectedQuote)
+    const settings = JSON.stringify(doc.settings)
+    return () => {
+      const current = appState.document?.quotes.find((entry) => entry.id === expectedQuote?.id)
+      if (!current || appState.archiveContext !== archiveContext || appState.session?.path !== archivePath
+        || appState.document?.documentId !== doc.documentId || appState.session?.readOnly
+        || appState.status === "Conflitto esterno" || JSON.stringify(current) !== expected
+        || JSON.stringify(appState.document.settings) !== settings) {
+        appState.setError({ code: "CONFLICT", message: "Archivio, preventivo o impostazioni cambiati durante l’operazione. Verifica i dati prima di ripetere l’azione." })
+        return false
+      }
+      return true
+    }
+  }
 
   const materializeTravel = async (definition: Extract<SubItemDefinition, { kind: "travel" }> | TravelInput, targetQuote: Quote, context?: TravelContext, previous?: Extract<QuoteSubItem, { kind: "travel" }>): Promise<QuoteSubItem | undefined> => {
     const direct = "departureSiteId" in definition ? definition : undefined
@@ -109,9 +127,12 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
   }
 
   const searchRemoteClients = async (query: string) => {
+    const isCurrent = guardQuoteContext()
+    if (!isCurrent()) return
     const companyId = doc.settings.fic.company?.id
     if (!doc.settings.fic.enabled || !companyId) { appState.setError({ code: "MISSING_DATA", source: "FattureInCloud", message: "Fatture in Cloud non è attivo.", action: "Completa la configurazione nelle Impostazioni per recuperare i clienti." }); return }
     const result = await window.cash.fic.searchClients({ companyId, query })
+    if (!isCurrent()) return
     if (!result.ok) { appState.setError(result.error); return }
     setClientResults(result.value)
   }
@@ -187,8 +208,11 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const saveTravel = async (itemId: string, input: TravelInput, subId?: string) => {
     if (!quote) return false
+    const isCurrent = guardQuoteContext()
+    if (!isCurrent()) return false
     const previous = quote.items.find((entry) => entry.id === itemId)?.subItems.find((entry) => entry.id === subId)
     const built = await materializeTravel(input, quote, undefined, previous?.kind === "travel" ? previous : undefined)
+    if (!isCurrent()) return false
     if (!built) return false
     appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
@@ -203,10 +227,13 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const addReusable = async (itemId: string, reusable: ReusableSubItem, context?: TravelContext) => {
     if (!quote) return false
+    const isCurrent = guardQuoteContext()
+    if (!isCurrent()) return false
     let sub: QuoteSubItem | undefined
     if (reusable.kind === "time") sub = { ...meta(), kind: "time", description: reusable.description, minutes: reusable.minutes }
     else if (reusable.kind === "expense") sub = { ...meta(), kind: "expense", description: reusable.description, amount: reusable.amount }
     else sub = await materializeTravel(reusable, quote, context)
+    if (!isCurrent()) return false
     if (!sub) return false
     appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.subItems.push(sub!))
     return true
@@ -219,11 +246,13 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const switchVariant = async (itemId: string, groupId: string, optionId: string, context: TravelContext, force: boolean) => {
     if (!quote) return false
+    const isCurrent = guardQuoteContext()
+    if (!isCurrent()) return false
     const item = quote.items.find((entry) => entry.id === itemId)
     const option = item?.variantGroups.find((entry) => entry.id === groupId)?.options.find((entry) => entry.id === optionId)
     if (!item || !option) return false
     const queue: QuoteSubItem[] = []
-    for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
+    for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!isCurrent() || !travel) return false; queue.push(travel) }
     const result = changeVariant(item, groupId, optionId, force, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
     if (!result.ok) { appState.setError(result.error); return false }
     appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
@@ -232,6 +261,8 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const insertTemplate = async (templateId: string, choices: Record<string, string>, context: TravelContext) => {
     if (!quote) return false
+    const isCurrent = guardQuoteContext()
+    if (!isCurrent()) return false
     const sourceTemplate = doc.catalog.templates.find((entry) => entry.id === templateId)
     if (!sourceTemplate) return false
     // The dialog returns IDs from the catalog template. Cloning deliberately
@@ -248,7 +279,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
       for (const reusable of source.subItems) {
         if (reusable.kind === "time") item.subItems.push({ ...meta(), kind: "time", description: reusable.description, minutes: reusable.minutes })
         else if (reusable.kind === "expense") item.subItems.push({ ...meta(), kind: "expense", description: reusable.description, amount: reusable.amount })
-        else { const travel = await materializeTravel(reusable, quote, context); if (!travel) return false; item.subItems.push(travel) }
+        else { const travel = await materializeTravel(reusable, quote, context); if (!isCurrent() || !travel) return false; item.subItems.push(travel) }
       }
       const resolved: Record<string, string> = {}
       const queue: QuoteSubItem[] = []
@@ -257,7 +288,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
         const option = optionIndex >= 0 ? group.options[optionIndex] : undefined
         if (!option) { appState.setError({ code: "MISSING_DATA", message: `Scegli un’opzione per ${group.name}.` }); return false }
         resolved[group.id] = option.id
-        for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!travel) return false; queue.push(travel) }
+        for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!isCurrent() || !travel) return false; queue.push(travel) }
       }
       const applied = applyVariantSelections(item, resolved, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
       if (!applied.ok) { appState.setError(applied.error); return false }
@@ -278,12 +309,15 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const performRefresh = async () => {
     if (!quote) return false
+    const isCurrent = guardQuoteContext()
+    if (!isCurrent()) return false
     const result = await refreshQuote(quote, {
       profileById: (id) => doc.profiles.find((entry) => entry.id === id), costs: doc.businessCosts,
       vehicleById: (id) => doc.vehicles.find((entry) => entry.id === id),
       fuel: (vehicle) => doc.settings.fuelTerritory ? window.cash.mimit.latestFuelPrice({ territory: doc.settings.fuelTerritory, fuel: vehicle.fuel }) : Promise.resolve({ ok: false, error: { code: "MISSING_DATA", field: "fuelTerritory", message: "Regione MIMIT non configurata." } }),
       foi: (amount, period) => window.cash.istat.revalue({ amount, fromPeriod: period }),
     })
+    if (!isCurrent()) return false
     if (!result.ok) { appState.setError(result.error); return false }
     appState.mutate((document) => { document.quotes[document.quotes.findIndex((entry) => entry.id === quote.id)] = result.value })
     return true
@@ -291,23 +325,29 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
 
   const performExport = async (client: FicClientSnapshot, groups: Array<{ itemIds: string[]; description: string }>) => {
     if (!quote) return false
+    let isCurrent = guardQuoteContext()
+    if (!isCurrent()) return false
     const fic = doc.settings.fic
     if (!fic.enabled || !fic.company || !fic.product) { appState.setError({ code: "MISSING_DATA", source: "FattureInCloud", message: "Fatture in Cloud non è configurato.", action: "Completa la procedura guidata nelle Impostazioni." }); return false }
     const product = await window.cash.fic.verifyProduct({ companyId: fic.company.id, productId: fic.product.id })
+    if (!isCurrent()) return false
     if (!product.ok) { appState.setError(product.error); return false }
     const exportSnapshot = { ...quote, client }
     const built = buildExportLines(exportSnapshot, groups, fic.company.id)
     if (!built.ok) { appState.setError(built.error); return false }
     if (quote.client?.source !== "fatture_in_cloud" || quote.client.clientId !== client.clientId) {
-      appState.mutate((document) => { document.quotes.find((entry) => entry.id === quote.id)!.client = client })
+      if (!appState.mutate((document) => { document.quotes.find((entry) => entry.id === quote.id)!.client = client })) return false
+      isCurrent = guardQuoteContext(appState.document?.quotes.find((entry) => entry.id === quote.id))
       await appState.save()
-      if (appState.status !== "Salvato") return false
+      if (!isCurrent() || appState.status !== "Salvato") return false
     }
     const attempt = createPendingAttempt(fic.company.id, built.value)
-    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.exportAttempts.push(attempt))
+    if (!appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.exportAttempts.push(attempt))) return false
+    isCurrent = guardQuoteContext(appState.document?.quotes.find((entry) => entry.id === quote.id))
     await appState.save()
-    if (appState.status !== "Salvato") return false
+    if (!isCurrent() || appState.status !== "Salvato") return false
     const sent = await window.cash.fic.exportQuote({ companyId: fic.company.id, clientId: client.clientId, productId: fic.product.id, lines: built.value, attemptId: attempt.id })
+    if (!isCurrent()) return false
     appState.mutate((document) => {
       const saved = document.quotes.find((entry) => entry.id === quote.id)!.exportAttempts.find((entry) => entry.id === attempt.id)!
       if (sent.ok) { saved.outcome = sent.value.outcome; saved.remoteDocumentId = sent.value.remoteDocumentId; saved.diagnostic = sent.value.diagnostic }
