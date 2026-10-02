@@ -161,24 +161,6 @@ export function App() {
   };
 
   const deleteEntity = (doc: CashDocument, target: DeleteTarget) => {
-    if (target.kind === 'profile') {
-      const references = doc.quotes
-        .filter((quote) => quote.profileId === target.id)
-        .map(
-          (quote) =>
-            `${quote.date} · ${quote.items.map((item) => item.name).join(', ') || 'preventivo incompleto'}`,
-        );
-      if (references.length) {
-        appState.setError({
-          code: 'CONFLICT',
-          field: 'profile',
-          message:
-            'Il profilo è ancora il riferimento corrente di uno o più preventivi.',
-          details: references,
-        });
-        return false;
-      }
-    }
     if (
       target.kind === 'site' &&
       doc.settings.defaultDepartureSiteId === target.id
