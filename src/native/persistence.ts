@@ -1,13 +1,5 @@
 import { constants } from 'node:fs';
-import {
-  access,
-  copyFile,
-  open,
-  readFile,
-  rename,
-  rm,
-  stat,
-} from 'node:fs/promises';
+import { access, copyFile, open, readFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import Decimal from 'decimal.js';
@@ -763,22 +755,6 @@ export async function restoreBackup(
       code: 'IO',
       source: 'archive',
       message: 'Ripristino della copia di sicurezza non riuscito.',
-      details: [String(cause)],
-    });
-  }
-}
-
-export async function archiveMetadata(
-  path: string,
-): Promise<Result<{ modifiedAt: string; size: number }>> {
-  try {
-    const info = await stat(path);
-    return ok({ modifiedAt: info.mtime.toISOString(), size: info.size });
-  } catch (cause) {
-    return err({
-      code: 'IO',
-      source: 'archive',
-      message: 'Impossibile leggere i metadati.',
       details: [String(cause)],
     });
   }

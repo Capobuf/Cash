@@ -3,7 +3,6 @@ import {
   meta,
   nowIso,
   ok,
-  type CashDocument,
   type QuoteItem,
   type QuoteSubItem,
   type Result,
@@ -80,41 +79,6 @@ export function cloneTemplateItem(source: TemplateItem): TemplateItem {
       : {}),
     subItems: source.subItems.map(cloneReusableSubItem),
     variantGroups: source.variantGroups.map(copyGroup),
-  };
-}
-
-export interface TemplatePreview {
-  name: string;
-  items: Array<{
-    name: string;
-    subItems: string[];
-    variants: Array<{ group: string; options: string[]; default?: string }>;
-  }>;
-}
-
-export function previewTemplate(
-  name: string,
-  items: QuoteItem[],
-): TemplatePreview {
-  return {
-    name,
-    items: items.map((item) => ({
-      name: item.name,
-      subItems: item.subItems
-        .filter((sub) => !sub.variantOwner)
-        .map((sub) => `${sub.description} (${sub.kind})`),
-      variants: item.variantGroups.map((group) => ({
-        group: group.name,
-        options: group.options.map((option) => option.name),
-        ...(group.defaultOptionId
-          ? {
-              default: group.options.find(
-                (option) => option.id === group.defaultOptionId,
-              )?.name,
-            }
-          : {}),
-      })),
-    })),
   };
 }
 
@@ -214,36 +178,6 @@ export function templateFromQuote(
       };
     }),
   });
-}
-
-export function findLiveReferences(
-  document: CashDocument,
-  entityId: string,
-): string[] {
-  const refs: string[] = [];
-  for (const template of document.catalog.templates) {
-    for (const item of template.items) {
-      for (const sub of item.subItems)
-        if (sub.id === entityId)
-          refs.push(`Template “${template.name}” / ${item.name}`);
-      for (const group of item.variantGroups) {
-        if (group.id === entityId)
-          refs.push(`Template “${template.name}” / gruppo ${group.name}`);
-        for (const option of group.options)
-          if (option.id === entityId)
-            refs.push(
-              `Template “${template.name}” / ${group.name} / ${option.name}`,
-            );
-      }
-    }
-  }
-  if (document.settings.fic.product?.id === entityId)
-    refs.push('Impostazione prodotto Consulenza');
-  if (document.settings.defaultDepartureSiteId === entityId)
-    refs.push('Sede di partenza predefinita');
-  if (document.settings.defaultVehicleId === entityId)
-    refs.push('Veicolo predefinito');
-  return refs;
 }
 
 export function touch<T extends { updatedAt: string }>(entity: T): T {

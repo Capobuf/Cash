@@ -9,6 +9,7 @@ import {
   Settings2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { disableFic } from '../../domain/integration';
 import { createBlankProfile, type CashDocument } from '../../domain/model';
 import { FicAccessPanel } from '@/components/FicAccessPanel';
 import { ProfileEditor } from '@/components/ProfileEditor';
@@ -88,7 +89,7 @@ export function SettingsView({
   onCopyProfile: (id: string) => void;
   requestDelete: (target: DeleteTarget) => void;
 }) {
-  const [tab, setTab] = useState(activeProfileId ? 'profiles' : 'profiles');
+  const [tab, setTab] = useState('profiles');
   const [newProfileOpen, setNewProfileOpen] = useState(false);
   const [removeFicOpen, setRemoveFicOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -463,7 +464,7 @@ export function SettingsView({
                       variant="secondary"
                       onClick={() =>
                         appState.mutate((document) => {
-                          document.settings.fic.enabled = false;
+                          document.settings = disableFic(document.settings);
                         })
                       }
                     >

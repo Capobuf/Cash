@@ -2,7 +2,6 @@ import Decimal from 'decimal.js';
 import {
   err,
   ok,
-  type CashDocument,
   type Coordinates,
   type Result,
   type Site,
@@ -72,35 +71,4 @@ export function siteHasUsableLocation(site: Site): boolean {
     site.location.inputValue ===
       legacyCoordinatesInput(site.location.coordinates)
   );
-}
-
-export function setDefaultDepartureSite(
-  document: CashDocument,
-  siteId?: string,
-): Result<void> {
-  if (siteId && !document.sites.some((site) => site.id === siteId))
-    return err({
-      code: 'VALIDATION',
-      field: 'defaultDepartureSiteId',
-      message: 'La Sede scelta non esiste.',
-    });
-  document.settings.defaultDepartureSiteId = siteId;
-  return ok(undefined);
-}
-
-export function setDefaultVehicle(
-  document: CashDocument,
-  vehicleId?: string,
-): Result<void> {
-  if (
-    vehicleId &&
-    !document.vehicles.some((vehicle) => vehicle.id === vehicleId)
-  )
-    return err({
-      code: 'VALIDATION',
-      field: 'defaultVehicleId',
-      message: 'Il Veicolo scelto non esiste.',
-    });
-  document.settings.defaultVehicleId = vehicleId;
-  return ok(undefined);
 }

@@ -23,22 +23,6 @@ export interface FicAccessVerification {
   }>;
 }
 
-export type FicDeviceState =
-  'disabled' | 'requires_local_configuration' | 'active' | 'connection_error';
-
-export function ficDeviceState(
-  settings: SharedSettings,
-  hasLocalToken: boolean,
-): FicDeviceState {
-  if (!settings.fic.enabled) return 'disabled';
-  if (settings.fic.lastVerification?.result === 'error')
-    return 'connection_error';
-  if (!hasLocalToken) return 'requires_local_configuration';
-  return settings.fic.company && settings.fic.product
-    ? 'active'
-    : 'requires_local_configuration';
-}
-
 export function requireActiveFic(
   settings: SharedSettings,
   companyId: string,

@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   coordinatesInput,
   parseCoordinates,
-  setDefaultDepartureSite,
-  setDefaultVehicle,
   siteHasUsableLocation,
 } from '../../src/domain/locations';
-import { createEmptyDocument, meta, type Site } from '../../src/domain/model';
+import { meta, type Site } from '../../src/domain/model';
 
 describe('Sedi e valori predefiniti globali', () => {
   it('interpreta il formato Google Maps latitudine, longitudine e controlla gli intervalli', () => {
@@ -42,27 +40,5 @@ describe('Sedi e valori predefiniti globali', () => {
     expect(siteHasUsableLocation(site)).toBe(true);
     site.location.inputValue = '12.4964, 41.9028';
     expect(siteHasUsableLocation(site)).toBe(true);
-  });
-  it('mantiene un solo riferimento globale e rifiuta entità inesistenti', () => {
-    const document = createEmptyDocument();
-    const site = { ...meta(), name: 'Studio' };
-    const vehicle = {
-      ...meta(),
-      name: 'Auto',
-      fuel: 'Benzina' as const,
-      consumption: '20',
-      consumptionUnit: 'km/l' as const,
-      annualKm: '10000',
-      annualInsurance: '0',
-      annualTax: '0',
-      annualMaintenance: '0',
-    };
-    document.sites.push(site);
-    document.vehicles.push(vehicle);
-    expect(setDefaultDepartureSite(document, site.id).ok).toBe(true);
-    expect(setDefaultVehicle(document, vehicle.id).ok).toBe(true);
-    expect(document.settings.defaultDepartureSiteId).toBe(site.id);
-    expect(document.settings.defaultVehicleId).toBe(vehicle.id);
-    expect(setDefaultDepartureSite(document, meta().id).ok).toBe(false);
   });
 });
