@@ -1,6 +1,9 @@
 import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
 import type { BankExpenseImport } from '../domain/model';
-import type { FicAccessVerification } from '../domain/integration';
+import type {
+  FicAccessVerification,
+  FicActivationPreview,
+} from '../domain/integration';
 import type {
   CashDocument,
   CashError,
@@ -39,6 +42,7 @@ export const IPC = {
   ficWizardCompanies: 'cash:fic:wizard-companies',
   ficWizardProducts: 'cash:fic:wizard-products',
   ficWizardActivate: 'cash:fic:wizard-activate',
+  ficWizardPreview: 'cash:fic:wizard-preview',
   ficRemoveLink: 'cash:fic:remove-link',
   ficSetupInfo: 'cash:fic:setup-info',
   ficSetClientId: 'cash:fic:set-client-id',
@@ -130,7 +134,13 @@ export interface CashNativeApi {
       token: string;
       companyId: string;
     }): Promise<Result<Array<{ id: string; name: string }>>>;
+    previewActivation(input: {
+      token: string;
+      companyId: string;
+      productId: string;
+    }): Promise<Result<FicActivationPreview>>;
     completeActivation(input: {
+      preview: FicActivationPreview;
       token: string;
       companyId: string;
       productId: string;

@@ -367,10 +367,16 @@ function registerHandlers(): void {
       listConsultingProducts(input.token, input.companyId),
   );
   ipcMain.handle(
+    IPC.ficWizardPreview,
+    (_event, input: { token: string; companyId: string; productId: string }) =>
+      verifyActivation(input.token, input.companyId, input.productId),
+  );
+  ipcMain.handle(
     IPC.ficWizardActivate,
     async (
       _event,
       input: {
+        preview: import('../domain/integration').FicActivationPreview;
         token: string;
         companyId: string;
         productId: string;

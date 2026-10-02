@@ -9,7 +9,10 @@ import {
   Settings2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { disableFic } from '../../domain/integration';
+import {
+  disableFic,
+  type FicActivationPreview,
+} from '../../domain/integration';
 import { createBlankProfile, type CashDocument } from '../../domain/model';
 import { FicAccessPanel } from '@/components/FicAccessPanel';
 import { ProfileEditor } from '@/components/ProfileEditor';
@@ -661,6 +664,7 @@ export function FicWizard({
   const [busy, setBusy] = useState(false);
   const [clientId, setClientId] = useState(ficUi.setupInfo.clientId);
   const company = companies.find((entry) => entry.id === companyId);
+  const [preview, setPreview] = useState<FicActivationPreview>();
   const product = products.find((entry) => entry.id === productId);
 
   useEffect(() => {
@@ -731,17 +735,34 @@ export function FicWizard({
       return;
     }
     if (step === 5) {
-      if (productId) setStep(6);
+      if (!productId) return;
+      setPreview(undefined);
+      setBusy(true);
+      const result = await window.cash.fic.previewActivation({
+        token: token.trim(),
+        companyId,
+        productId,
+      });
+      setBusy(false);
+      if (!result.ok) {
+        ficUi.setConnectionError(true);
+        appState.setError(result.error);
+        return;
+      }
+      setPreview(result.value);
+      setStep(6);
       return;
     }
     if (step === 6) {
       setStep(7);
       return;
     }
+    if (!preview) return;
     await appState.save();
     if (appState.status !== 'Salvato' || !appState.session?.document) return;
     setBusy(true);
     const completed = await window.cash.fic.completeActivation({
+      preview,
       token: token.trim(),
       companyId,
       productId,
@@ -864,8 +885,76 @@ export function FicWizard({
           ) : null}
           {step >= 6 ? (
             <div className="space-y-3 rounded-lg border p-4">
-              <Row label="Azienda" value={company?.name ?? '—'} />
-              <Row label="Prodotto" value={product?.name ?? '—'} />
+              <Row
+                label="Azienda"
+                value={preview?.company.name ?? company?.name ?? '—'}
+              />
+              <Row
+                label="Prodotto"
+                value={preview?.product.name ?? product?.name ?? '—'}
+              />
+              {preview ? (
+                <>
+                  <Row
+                    label="Accessi"
+                    value="Permessi azienda, fiscalità e prodotto verificati"
+                  />
+                  <Row
+                    label="Anno del profilo"
+                    value={String(
+                      ficTaxProfileYear(preview.taxProfile.acquiredAt),
+                    )}
+                  />
+                  <Row
+                    label="Regime FIC"
+                    value={
+                      preview.taxProfile.regime
+                        ? ficRegimeLabel(preview.taxProfile.regime)
+                        : 'Non disponibile; valore attuale conservato'
+                    }
+                  />
+                  <Row
+                    label="Redditività"
+                    value={
+                      preview.taxProfile.profitCoefficient !== undefined
+                        ? `${preview.taxProfile.profitCoefficient}%`
+                        : 'Non disponibile; valore attuale conservato'
+                    }
+                  />
+                  {preview.taxProfile.regime?.startsWith('forfettario') ? (
+                    <Row
+                      label="Imposta sostitutiva"
+                      value={
+                        preview.taxProfile.regime === 'forfettario_5'
+                          ? 'Fase ridotta: 5%; ordinaria: 15%'
+                          : 'Fase ordinaria: 15%; ridotta: 5%'
+                      }
+                    />
+                  ) : null}
+                  <Row
+                    label="Contributi FIC"
+                    value={
+                      preview.taxProfile.contributionsPercentage !== undefined
+                        ? `${preview.taxProfile.contributionsPercentage}% (dato di riferimento)`
+                        : 'Non esposti'
+                    }
+                  />
+                  <Row
+                    label="IVA predefinita"
+                    value={
+                      preview.taxProfile.defaultVat
+                        ? `${preview.taxProfile.defaultVat.description ?? preview.taxProfile.defaultVat.id}${preview.taxProfile.defaultVat.value !== undefined ? ` (${preview.taxProfile.defaultVat.value}%)` : ''}`
+                        : 'Non esposta'
+                    }
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Il salvataggio applicherà regime e redditività disponibili
+                    al profilo annuale. Aliquota INPS e conferme personali
+                    restano a cura dell’utente. I dati saranno ricontrollati
+                    alla conferma.
+                  </p>
+                </>
+              ) : null}
               <Row
                 label="Token"
                 value="Già salvato nel Gestore credenziali locale"

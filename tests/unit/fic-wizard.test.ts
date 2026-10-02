@@ -1,7 +1,7 @@
 import { createElement, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ok } from '../../src/domain/model';
+import { createEmptyDocument, err, ok } from '../../src/domain/model';
 import { FicWizard } from '../../src/renderer/views/SettingsView';
 import { AppState } from '../../src/renderer/state';
 
@@ -57,7 +57,7 @@ function findProps(
   return match(node.props) ? node.props : findProps(node.props.children, match);
 }
 
-function renderWizard() {
+function renderWizard(appState = new AppState()) {
   let tree: ReactNode;
   function Harness() {
     hooks.index = 0;
@@ -66,7 +66,7 @@ function renderWizard() {
       tree = FicWizard({
         open: true,
         onOpenChange: vi.fn(),
-        appState: new AppState(),
+        appState,
         ficUi: {
           hasToken: true,
           connectionError: false,
@@ -93,6 +93,77 @@ function renderWizard() {
     choice: findProps(tree, (props) => Array.isArray(props.entries)),
   };
 }
+
+it.each([true, false])(
+  'shows verification before committing and blocks errors (%s)',
+  async (success) => {
+    const preview = {
+      company: { id: 'A', name: 'Studio' },
+      product: { id: 'P', name: 'Consulenza' },
+      taxProfile: {
+        acquiredAt: '2026-10-02T10:00:00Z',
+        regime: 'forfettario_5',
+        profitCoefficient: '78',
+        contributionsPercentage: '26.07',
+      },
+    };
+    hooks.values = [
+      5,
+      'token',
+      [preview.company],
+      'A',
+      [preview.product],
+      'P',
+      false,
+      'client',
+    ];
+    const previewActivation = vi.fn(async () =>
+      success
+        ? ok(preview)
+        : err({ code: 'CREDENTIALS' as const, message: 'Permessi mancanti' }),
+    );
+    const completeActivation = vi.fn(async () =>
+      err({ code: 'IO' as const, message: 'Simulated commit failure' }),
+    );
+    vi.stubGlobal('window', {
+      cash: { fic: { previewActivation, completeActivation } },
+    });
+    const state = new AppState();
+    const doc = createEmptyDocument();
+    state.session = {
+      path: 'Cash.json',
+      document: doc,
+      readOnly: false,
+      token: { documentId: doc.documentId, revision: 1, fingerprint: 'hash' },
+    };
+    state.status = 'Salvato';
+    const save = vi.spyOn(state, 'save').mockResolvedValue();
+    renderWizard(state).next.onClick();
+    await vi.waitFor(() => expect(hooks.values[6]).toBe(false));
+    expect(previewActivation).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
+    expect(completeActivation).not.toHaveBeenCalled();
+    if (!success) {
+      expect(hooks.values[0]).toBe(5);
+      expect(state.error?.message).toBe('Permessi mancanti');
+      return;
+    }
+    const view = renderWizard(state);
+    expect(view.markup).toContain('Forfettario 5%');
+    expect(view.markup).toContain('78%');
+    expect(view.markup).toContain('26.07%');
+    expect(view.markup).toContain(
+      'Permessi azienda, fiscalità e prodotto verificati',
+    );
+    view.next.onClick();
+    expect(completeActivation).not.toHaveBeenCalled();
+    renderWizard(state).next.onClick();
+    await vi.waitFor(() => expect(completeActivation).toHaveBeenCalledOnce());
+    expect(completeActivation).toHaveBeenCalledWith(
+      expect.objectContaining({ preview }),
+    );
+  },
+);
 
 it.each([0, 1, 2])(
   'requires explicit company and ambiguous product selection (%s products)',

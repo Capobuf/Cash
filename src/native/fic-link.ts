@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   createBlankProfile,
   err,
@@ -5,7 +6,10 @@ import {
   type FicTaxProfileSnapshot,
   type Result,
 } from '../domain/model';
-import { removeFicLink } from '../domain/integration';
+import {
+  removeFicLink,
+  type FicActivationPreview,
+} from '../domain/integration';
 import { saveProfileRevision } from '../domain/profiles';
 import type { ArchiveSession, ConcurrencyToken } from './persistence';
 
@@ -74,6 +78,7 @@ async function previousToken(
 
 export async function commitFicActivation(
   input: {
+    preview: FicActivationPreview;
     token: string;
     companyId: string;
     productId: string;
@@ -89,6 +94,20 @@ export async function commitFicActivation(
     input.productId,
   );
   if (!verified.ok) return verified;
+  const comparable = (preview: FicActivationPreview) => {
+    const { acquiredAt, ...taxProfile } = preview.taxProfile;
+    return { ...preview, taxProfile, year: new Date(acquiredAt).getFullYear() };
+  };
+  if (
+    !input.preview ||
+    !isDeepStrictEqual(comparable(input.preview), comparable(verified.value))
+  )
+    return err({
+      code: 'CONFLICT',
+      source: 'FattureInCloud',
+      message:
+        'I dati Fatture in Cloud sono cambiati. Torna alla scelta del prodotto e verifica nuovamente il riepilogo.',
+    });
   const prior = await previousToken(services);
   if (!prior.ok) return prior;
   const stored = await services.writeToken(input.token);

@@ -1,4 +1,16 @@
-import { err, ok, type Result, type SharedSettings } from './model';
+import {
+  err,
+  ok,
+  type FicTaxProfileSnapshot,
+  type Result,
+  type SharedSettings,
+} from './model';
+
+export interface FicActivationPreview {
+  company: { id: string; name: string };
+  product: { id: string; name: string };
+  taxProfile: FicTaxProfileSnapshot;
+}
 
 export const FIC_SCOPES = [
   'entity.clients:r',

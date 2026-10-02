@@ -45,6 +45,8 @@ const api: CashNativeApi = {
       ipcRenderer.invoke(IPC.ficWizardProducts, input),
     completeActivation: (input) =>
       ipcRenderer.invoke(IPC.ficWizardActivate, input),
+    previewActivation: (input) =>
+      ipcRenderer.invoke(IPC.ficWizardPreview, input),
     removeLink: (input) => ipcRenderer.invoke(IPC.ficRemoveLink, input),
     searchClients: (input) => ipcRenderer.invoke(IPC.ficClients, input),
     getClientDetails: (input) =>

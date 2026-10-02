@@ -24,6 +24,17 @@ const token: ConcurrencyToken = {
   fingerprint: 'hash',
 };
 const input = (document: CashDocument) => ({
+  preview: {
+    company: { id: '1', name: 'Studio' },
+    product: { id: '2', name: 'Consulenza' },
+    taxProfile: {
+      acquiredAt: '2026-09-12T10:00:00.000Z',
+      regime: 'forfettario_5',
+      profitCoefficient: '78',
+      contributionsPercentage: '26.07',
+      defaultVat: { id: '66', value: 0, description: 'Forfettario' },
+    },
+  },
   token: 'nuovo',
   companyId: '1',
   productId: '2',
@@ -63,6 +74,22 @@ function services(overrides: Partial<FicLinkServices> = {}): FicLinkServices {
 }
 
 describe('collegamento Fatture in Cloud atomico', () => {
+  it('blocks changed preview data before touching credentials or the archive', async () => {
+    const api = services();
+    const request = input(createEmptyDocument());
+    request.preview.taxProfile.profitCoefficient = '67';
+    const result = await commitFicActivation(request, api);
+    expect(result).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(api.verify).toHaveBeenCalledOnce();
+    expect(api.writeToken).not.toHaveBeenCalled();
+    expect(api.save).not.toHaveBeenCalled();
+  });
+  it('accepts refreshed acquisition time when the reviewed values and year are unchanged', async () => {
+    const api = services();
+    const request = input(createEmptyDocument());
+    request.preview.taxProfile.acquiredAt = '2026-09-11T10:00:00.000Z';
+    expect((await commitFicActivation(request, api)).ok).toBe(true);
+  });
   it.each(['forfettario_5', 'forfettario'])(
     'richiede le conferme utente dopo import %s',
     async (regime) => {
@@ -75,7 +102,10 @@ describe('collegamento Fatture in Cloud atomico', () => {
       if (!verified.ok) throw new Error(verified.error.message);
       verified.value.taxProfile.regime = regime;
       api.verify = vi.fn(async () => verified);
-      const result = await commitFicActivation(input(document), api);
+      const result = await commitFicActivation(
+        { ...input(document), preview: verified.value },
+        api,
+      );
       if (!result.ok) throw new Error(result.error.message);
       const imported = result.value.document?.profiles[0];
       if (!imported) throw new Error('Profilo importato mancante');
