@@ -5,6 +5,7 @@ import { cloneTemplate, reusableFromQuoteSubItem, templateFromQuote } from "../.
 import { buildExportLines, createPendingAttempt } from "../../domain/export"
 import { snapshotSite } from "../../domain/locations"
 import { meta, type CashDocument, type FicClientSnapshot, type Quote, type QuoteItem, type QuoteSubItem, type ReusableSubItem, type SubItemDefinition } from "../../domain/model"
+import { createQuote } from "../../domain/quotes"
 import { refreshQuote, snapshotProfile } from "../../domain/refresh"
 import { applyVariantSelections, changeVariant } from "../../domain/variants"
 import type { AppState } from "../state"
@@ -100,9 +101,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
   }
 
   const newQuote = () => {
-    const profile = [...doc.profiles].sort((a, b) => b.year - a.year).find((entry) => entry.confirmed)
-    const snapshot = profile ? snapshotProfile(profile, doc.businessCosts) : undefined
-    const created: Quote = { ...meta(), date: new Date().toISOString().slice(0, 10), ...(profile ? { profileId: profile.id } : {}), ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}), items: [], snapshotRevision: 0, exportAttempts: [] }
+    const created = createQuote(doc)
     if (!appState.mutate((document) => document.quotes.push(created))) return false
     setActiveQuoteId(created.id)
     return true

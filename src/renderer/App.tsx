@@ -4,9 +4,9 @@ import { BankSummaryView } from "./views/BankSummaryView"
 import { BankMovementsView } from "./views/BankMovementsView"
 import { BankCategoriesView } from "./views/BankCategoriesView"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
-import { meta, type CashDocument, type Quote } from "../domain/model"
+import { type CashDocument } from "../domain/model"
 import { copyProfileToYear } from "../domain/profiles"
-import { snapshotProfile } from "../domain/refresh"
+import { createQuote as buildQuote } from "../domain/quotes"
 import { AppShell, DeleteDialog, Onboarding } from "@/components/Layout"
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
@@ -63,9 +63,7 @@ export function App() {
   const createQuote = () => {
     const doc = appState.document
     if (!doc) return
-    const profile = [...doc.profiles].sort((a, b) => b.year - a.year).find((entry) => entry.confirmed)
-    const snapshot = profile ? snapshotProfile(profile, doc.businessCosts) : undefined
-    const created: Quote = { ...meta(), date: new Date().toISOString().slice(0, 10), ...(profile ? { profileId: profile.id } : {}), ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}), items: [], snapshotRevision: 0, exportAttempts: [] }
+    const created = buildQuote(doc)
     if (!appState.mutate((document) => document.quotes.push(created))) return
     setActiveQuoteId(created.id)
     setView("quotes")
