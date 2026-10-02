@@ -1,7 +1,14 @@
 import { err, ok, type Result, type SharedSettings } from './model';
 
-export const FIC_SCOPES = ['entity.clients:r', 'products:r', 'settings:r', 'issued_documents.quotes:a',
-  'issued_documents.invoices:r', 'issued_documents.credit_notes:r', 'received_documents:r'];
+export const FIC_SCOPES = [
+  'entity.clients:r',
+  'products:r',
+  'settings:r',
+  'issued_documents.quotes:a',
+  'issued_documents.invoices:r',
+  'issued_documents.credit_notes:r',
+  'received_documents:r',
+];
 
 // Live evidence only: company permissions are not the token's granted scopes.
 export interface FicAccessVerification {
@@ -9,31 +16,63 @@ export interface FicAccessVerification {
   checkedAt: string;
   companyPermissions: Record<string, unknown>;
   requiredAccess: Array<{
-    label: string; scope: string;
+    label: string;
+    scope: string;
     status: 'available' | 'unavailable' | 'unverifiable';
     detail: string;
   }>;
 }
 
-export type FicDeviceState = 'disabled' | 'requires_local_configuration' | 'active' | 'connection_error';
+export type FicDeviceState =
+  'disabled' | 'requires_local_configuration' | 'active' | 'connection_error';
 
-export function ficDeviceState(settings: SharedSettings, hasLocalToken: boolean): FicDeviceState {
+export function ficDeviceState(
+  settings: SharedSettings,
+  hasLocalToken: boolean,
+): FicDeviceState {
   if (!settings.fic.enabled) return 'disabled';
-  if (settings.fic.lastVerification?.result === 'error') return 'connection_error';
+  if (settings.fic.lastVerification?.result === 'error')
+    return 'connection_error';
   if (!hasLocalToken) return 'requires_local_configuration';
-  return settings.fic.company && settings.fic.product ? 'active' : 'requires_local_configuration';
+  return settings.fic.company && settings.fic.product
+    ? 'active'
+    : 'requires_local_configuration';
 }
 
-export function requireActiveFic(settings: SharedSettings, companyId: string, productId?: string): Result<void> {
-  if (!settings.fic.enabled) return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Integrazione Fatture in Cloud disattivata.' });
-  if (settings.fic.company?.id !== companyId) return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Azienda Fatture in Cloud non configurata o diversa.' });
-  if (!settings.fic.product || (productId !== undefined && settings.fic.product.id !== productId))
-    return err({ code: 'VALIDATION', source: 'FattureInCloud', message: 'Prodotto Consulenza non configurato o diverso.' });
+export function requireActiveFic(
+  settings: SharedSettings,
+  companyId: string,
+  productId?: string,
+): Result<void> {
+  if (!settings.fic.enabled)
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Integrazione Fatture in Cloud disattivata.',
+    });
+  if (settings.fic.company?.id !== companyId)
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Azienda Fatture in Cloud non configurata o diversa.',
+    });
+  if (
+    !settings.fic.product ||
+    (productId !== undefined && settings.fic.product.id !== productId)
+  )
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Prodotto Consulenza non configurato o diverso.',
+    });
   return ok(undefined);
 }
 
 export function disableFic(settings: SharedSettings): SharedSettings {
-  return { ...structuredClone(settings), fic: { ...structuredClone(settings.fic), enabled: false } };
+  return {
+    ...structuredClone(settings),
+    fic: { ...structuredClone(settings.fic), enabled: false },
+  };
 }
 
 export function removeFicLink(settings: SharedSettings): SharedSettings {

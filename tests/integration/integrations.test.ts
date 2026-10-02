@@ -1,30 +1,571 @@
-import { describe,expect,it,vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseMimitCsv } from '../../src/native/integrations/mimit';
-import { parseFoiSdmxCsv,revalueFromSeries } from '../../src/native/integrations/foi';
-import { exportQuote, getClientDetails, listCompanies, listConsultingProducts, searchClients, verifyActivation, verifyProduct } from '../../src/native/integrations/fatture-in-cloud';
+import {
+  parseFoiSdmxCsv,
+  revalueFromSeries,
+} from '../../src/native/integrations/foi';
+import {
+  exportQuote,
+  getClientDetails,
+  listCompanies,
+  listConsultingProducts,
+  searchClients,
+  verifyActivation,
+  verifyProduct,
+} from '../../src/native/integrations/fatture-in-cloud';
 import { officialFetch } from '../../src/native/integrations/http';
-import { calculateRoute, reverseCoordinates, searchAddress, verifyConnection } from '../../src/native/integrations/openrouteservice';
+import {
+  calculateRoute,
+  reverseCoordinates,
+  searchAddress,
+  verifyConnection,
+} from '../../src/native/integrations/openrouteservice';
 
-describe('fonti ufficiali',()=>{
-  it('blocca endpoint non allowlistati prima della rete',async()=>{const fetcher=vi.fn();const result=await officialFetch('https://example.com/dati',{},fetcher as unknown as typeof fetch);expect(result.ok).toBe(false);expect(fetcher).not.toHaveBeenCalled();});
-  it('normalizza il CSV regionale MIMIT esatto',()=>{const csv='Aggiornamento 07-09-2026\nREGIONE;TIPOLOGIA;EROGAZIONE;PREZZO MEDIO\nLazio;Benzina;SELF;1.900\n';const result=parseMimitCsv(csv,'Lazio','Benzina','2026-09-08T00:00:00.000Z');expect(result.ok&&result.value.referenceDate).toBe('2026-09-07');expect(result.ok&&result.value.price).toBe('1.900');});
-  it('rifiuta combinazioni non disponibili senza fallback',()=>{const csv='Aggiornamento 07-09-2026\nREGIONE;TIPOLOGIA;EROGAZIONE;PREZZO MEDIO\nLazio;Benzina;SELF;1.900\n';const result=parseMimitCsv(csv,'Lazio','GPL');expect(result.ok).toBe(false);});
-  it('calcola FOI solo da osservazioni valide e confrontabili',()=>{const parsed=parseFoiSdmxCsv('TIME_PERIOD,OBS_VALUE,BASE_PER\n2024-01,100.0,2015=100\n2026-07,110.0,2015=100');expect(parsed.ok).toBe(true);if(!parsed.ok)return;const result=revalueFromSeries('100.00','2024-01',parsed.value,'2026-09-08T00:00:00.000Z');expect(result.ok&&result.value.revaluedAmount).toBe('110.00');});
-  it('filtra FOI generale senza tabacchi, scarta provvisori e applica il raccordo 1,214',()=>{const csv='E_COICOP_REV_ISTAT,TIME_PERIOD,OBS_VALUE,OBS_STATUS,BASE_PER\n00,2025-12,999,,2015=100\n00ST,2025-12,122.6,,2015=100\n00ST,2026-01,100.4,,2025=100\n00ST,2026-02,101.0,P,2025=100';const parsed=parseFoiSdmxCsv(csv);expect(parsed.ok).toBe(true);if(!parsed.ok)return;expect(parsed.value).toHaveLength(2);const result=revalueFromSeries('100.00','2025-12',parsed.value);expect(result.ok&&result.value.toPeriod).toBe('2026-01');expect(result.ok&&result.value.toLinkFactor).toBe('1.214');});
-  it('verifica token, azienda, fiscalità e prodotto Consulenza sugli endpoint ufficiali',async()=>{const fetcher=vi.fn(async(input:string|URL|Request)=>{const url=String(input);if(url.endsWith('/user/companies'))return new Response(JSON.stringify({data:{companies:[{id:1,name:'Studio'}]}}),{status:200});if(url.includes('/company/info'))return new Response(JSON.stringify({data:{id:1,name:'Studio',access_info:{permissions:{fic_clients:'read',fic_products:'read',fic_settings:'read',fic_received_documents:'read',fic_issued_documents_detailed:{quotes:'write',invoices:'read',credit_notes:'read'}}}}}),{status:200});if(url.includes('/settings/tax_profile'))return new Response(JSON.stringify({data:{company_type:'individual',company_subtype:'professionista',regime:'forfettario_5',profit_coefficient:78,contributions_percentage:26.07,default_vat:{id:66,value:0,description:'Forfettario'}}}),{status:200});if(url.includes('/products/2'))return new Response(JSON.stringify({data:{id:2,name:'Consulenza',default_vat:{id:3,value:0,description:'Forfettario'}}}),{status:200});return new Response(JSON.stringify({data:[{id:2,name:'Consulenza'}]}),{status:200});}) as unknown as typeof fetch;const companies=await listCompanies('token',fetcher);expect(companies.ok&&companies.value[0]?.name).toBe('Studio');const products=await listConsultingProducts('token','1',fetcher);expect(products.ok&&products.value).toEqual([{id:'2',name:'Consulenza'}]);const productRequest=vi.mocked(fetcher).mock.calls.find(call=>String(call[0]).includes('/products?'));expect(new URL(String(productRequest?.[0])).searchParams.get('q')).toBe("name = 'Consulenza'");const activation=await verifyActivation('token','1','2',fetcher);expect(activation.ok&&activation.value.taxProfile.regime).toBe('forfettario_5');expect(vi.mocked(fetcher).mock.calls.every(call=>String(call[0]).startsWith('https://api-v2.fattureincloud.it/'))).toBe(true);});
-  it('accetta default_vat null nella risposta elenco prodotti',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({data:[{id:2,name:'Consulenza',default_vat:null}]}),{status:200})) as unknown as typeof fetch;const result=await listConsultingProducts('token','1',fetcher);expect(result.ok&&result.value).toEqual([{id:'2',name:'Consulenza'}]);});
-  it('richiede il dettaglio prodotto e indica come configurare una IVA mancante',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({data:{id:2,name:'Consulenza',default_vat:null}}),{status:200})) as unknown as typeof fetch;const result=await verifyProduct('1','2','token',fetcher);const url=new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));expect(url.searchParams.get('fieldset')).toBe('detailed');expect(result.ok).toBe(false);if(result.ok)return;expect(result.error.code).toBe('MISSING_DATA');expect(result.error.action).toContain('Configura l’IVA predefinita');});
-  it('usa l’IVA aziendale quando il prodotto Consulenza non ne definisce una',async()=>{const fetcher=vi.fn(async(input:string|URL|Request)=>String(input).includes('/settings/tax_profile')?new Response(JSON.stringify({data:{regime:'forfettario',default_vat:{id:66,value:0,description:'Forfettario'}}}),{status:200}):new Response(JSON.stringify({data:{id:2,name:'Consulenza',default_vat:null}}),{status:200})) as unknown as typeof fetch;const result=await verifyProduct('1','2','token',fetcher);expect(result.ok&&result.value.vat.id).toBe('66');});
-  it('blocca il collegamento se Fatture in Cloud espone un regime non supportato',async()=>{const fetcher=vi.fn(async(input:string|URL|Request)=>String(input).includes('/company/info')?new Response(JSON.stringify({data:{id:1,name:'Studio',access_info:{permissions:{fic_clients:'read',fic_products:'read',fic_settings:'read',fic_received_documents:'read',fic_issued_documents_detailed:{quotes:'write',invoices:'read',credit_notes:'read'}}}}}),{status:200}):new Response(JSON.stringify({data:{regime:'ordinario'}}),{status:200})) as unknown as typeof fetch;const result=await verifyActivation('token','1','2',fetcher);expect(result.ok).toBe(false);if(result.ok)return;expect(result.error.field).toBe('taxProfile.regime');expect(result.error.action).toContain('forfettario');});
-  it('rifiuta permessi insufficienti e marca snapshot remoti',async()=>{const denied=vi.fn(async()=>new Response(JSON.stringify({data:{id:1,name:'Studio',access_info:{permissions:{fic_clients:'read',fic_products:'none',fic_issued_documents_detailed:{quotes:'read'}}}}}),{status:200})) as unknown as typeof fetch;expect((await verifyActivation('token','1','2',denied)).ok).toBe(false);const clientsFetch=vi.fn(async()=>new Response(JSON.stringify({data:[{id:9,name:'Cliente',vat_number:'12345678901'}]}),{status:200})) as unknown as typeof fetch;const clients=await searchClients('1','cli','token',clientsFetch);expect(clients.ok&&clients.value[0]?.source).toBe('fatture_in_cloud');});
-  it('costruisce una query FIC valida e protegge gli apostrofi nella ricerca clienti',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({data:[]}),{status:200})) as unknown as typeof fetch;await searchClients('1',"D'Angelo",'token',fetcher);const url=new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));expect(url.searchParams.get('q')).toBe("name contains 'D''Angelo'");});
-  it('recupera il dettaglio completo del cliente con fieldset detailed',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({data:{id:9,name:'Cliente',vat_number:'12345678901',email:'cliente@example.it',address_city:'Roma',e_invoice:true}}),{status:200})) as unknown as typeof fetch;const result=await getClientDetails('1','9','token',fetcher);expect(result.ok&&result.value.fields).toEqual(expect.arrayContaining([{key:'email',value:'cliente@example.it'},{key:'address_city',value:'Roma'},{key:'e_invoice',value:'Sì'}]));const url=new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));expect(url.pathname).toBe('/c/1/entities/clients/9');expect(url.searchParams.get('fieldset')).toBe('detailed');});
-  it('non presenta un 422 come errore di permessi',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({error:{message:'Invalid query'}}),{status:422})) as unknown as typeof fetch;const result=await listConsultingProducts('token','1',fetcher);expect(result.ok).toBe(false);if(result.ok)return;expect(result.error.code).toBe('SOURCE_INVALID');expect(result.error.message).not.toContain('products:r');});
-  it('invia una sola richiesta con prodotto Consulenza, descrizione modificabile, quantità 1 e IVA corrente',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({data:{id:77}}),{status:200})) as unknown as typeof fetch;const result=await exportQuote({companyId:'1',clientId:'9',productId:'2',product:{id:'2',name:'Consulenza',vat:{id:'3',value:0}},lines:[{itemIds:['44c36ddb-75c1-4f6e-b13f-c778b29ce6bb'],description:'Analisi e installazione',amount:'125.50',quantity:1}],attemptId:'tentativo-1'},'token',fetcher);expect(result.ok&&result.value.outcome).toBe('success');expect(fetcher).toHaveBeenCalledTimes(1);const init=vi.mocked(fetcher).mock.calls[0]?.[1] as RequestInit;const payload=JSON.parse(String(init.body));expect(payload.data.items_list).toEqual([{product_id:2,name:'Consulenza',description:'Analisi e installazione',qty:1,net_price:125.5,vat:{id:3}}]);expect(payload.data.items).toBeUndefined();});
-  it('usa Authorization ORS, conserva più risultati e longitude/latitude',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({features:[{id:'a',properties:{label:'Roma'},geometry:{coordinates:[12.4964,41.9028]}},{id:'b',properties:{label:'Roma Termini'},geometry:{coordinates:[12.5018,41.901]}}]}),{status:200})) as unknown as typeof fetch;const result=await searchAddress('Roma','segreta',fetcher);expect(result.ok&&result.value).toHaveLength(2);const [url,init]=vi.mocked(fetcher).mock.calls[0]!;expect(String(url)).toContain('/geocode/search');expect((init?.headers as Record<string,string>).Authorization).toBe('segreta');expect((init?.headers as Record<string,string>).Authorization).not.toMatch(/^Basic /);expect(result.ok&&result.value[0]?.coordinates).toEqual({longitude:'12.4964',latitude:'41.9028'});});
-  it('invia il percorso ORS JSON nell’ordine longitudine, latitudine',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({routes:[{summary:{distance:613250.4,duration:21600.5}}]}),{status:200})) as unknown as typeof fetch;const result=await calculateRoute({longitude:'12.4964',latitude:'41.9028'},{longitude:'9.1900',latitude:'45.4642'},'key',fetcher);expect(result).toEqual({ok:true,value:{distanceMeters:'613250.4',durationSeconds:'21600.5'}});const [url,init]=vi.mocked(fetcher).mock.calls[0] as [string,RequestInit];expect(url).toContain('/v2/directions/driving-car/json');expect(JSON.parse(String(init.body)).coordinates).toEqual([[12.4964,41.9028],[9.19,45.4642]]);expect((init.headers as Record<string,string>)['Content-Type']).toBe('application/json');});
-  it('propaga la diagnosi ORS quando una Sede non è vicina a una strada percorribile',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({error:{code:2010,message:'Could not find routable point within a radius of 350.0 meters of specified coordinate 1.'}}),{status:404})) as unknown as typeof fetch;const result=await calculateRoute({longitude:'12.4964',latitude:'41.9028'},{longitude:'9.19',latitude:'45.4642'},'key',fetcher);expect(result).toMatchObject({ok:false,error:{code:'SOURCE_INVALID',source:'OpenRouteService',details:[expect.stringContaining('2010')]}});if(result.ok)return;expect(result.error.message).toContain('Destinazione');expect(result.error.action).toContain('localizzala nuovamente');});
-  it('rifiuta coordinate non valide prima di contattare ORS',async()=>{const fetcher=vi.fn() as unknown as typeof fetch;const result=await calculateRoute({longitude:'NaN',latitude:'41.9028'},{longitude:'9.19',latitude:'45.4642'},'key',fetcher);expect(result).toMatchObject({ok:false,error:{code:'VALIDATION',field:'coordinates'}});expect(fetcher).not.toHaveBeenCalled();});
-  it('esegue reverse geocoding e classifica autenticazione, rate limit e payload malformati',async()=>{const reverseFetch=vi.fn(async()=>new Response(JSON.stringify({features:[]}),{status:200})) as unknown as typeof fetch;expect((await reverseCoordinates({longitude:'9.19',latitude:'45.46'},'key',reverseFetch)).ok).toBe(true);const url=new URL(String(vi.mocked(reverseFetch).mock.calls[0]?.[0]));expect(url.searchParams.get('point.lon')).toBe('9.19');expect((await searchAddress('Roma','bad',vi.fn(async()=>new Response('',{status:401})) as unknown as typeof fetch))).toMatchObject({ok:false,error:{code:'AUTHENTICATION'}});expect((await searchAddress('Roma','key',vi.fn(async()=>new Response('',{status:429})) as unknown as typeof fetch))).toMatchObject({ok:false,error:{code:'RATE_LIMIT'}});expect((await calculateRoute({longitude:'1',latitude:'2'},{longitude:'3',latitude:'4'},'key',vi.fn(async()=>new Response(JSON.stringify({routes:[]}),{status:200})) as unknown as typeof fetch))).toMatchObject({ok:false,error:{code:'SOURCE_INVALID'}});});
-  it('verifica con un solo risultato e conserva una diagnosi utile per timeout/rete',async()=>{const success=vi.fn(async()=>new Response(JSON.stringify({features:[{properties:{label:'Roma'},geometry:{coordinates:[12.4964,41.9028]}}]}),{status:200})) as unknown as typeof fetch;expect((await verifyConnection('key',success)).ok).toBe(true);expect(new URL(String(vi.mocked(success).mock.calls[0]?.[0])).searchParams.get('size')).toBe('1');const timeout=vi.fn(async()=>{throw Object.assign(new Error('aborted'),{name:'AbortError'})}) as unknown as typeof fetch;const result=await verifyConnection('key',timeout);expect(result).toMatchObject({ok:false,error:{code:'SOURCE_UNAVAILABLE',source:'OpenRouteService'}});if(result.ok)return;expect(result.error.message).toContain('15 secondi');expect(result.error.action).toContain('proxy');expect(result.error.details?.[0]).not.toContain('key');});
+describe('fonti ufficiali', () => {
+  it('blocca endpoint non allowlistati prima della rete', async () => {
+    const fetcher = vi.fn();
+    const result = await officialFetch(
+      'https://example.com/dati',
+      {},
+      fetcher as unknown as typeof fetch,
+    );
+    expect(result.ok).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('normalizza il CSV regionale MIMIT esatto', () => {
+    const csv =
+      'Aggiornamento 07-09-2026\nREGIONE;TIPOLOGIA;EROGAZIONE;PREZZO MEDIO\nLazio;Benzina;SELF;1.900\n';
+    const result = parseMimitCsv(
+      csv,
+      'Lazio',
+      'Benzina',
+      '2026-09-08T00:00:00.000Z',
+    );
+    expect(result.ok && result.value.referenceDate).toBe('2026-09-07');
+    expect(result.ok && result.value.price).toBe('1.900');
+  });
+  it('rifiuta combinazioni non disponibili senza fallback', () => {
+    const csv =
+      'Aggiornamento 07-09-2026\nREGIONE;TIPOLOGIA;EROGAZIONE;PREZZO MEDIO\nLazio;Benzina;SELF;1.900\n';
+    const result = parseMimitCsv(csv, 'Lazio', 'GPL');
+    expect(result.ok).toBe(false);
+  });
+  it('calcola FOI solo da osservazioni valide e confrontabili', () => {
+    const parsed = parseFoiSdmxCsv(
+      'TIME_PERIOD,OBS_VALUE,BASE_PER\n2024-01,100.0,2015=100\n2026-07,110.0,2015=100',
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const result = revalueFromSeries(
+      '100.00',
+      '2024-01',
+      parsed.value,
+      '2026-09-08T00:00:00.000Z',
+    );
+    expect(result.ok && result.value.revaluedAmount).toBe('110.00');
+  });
+  it('filtra FOI generale senza tabacchi, scarta provvisori e applica il raccordo 1,214', () => {
+    const csv =
+      'E_COICOP_REV_ISTAT,TIME_PERIOD,OBS_VALUE,OBS_STATUS,BASE_PER\n00,2025-12,999,,2015=100\n00ST,2025-12,122.6,,2015=100\n00ST,2026-01,100.4,,2025=100\n00ST,2026-02,101.0,P,2025=100';
+    const parsed = parseFoiSdmxCsv(csv);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value).toHaveLength(2);
+    const result = revalueFromSeries('100.00', '2025-12', parsed.value);
+    expect(result.ok && result.value.toPeriod).toBe('2026-01');
+    expect(result.ok && result.value.toLinkFactor).toBe('1.214');
+  });
+  it('verifica token, azienda, fiscalità e prodotto Consulenza sugli endpoint ufficiali', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/user/companies'))
+        return new Response(
+          JSON.stringify({ data: { companies: [{ id: 1, name: 'Studio' }] } }),
+          { status: 200 },
+        );
+      if (url.includes('/company/info'))
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 1,
+              name: 'Studio',
+              access_info: {
+                permissions: {
+                  fic_clients: 'read',
+                  fic_products: 'read',
+                  fic_settings: 'read',
+                  fic_received_documents: 'read',
+                  fic_issued_documents_detailed: {
+                    quotes: 'write',
+                    invoices: 'read',
+                    credit_notes: 'read',
+                  },
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      if (url.includes('/settings/tax_profile'))
+        return new Response(
+          JSON.stringify({
+            data: {
+              company_type: 'individual',
+              company_subtype: 'professionista',
+              regime: 'forfettario_5',
+              profit_coefficient: 78,
+              contributions_percentage: 26.07,
+              default_vat: { id: 66, value: 0, description: 'Forfettario' },
+            },
+          }),
+          { status: 200 },
+        );
+      if (url.includes('/products/2'))
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 2,
+              name: 'Consulenza',
+              default_vat: { id: 3, value: 0, description: 'Forfettario' },
+            },
+          }),
+          { status: 200 },
+        );
+      return new Response(
+        JSON.stringify({ data: [{ id: 2, name: 'Consulenza' }] }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+    const companies = await listCompanies('token', fetcher);
+    expect(companies.ok && companies.value[0]?.name).toBe('Studio');
+    const products = await listConsultingProducts('token', '1', fetcher);
+    expect(products.ok && products.value).toEqual([
+      { id: '2', name: 'Consulenza' },
+    ]);
+    const productRequest = vi
+      .mocked(fetcher)
+      .mock.calls.find((call) => String(call[0]).includes('/products?'));
+    expect(new URL(String(productRequest?.[0])).searchParams.get('q')).toBe(
+      "name = 'Consulenza'",
+    );
+    const activation = await verifyActivation('token', '1', '2', fetcher);
+    expect(activation.ok && activation.value.taxProfile.regime).toBe(
+      'forfettario_5',
+    );
+    expect(
+      vi
+        .mocked(fetcher)
+        .mock.calls.every((call) =>
+          String(call[0]).startsWith('https://api-v2.fattureincloud.it/'),
+        ),
+    ).toBe(true);
+  });
+  it('accetta default_vat null nella risposta elenco prodotti', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: 2, name: 'Consulenza', default_vat: null }],
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const result = await listConsultingProducts('token', '1', fetcher);
+    expect(result.ok && result.value).toEqual([
+      { id: '2', name: 'Consulenza' },
+    ]);
+  });
+  it('richiede il dettaglio prodotto e indica come configurare una IVA mancante', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: { id: 2, name: 'Consulenza', default_vat: null },
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const result = await verifyProduct('1', '2', 'token', fetcher);
+    const url = new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));
+    expect(url.searchParams.get('fieldset')).toBe('detailed');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('MISSING_DATA');
+    expect(result.error.action).toContain('Configura l’IVA predefinita');
+  });
+  it('usa l’IVA aziendale quando il prodotto Consulenza non ne definisce una', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) =>
+      String(input).includes('/settings/tax_profile')
+        ? new Response(
+            JSON.stringify({
+              data: {
+                regime: 'forfettario',
+                default_vat: { id: 66, value: 0, description: 'Forfettario' },
+              },
+            }),
+            { status: 200 },
+          )
+        : new Response(
+            JSON.stringify({
+              data: { id: 2, name: 'Consulenza', default_vat: null },
+            }),
+            { status: 200 },
+          ),
+    ) as unknown as typeof fetch;
+    const result = await verifyProduct('1', '2', 'token', fetcher);
+    expect(result.ok && result.value.vat.id).toBe('66');
+  });
+  it('blocca il collegamento se Fatture in Cloud espone un regime non supportato', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) =>
+      String(input).includes('/company/info')
+        ? new Response(
+            JSON.stringify({
+              data: {
+                id: 1,
+                name: 'Studio',
+                access_info: {
+                  permissions: {
+                    fic_clients: 'read',
+                    fic_products: 'read',
+                    fic_settings: 'read',
+                    fic_received_documents: 'read',
+                    fic_issued_documents_detailed: {
+                      quotes: 'write',
+                      invoices: 'read',
+                      credit_notes: 'read',
+                    },
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          )
+        : new Response(JSON.stringify({ data: { regime: 'ordinario' } }), {
+            status: 200,
+          }),
+    ) as unknown as typeof fetch;
+    const result = await verifyActivation('token', '1', '2', fetcher);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.field).toBe('taxProfile.regime');
+    expect(result.error.action).toContain('forfettario');
+  });
+  it('rifiuta permessi insufficienti e marca snapshot remoti', async () => {
+    const denied = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 1,
+              name: 'Studio',
+              access_info: {
+                permissions: {
+                  fic_clients: 'read',
+                  fic_products: 'none',
+                  fic_issued_documents_detailed: { quotes: 'read' },
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    expect((await verifyActivation('token', '1', '2', denied)).ok).toBe(false);
+    const clientsFetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: 9, name: 'Cliente', vat_number: '12345678901' }],
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const clients = await searchClients('1', 'cli', 'token', clientsFetch);
+    expect(clients.ok && clients.value[0]?.source).toBe('fatture_in_cloud');
+  });
+  it('costruisce una query FIC valida e protegge gli apostrofi nella ricerca clienti', async () => {
+    const fetcher = vi.fn(
+      async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    await searchClients('1', "D'Angelo", 'token', fetcher);
+    const url = new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));
+    expect(url.searchParams.get('q')).toBe("name contains 'D''Angelo'");
+  });
+  it('recupera il dettaglio completo del cliente con fieldset detailed', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 9,
+              name: 'Cliente',
+              vat_number: '12345678901',
+              email: 'cliente@example.it',
+              address_city: 'Roma',
+              e_invoice: true,
+            },
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const result = await getClientDetails('1', '9', 'token', fetcher);
+    expect(result.ok && result.value.fields).toEqual(
+      expect.arrayContaining([
+        { key: 'email', value: 'cliente@example.it' },
+        { key: 'address_city', value: 'Roma' },
+        { key: 'e_invoice', value: 'Sì' },
+      ]),
+    );
+    const url = new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));
+    expect(url.pathname).toBe('/c/1/entities/clients/9');
+    expect(url.searchParams.get('fieldset')).toBe('detailed');
+  });
+  it('non presenta un 422 come errore di permessi', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'Invalid query' } }), {
+          status: 422,
+        }),
+    ) as unknown as typeof fetch;
+    const result = await listConsultingProducts('token', '1', fetcher);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('SOURCE_INVALID');
+    expect(result.error.message).not.toContain('products:r');
+  });
+  it('invia una sola richiesta con prodotto Consulenza, descrizione modificabile, quantità 1 e IVA corrente', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: { id: 77 } }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    const result = await exportQuote(
+      {
+        companyId: '1',
+        clientId: '9',
+        productId: '2',
+        product: { id: '2', name: 'Consulenza', vat: { id: '3', value: 0 } },
+        lines: [
+          {
+            itemIds: ['44c36ddb-75c1-4f6e-b13f-c778b29ce6bb'],
+            description: 'Analisi e installazione',
+            amount: '125.50',
+            quantity: 1,
+          },
+        ],
+        attemptId: 'tentativo-1',
+      },
+      'token',
+      fetcher,
+    );
+    expect(result.ok && result.value.outcome).toBe('success');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const init = vi.mocked(fetcher).mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(String(init.body));
+    expect(payload.data.items_list).toEqual([
+      {
+        product_id: 2,
+        name: 'Consulenza',
+        description: 'Analisi e installazione',
+        qty: 1,
+        net_price: 125.5,
+        vat: { id: 3 },
+      },
+    ]);
+    expect(payload.data.items).toBeUndefined();
+  });
+  it('usa Authorization ORS, conserva più risultati e longitude/latitude', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            features: [
+              {
+                id: 'a',
+                properties: { label: 'Roma' },
+                geometry: { coordinates: [12.4964, 41.9028] },
+              },
+              {
+                id: 'b',
+                properties: { label: 'Roma Termini' },
+                geometry: { coordinates: [12.5018, 41.901] },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const result = await searchAddress('Roma', 'segreta', fetcher);
+    expect(result.ok && result.value).toHaveLength(2);
+    const [url, init] = vi.mocked(fetcher).mock.calls[0]!;
+    expect(String(url)).toContain('/geocode/search');
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      'segreta',
+    );
+    expect((init?.headers as Record<string, string>).Authorization).not.toMatch(
+      /^Basic /,
+    );
+    expect(result.ok && result.value[0]?.coordinates).toEqual({
+      longitude: '12.4964',
+      latitude: '41.9028',
+    });
+  });
+  it('invia il percorso ORS JSON nell’ordine longitudine, latitudine', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            routes: [{ summary: { distance: 613250.4, duration: 21600.5 } }],
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const result = await calculateRoute(
+      { longitude: '12.4964', latitude: '41.9028' },
+      { longitude: '9.1900', latitude: '45.4642' },
+      'key',
+      fetcher,
+    );
+    expect(result).toEqual({
+      ok: true,
+      value: { distanceMeters: '613250.4', durationSeconds: '21600.5' },
+    });
+    const [url, init] = vi.mocked(fetcher).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toContain('/v2/directions/driving-car/json');
+    expect(JSON.parse(String(init.body)).coordinates).toEqual([
+      [12.4964, 41.9028],
+      [9.19, 45.4642],
+    ]);
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(
+      'application/json',
+    );
+  });
+  it('propaga la diagnosi ORS quando una Sede non è vicina a una strada percorribile', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 2010,
+              message:
+                'Could not find routable point within a radius of 350.0 meters of specified coordinate 1.',
+            },
+          }),
+          { status: 404 },
+        ),
+    ) as unknown as typeof fetch;
+    const result = await calculateRoute(
+      { longitude: '12.4964', latitude: '41.9028' },
+      { longitude: '9.19', latitude: '45.4642' },
+      'key',
+      fetcher,
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SOURCE_INVALID',
+        source: 'OpenRouteService',
+        details: [expect.stringContaining('2010')],
+      },
+    });
+    if (result.ok) return;
+    expect(result.error.message).toContain('Destinazione');
+    expect(result.error.action).toContain('localizzala nuovamente');
+  });
+  it('rifiuta coordinate non valide prima di contattare ORS', async () => {
+    const fetcher = vi.fn() as unknown as typeof fetch;
+    const result = await calculateRoute(
+      { longitude: 'NaN', latitude: '41.9028' },
+      { longitude: '9.19', latitude: '45.4642' },
+      'key',
+      fetcher,
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION', field: 'coordinates' },
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('esegue reverse geocoding e classifica autenticazione, rate limit e payload malformati', async () => {
+    const reverseFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ features: [] }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    expect(
+      (
+        await reverseCoordinates(
+          { longitude: '9.19', latitude: '45.46' },
+          'key',
+          reverseFetch,
+        )
+      ).ok,
+    ).toBe(true);
+    const url = new URL(String(vi.mocked(reverseFetch).mock.calls[0]?.[0]));
+    expect(url.searchParams.get('point.lon')).toBe('9.19');
+    expect(
+      await searchAddress(
+        'Roma',
+        'bad',
+        vi.fn(
+          async () => new Response('', { status: 401 }),
+        ) as unknown as typeof fetch,
+      ),
+    ).toMatchObject({ ok: false, error: { code: 'AUTHENTICATION' } });
+    expect(
+      await searchAddress(
+        'Roma',
+        'key',
+        vi.fn(
+          async () => new Response('', { status: 429 }),
+        ) as unknown as typeof fetch,
+      ),
+    ).toMatchObject({ ok: false, error: { code: 'RATE_LIMIT' } });
+    expect(
+      await calculateRoute(
+        { longitude: '1', latitude: '2' },
+        { longitude: '3', latitude: '4' },
+        'key',
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ routes: [] }), { status: 200 }),
+        ) as unknown as typeof fetch,
+      ),
+    ).toMatchObject({ ok: false, error: { code: 'SOURCE_INVALID' } });
+  });
+  it('verifica con un solo risultato e conserva una diagnosi utile per timeout/rete', async () => {
+    const success = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            features: [
+              {
+                properties: { label: 'Roma' },
+                geometry: { coordinates: [12.4964, 41.9028] },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    expect((await verifyConnection('key', success)).ok).toBe(true);
+    expect(
+      new URL(String(vi.mocked(success).mock.calls[0]?.[0])).searchParams.get(
+        'size',
+      ),
+    ).toBe('1');
+    const timeout = vi.fn(async () => {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    }) as unknown as typeof fetch;
+    const result = await verifyConnection('key', timeout);
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'SOURCE_UNAVAILABLE', source: 'OpenRouteService' },
+    });
+    if (result.ok) return;
+    expect(result.error.message).toContain('15 secondi');
+    expect(result.error.action).toContain('proxy');
+    expect(result.error.details?.[0]).not.toContain('key');
+  });
 });

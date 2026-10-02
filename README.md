@@ -15,10 +15,15 @@ Richiede Node.js 24 e npm soltanto sulla macchina di sviluppo.
 npm install
 npm run typecheck
 npm run lint
+npm run format:check
 npm test
 npm run build
 npm start
 ```
+
+Usa `npm run format` per formattare codice, test e configurazioni con Prettier.
+`npm run format:check` verifica gli stessi file senza modificarli e viene eseguito anche dalla CI.
+ESLint resta dedicato ai controlli sul codice, senza un secondo insieme di regole stilistiche.
 
 Il runtime carica file locali e non avvia server HTTP né apre porte. Il renderer non ha accesso generico
 a filesystem, credenziali o rete: usa esclusivamente le operazioni native esposte dal preload isolato.
@@ -225,7 +230,7 @@ x64 e a uso sequenziale monoutente.
 ## Dipendenze e manutenzione
 
 La CI usa Node.js 24, cache npm e `npm ci` con il lockfile versionato; esegue typecheck,
-lint, test e `package:win`, quindi pubblica come artefatto `release/Cash.exe` (Windows x64).
+lint, `format:check`, test e `package:win`, quindi pubblica come artefatto `release/Cash.exe` (Windows x64).
 Non è previsto un installer distinto dal portable.
 
 Le credenziali restano nel Gestore credenziali di Windows. `@zowe/secrets-for-zowe-sdk`

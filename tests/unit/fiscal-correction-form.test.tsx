@@ -5,7 +5,13 @@ import { FiscalCorrectionForm } from '../../src/renderer/components/FiscalCorrec
 
 describe('correzione annuale del commercialista', () => {
   it('spiega il perimetro annuale e rende disponibile il ritorno alla stima anche con zero', () => {
-    const html = renderToStaticMarkup(createElement(FiscalCorrectionForm, { year: 2026, total: '0.00', onSave: () => true }));
+    const html = renderToStaticMarkup(
+      createElement(FiscalCorrectionForm, {
+        year: 2026,
+        total: '0.00',
+        onSave: () => true,
+      }),
+    );
     expect(html).toContain('saldo INPS 2025');
     expect(html).toContain('primo e secondo acconto 2026');
     expect(html).toContain('Non sommare due volte');
@@ -16,7 +22,13 @@ describe('correzione annuale del commercialista', () => {
   });
 
   it('disabilita il form quando l’archivio non può essere modificato', () => {
-    const html = renderToStaticMarkup(createElement(FiscalCorrectionForm, { year: 2026, disabled: true, onSave: () => true }));
+    const html = renderToStaticMarkup(
+      createElement(FiscalCorrectionForm, {
+        year: 2026,
+        disabled: true,
+        onSave: () => true,
+      }),
+    );
     expect(html).toContain('<fieldset disabled=""');
   });
 });

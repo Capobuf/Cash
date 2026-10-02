@@ -1,21 +1,58 @@
 import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
 import type { BankExpenseImport } from '../domain/model';
 import type { FicAccessVerification } from '../domain/integration';
-import type { CashDocument, CashError, FicFinancialSnapshot, Coordinates, ExportLine, FicClientDetails, FicClientSnapshot, Fuel, FuelEvidence, FoiEvidence, GeocodingResult, Result, RouteResult } from '../domain/model';
+import type {
+  CashDocument,
+  CashError,
+  FicFinancialSnapshot,
+  Coordinates,
+  ExportLine,
+  FicClientDetails,
+  FicClientSnapshot,
+  Fuel,
+  FuelEvidence,
+  FoiEvidence,
+  GeocodingResult,
+  Result,
+  RouteResult,
+} from '../domain/model';
 
 export const IPC = {
   bankExpenseImport: 'cash:bank-expenses:import-file',
-  archiveCreate: 'cash:archive:create', archiveOpen: 'cash:archive:open', archiveOpenLast: 'cash:archive:open-last', archiveSave: 'cash:archive:save',
-  archiveRecovery: 'cash:archive:recovery', archiveRestore: 'cash:archive:restore', archiveInspect: 'cash:archive:inspect',
-  tokenHas: 'cash:token:has', tokenSet: 'cash:token:set',
-  mimitFuel: 'cash:mimit:fuel', foiRevalue: 'cash:foi:revalue', ficClients: 'cash:fic:clients', ficClientDetails: 'cash:fic:client-details',
+  archiveCreate: 'cash:archive:create',
+  archiveOpen: 'cash:archive:open',
+  archiveOpenLast: 'cash:archive:open-last',
+  archiveSave: 'cash:archive:save',
+  archiveRecovery: 'cash:archive:recovery',
+  archiveRestore: 'cash:archive:restore',
+  archiveInspect: 'cash:archive:inspect',
+  tokenHas: 'cash:token:has',
+  tokenSet: 'cash:token:set',
+  mimitFuel: 'cash:mimit:fuel',
+  foiRevalue: 'cash:foi:revalue',
+  ficClients: 'cash:fic:clients',
+  ficClientDetails: 'cash:fic:client-details',
   ficFinancialSync: 'cash:fic:financial-sync',
   ficVerifyPermissions: 'cash:fic:verify-permissions',
-  ficProduct: 'cash:fic:product', ficExport: 'cash:fic:export', ficWizardCompanies: 'cash:fic:wizard-companies',
-  ficWizardProducts: 'cash:fic:wizard-products', ficWizardActivate: 'cash:fic:wizard-activate', ficRemoveLink: 'cash:fic:remove-link',
-  ficSetupInfo: 'cash:fic:setup-info', ficSetClientId: 'cash:fic:set-client-id',
-  orsHasKey: 'cash:ors:has-key', orsSetKey: 'cash:ors:set-key', orsVerify: 'cash:ors:verify', orsSearch: 'cash:ors:search', orsReverse: 'cash:ors:reverse', orsRoute: 'cash:ors:route',
-  appExternal: 'cash:app:external', appArchiveReloaded: 'cash:app:archive-reloaded', appDirty: 'cash:app:dirty', appCloseRequested: 'cash:app:close-requested', appResolveClose: 'cash:app:resolve-close',
+  ficProduct: 'cash:fic:product',
+  ficExport: 'cash:fic:export',
+  ficWizardCompanies: 'cash:fic:wizard-companies',
+  ficWizardProducts: 'cash:fic:wizard-products',
+  ficWizardActivate: 'cash:fic:wizard-activate',
+  ficRemoveLink: 'cash:fic:remove-link',
+  ficSetupInfo: 'cash:fic:setup-info',
+  ficSetClientId: 'cash:fic:set-client-id',
+  orsHasKey: 'cash:ors:has-key',
+  orsSetKey: 'cash:ors:set-key',
+  orsVerify: 'cash:ors:verify',
+  orsSearch: 'cash:ors:search',
+  orsReverse: 'cash:ors:reverse',
+  orsRoute: 'cash:ors:route',
+  appExternal: 'cash:app:external',
+  appArchiveReloaded: 'cash:app:archive-reloaded',
+  appDirty: 'cash:app:dirty',
+  appCloseRequested: 'cash:app:close-requested',
+  appResolveClose: 'cash:app:resolve-close',
 } as const;
 
 export interface CashNativeApi {
@@ -24,38 +61,113 @@ export interface CashNativeApi {
     create(document: CashDocument): Promise<Result<ArchiveSession>>;
     open(): Promise<Result<ArchiveSession>>;
     openLast(): Promise<Result<ArchiveSession | null>>;
-    save(path: string, document: CashDocument, token: ConcurrencyToken): Promise<Result<ArchiveSession>>;
+    save(
+      path: string,
+      document: CashDocument,
+      token: ConcurrencyToken,
+    ): Promise<Result<ArchiveSession>>;
     saveRecovery(document: CashDocument): Promise<Result<ArchiveSession>>;
-    restoreBackup(path: string, token: ConcurrencyToken): Promise<Result<ArchiveSession>>;
-    inspect(path: string): Promise<Result<{ header: { schemaVersion: number; documentId: string; revision: number; createdAt: string; updatedAt: string }; fingerprint: string; size: number }>>;
+    restoreBackup(
+      path: string,
+      token: ConcurrencyToken,
+    ): Promise<Result<ArchiveSession>>;
+    inspect(path: string): Promise<
+      Result<{
+        header: {
+          schemaVersion: number;
+          documentId: string;
+          revision: number;
+          createdAt: string;
+          updatedAt: string;
+        };
+        fingerprint: string;
+        size: number;
+      }>
+    >;
   };
   credentials: {
     hasFicToken(): Promise<Result<boolean>>;
     setFicToken(token: string): Promise<Result<void>>;
   };
-  mimit: { latestFuelPrice(input: { territory: string; fuel: Fuel }): Promise<Result<FuelEvidence>> };
-  istat: { revalue(input: { amount: string; fromPeriod: string }): Promise<Result<FoiEvidence>> };
+  mimit: {
+    latestFuelPrice(input: {
+      territory: string;
+      fuel: Fuel;
+    }): Promise<Result<FuelEvidence>>;
+  };
+  istat: {
+    revalue(input: {
+      amount: string;
+      fromPeriod: string;
+    }): Promise<Result<FoiEvidence>>;
+  };
   ors: {
     hasApiKey(): Promise<Result<boolean>>;
     setApiKey(apiKey: string): Promise<Result<void>>;
     verify(): Promise<Result<void>>;
     searchAddress(address: string): Promise<Result<GeocodingResult[]>>;
-    reverseCoordinates(coordinates: Coordinates): Promise<Result<GeocodingResult[]>>;
-    route(input: { departure: Coordinates; destination: Coordinates }): Promise<Result<RouteResult>>;
+    reverseCoordinates(
+      coordinates: Coordinates,
+    ): Promise<Result<GeocodingResult[]>>;
+    route(input: {
+      departure: Coordinates;
+      destination: Coordinates;
+    }): Promise<Result<RouteResult>>;
   };
   fic: {
-    verifyPermissions(input: { companyId: string }): Promise<Result<FicAccessVerification>>;
-    syncFinancialData(input: { companyId: string }): Promise<Result<FicFinancialSnapshot>>;
+    verifyPermissions(input: {
+      companyId: string;
+    }): Promise<Result<FicAccessVerification>>;
+    syncFinancialData(input: {
+      companyId: string;
+    }): Promise<Result<FicFinancialSnapshot>>;
     setupInfo(): Promise<{ clientId: string; requiredScopes: string[] }>;
     setClientId(clientId: string): Promise<Result<{ clientId: string }>>;
-    listCompaniesForActivation(token: string): Promise<Result<Array<{ id: string; name: string }>>>;
-    listProductsForActivation(input: { token: string; companyId: string }): Promise<Result<Array<{ id: string; name: string }>>>;
-    completeActivation(input: { token: string; companyId: string; productId: string; path: string; document: CashDocument; concurrencyToken: ConcurrencyToken }): Promise<Result<ArchiveSession>>;
-    removeLink(input: { path: string; document: CashDocument; concurrencyToken: ConcurrencyToken }): Promise<Result<ArchiveSession>>;
-    searchClients(input: { companyId: string; query: string }): Promise<Result<FicClientSnapshot[]>>;
-    getClientDetails(input: { companyId: string; clientId: string }): Promise<Result<FicClientDetails>>;
-    verifyProduct(input: { companyId: string; productId: string }): Promise<Result<{ id: string; name: string }>>;
-    exportQuote(input: { companyId: string; clientId: string; productId: string; lines: ExportLine[]; attemptId: string }): Promise<Result<{ outcome: 'success' | 'rejected' | 'uncertain'; remoteDocumentId?: string; diagnostic?: string }>>;
+    listCompaniesForActivation(
+      token: string,
+    ): Promise<Result<Array<{ id: string; name: string }>>>;
+    listProductsForActivation(input: {
+      token: string;
+      companyId: string;
+    }): Promise<Result<Array<{ id: string; name: string }>>>;
+    completeActivation(input: {
+      token: string;
+      companyId: string;
+      productId: string;
+      path: string;
+      document: CashDocument;
+      concurrencyToken: ConcurrencyToken;
+    }): Promise<Result<ArchiveSession>>;
+    removeLink(input: {
+      path: string;
+      document: CashDocument;
+      concurrencyToken: ConcurrencyToken;
+    }): Promise<Result<ArchiveSession>>;
+    searchClients(input: {
+      companyId: string;
+      query: string;
+    }): Promise<Result<FicClientSnapshot[]>>;
+    getClientDetails(input: {
+      companyId: string;
+      clientId: string;
+    }): Promise<Result<FicClientDetails>>;
+    verifyProduct(input: {
+      companyId: string;
+      productId: string;
+    }): Promise<Result<{ id: string; name: string }>>;
+    exportQuote(input: {
+      companyId: string;
+      clientId: string;
+      productId: string;
+      lines: ExportLine[];
+      attemptId: string;
+    }): Promise<
+      Result<{
+        outcome: 'success' | 'rejected' | 'uncertain';
+        remoteDocumentId?: string;
+        diagnostic?: string;
+      }>
+    >;
   };
   setDirty(dirty: boolean): void;
   onExternalChange(listener: (error: CashError) => void): () => void;
@@ -64,4 +176,8 @@ export interface CashNativeApi {
   resolveClose(choice: 'discard' | 'cancel'): void;
 }
 
-declare global { interface Window { cash: CashNativeApi } }
+declare global {
+  interface Window {
+    cash: CashNativeApi;
+  }
+}

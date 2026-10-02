@@ -7,6 +7,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    coverage: { reporter: ['text', 'html'], include: ['src/domain/**/*.ts', 'src/native/persistence.ts'] }
-  }
+    coverage: {
+      reporter: ['text', 'html'],
+      include: ['src/domain/**/*.ts', 'src/native/persistence.ts'],
+    },
+  },
 });

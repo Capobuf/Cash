@@ -1,28 +1,61 @@
 export const CURRENT_SCHEMA_VERSION = 10;
 
-export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
+export interface EntityMeta {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+}
 export type DecimalString = string;
 
 export type CashErrorCode =
-  | 'VALIDATION' | 'MISSING_DATA' | 'SOURCE_UNAVAILABLE' | 'SOURCE_INVALID'
-  | 'CONFLICT' | 'SCHEMA_NEWER' | 'MIGRATION_REQUIRED' | 'CANCELLED'
-  | 'EXPORT_UNCERTAIN' | 'CREDENTIALS' | 'AUTHENTICATION' | 'RATE_LIMIT' | 'IO';
+  | 'VALIDATION'
+  | 'MISSING_DATA'
+  | 'SOURCE_UNAVAILABLE'
+  | 'SOURCE_INVALID'
+  | 'CONFLICT'
+  | 'SCHEMA_NEWER'
+  | 'MIGRATION_REQUIRED'
+  | 'CANCELLED'
+  | 'EXPORT_UNCERTAIN'
+  | 'CREDENTIALS'
+  | 'AUTHENTICATION'
+  | 'RATE_LIMIT'
+  | 'IO';
 
 export interface CashError {
   code: CashErrorCode;
   message: string;
   field?: string;
-  source?: 'archive' | 'MIMIT' | 'ISTAT' | 'FattureInCloud' | 'OpenRouteService' | 'credentials';
+  source?:
+    | 'archive'
+    | 'MIMIT'
+    | 'ISTAT'
+    | 'FattureInCloud'
+    | 'OpenRouteService'
+    | 'credentials';
   action?: string;
   details?: string[];
 }
 
-export type Result<T> = { ok: true; value: T } | { ok: false; error: CashError };
+export type Result<T> =
+  { ok: true; value: T } | { ok: false; error: CashError };
 export const ok = <T>(value: T): Result<T> => ({ ok: true, value });
-export const err = <T = never>(error: CashError): Result<T> => ({ ok: false, error });
+export const err = <T = never>(error: CashError): Result<T> => ({
+  ok: false,
+  error,
+});
 
-export interface RecurringHoliday { kind: 'recurring'; name: string; month: number; day: number }
-export interface SpecificHoliday { kind: 'specific'; name: string; date: string }
+export interface RecurringHoliday {
+  kind: 'recurring';
+  name: string;
+  month: number;
+  day: number;
+}
+export interface SpecificHoliday {
+  kind: 'specific';
+  name: string;
+  date: string;
+}
 export type LocalHoliday = RecurringHoliday | SpecificHoliday;
 
 export interface FiscalParameters {
@@ -76,12 +109,27 @@ export interface Vehicle extends EntityMeta {
   annualMaintenance: DecimalString;
 }
 
-export interface FicClientRef { source: 'fatture_in_cloud'; companyId: string; clientId: string; displayName: string }
-export interface FicClientSnapshot extends FicClientRef { vatNumber?: string }
-export interface FicClientDetailField { key: string; value: string }
-export interface FicClientDetails extends FicClientSnapshot { fields: FicClientDetailField[] }
+export interface FicClientRef {
+  source: 'fatture_in_cloud';
+  companyId: string;
+  clientId: string;
+  displayName: string;
+}
+export interface FicClientSnapshot extends FicClientRef {
+  vatNumber?: string;
+}
+export interface FicClientDetailField {
+  key: string;
+  value: string;
+}
+export interface FicClientDetails extends FicClientSnapshot {
+  fields: FicClientDetailField[];
+}
 export type ClientSnapshot = FicClientSnapshot;
-export interface Coordinates { longitude: DecimalString; latitude: DecimalString }
+export interface Coordinates {
+  longitude: DecimalString;
+  latitude: DecimalString;
+}
 export interface ResolvedLocation {
   coordinates: Coordinates;
   inputKind: 'address' | 'coordinates';
@@ -100,8 +148,15 @@ export interface SiteSnapshot {
   coordinates?: Coordinates;
 }
 
-export interface GeocodingResult { id: string; label: string; coordinates: Coordinates }
-export interface RouteResult { distanceMeters: DecimalString; durationSeconds: DecimalString }
+export interface GeocodingResult {
+  id: string;
+  label: string;
+  coordinates: Coordinates;
+}
+export interface RouteResult {
+  distanceMeters: DecimalString;
+  durationSeconds: DecimalString;
+}
 
 export interface FuelEvidence {
   fuel: Fuel;
@@ -129,11 +184,21 @@ export interface FoiEvidence {
 
 export interface BaseSubItem extends EntityMeta {
   description: string;
-  variantOwner?: { groupId: string; optionId: string; definitionIndex?: number };
+  variantOwner?: {
+    groupId: string;
+    optionId: string;
+    definitionIndex?: number;
+  };
   manuallyModified?: boolean;
 }
-export interface TimeSubItem extends BaseSubItem { kind: 'time'; minutes: number }
-export interface ExpenseSubItem extends BaseSubItem { kind: 'expense'; amount: DecimalString }
+export interface TimeSubItem extends BaseSubItem {
+  kind: 'time';
+  minutes: number;
+}
+export interface ExpenseSubItem extends BaseSubItem {
+  kind: 'expense';
+  amount: DecimalString;
+}
 export interface TravelSubItem extends BaseSubItem {
   kind: 'travel';
   departure?: SiteSnapshot;
@@ -156,31 +221,60 @@ export type QuoteSubItem = TimeSubItem | ExpenseSubItem | TravelSubItem;
 
 export type ReusableSubItem =
   | (EntityMeta & { kind: 'time'; description: string; minutes: number })
-  | (EntityMeta & { kind: 'expense'; description: string; amount: DecimalString })
-  | (EntityMeta & { kind: 'travel'; description: string; roundTrip: boolean; occurrences: number;
-      distanceKmPerOccurrence?: DecimalString; travelMinutesPerOccurrence?: number });
+  | (EntityMeta & {
+      kind: 'expense';
+      description: string;
+      amount: DecimalString;
+    })
+  | (EntityMeta & {
+      kind: 'travel';
+      description: string;
+      roundTrip: boolean;
+      occurrences: number;
+      distanceKmPerOccurrence?: DecimalString;
+      travelMinutesPerOccurrence?: number;
+    });
 
 export type SubItemDefinition =
   | { kind: 'time'; description: string; minutes: number }
   | { kind: 'expense'; description: string; amount: DecimalString }
-  | { kind: 'travel'; description: string; roundTrip: boolean; occurrences: number;
-      distanceKmPerOccurrence?: DecimalString; travelMinutesPerOccurrence?: number };
-export interface VariantOption extends EntityMeta { name: string; subItems: SubItemDefinition[] }
+  | {
+      kind: 'travel';
+      description: string;
+      roundTrip: boolean;
+      occurrences: number;
+      distanceKmPerOccurrence?: DecimalString;
+      travelMinutesPerOccurrence?: number;
+    };
+export interface VariantOption extends EntityMeta {
+  name: string;
+  subItems: SubItemDefinition[];
+}
 export interface VariantGroup extends EntityMeta {
   name: string;
   options: VariantOption[];
   defaultOptionId?: string;
 }
 
-export interface PriceReference { amount: DecimalString; period: string; foiEvidence?: FoiEvidence }
+export interface PriceReference {
+  amount: DecimalString;
+  period: string;
+  foiEvidence?: FoiEvidence;
+}
 export interface TemplateItem extends EntityMeta {
   name: string;
   referencePrice?: { amount: DecimalString; period: string };
   subItems: ReusableSubItem[];
   variantGroups: VariantGroup[];
 }
-export interface Template extends EntityMeta { name: string; items: TemplateItem[] }
-export interface Catalog { subItems: ReusableSubItem[]; templates: Template[] }
+export interface Template extends EntityMeta {
+  name: string;
+  items: TemplateItem[];
+}
+export interface Catalog {
+  subItems: ReusableSubItem[];
+  templates: Template[];
+}
 
 export interface ProfileSnapshot {
   sourceId: string;
@@ -194,7 +288,10 @@ export interface ProfileSnapshot {
   fiscal: FiscalParameters;
 }
 
-export interface VariantSelection { groupId: string; optionId: string }
+export interface VariantSelection {
+  groupId: string;
+  optionId: string;
+}
 export interface QuoteItem extends EntityMeta {
   name: string;
   subItems: QuoteSubItem[];
@@ -205,7 +302,12 @@ export interface QuoteItem extends EntityMeta {
 }
 
 export type ExportOutcome = 'pending' | 'success' | 'rejected' | 'uncertain';
-export interface ExportLine { itemIds: string[]; description: string; amount: DecimalString; quantity: 1 }
+export interface ExportLine {
+  itemIds: string[];
+  description: string;
+  amount: DecimalString;
+  quantity: 1;
+}
 export interface ExportAttempt extends EntityMeta {
   companyId: string;
   lines: ExportLine[];
@@ -238,7 +340,11 @@ export interface SharedSettings {
     product?: { id: string; name: string };
     taxProfile?: FicTaxProfileSnapshot;
     legacyReferences?: { companyId?: string; productId?: string };
-    lastVerification?: { at: string; result: 'success' | 'error'; diagnostic?: string };
+    lastVerification?: {
+      at: string;
+      result: 'success' | 'error';
+      diagnostic?: string;
+    };
   };
 }
 
@@ -323,9 +429,19 @@ export interface BankExpenseRule extends EntityMeta {
   categoryId: string;
 }
 
-export type BankExpenseRow = Pick<BankExpense, 'date' | 'description' | 'amount'>;
-export interface BankExpenseImport { rows: BankExpenseRow[]; ignoredIncome: number }
-export interface BankExpenseImportSummary { imported: number; duplicates: number; ignoredIncome: number }
+export type BankExpenseRow = Pick<
+  BankExpense,
+  'date' | 'description' | 'amount'
+>;
+export interface BankExpenseImport {
+  rows: BankExpenseRow[];
+  ignoredIncome: number;
+}
+export interface BankExpenseImportSummary {
+  imported: number;
+  duplicates: number;
+  ignoredIncome: number;
+}
 
 export interface CashDocument {
   schemaVersion: number;
@@ -349,9 +465,16 @@ export interface CashDocument {
 
 export const nowIso = (): string => new Date().toISOString();
 export const newId = (): string => globalThis.crypto.randomUUID();
-export const meta = (): EntityMeta => { const time = nowIso(); return { id: newId(), createdAt: time, updatedAt: time }; };
+export const meta = (): EntityMeta => {
+  const time = nowIso();
+  return { id: newId(), createdAt: time, updatedAt: time };
+};
 
-export const createTaxCategory = (): BankExpenseCategory => ({ ...meta(), name: 'Imposte P.IVA', systemRole: 'vat_taxes' });
+export const createTaxCategory = (): BankExpenseCategory => ({
+  ...meta(),
+  name: 'Imposte P.IVA',
+  systemRole: 'vat_taxes',
+});
 
 export const modeForFuel = (fuel: Fuel): MimitMode =>
   fuel === 'Benzina' || fuel === 'Gasolio' ? 'SELF' : 'SERVITO';
@@ -375,21 +498,59 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
 });
 
 export const createFiscalPreset2026 = (): EconomicProfile => ({
-  ...meta(), year: 2026, revision: 1, confirmed: false, revenueTarget: '0.00',
+  ...meta(),
+  year: 2026,
+  revision: 1,
+  confirmed: false,
+  revenueTarget: '0.00',
   specificAnnualExpenses: '0.00',
   fiscal: {
-    atecoCode: '62.20.10', profitabilityCoefficient: '67', contributionRate: '26.07',
-    contributionCeiling: '122295.00', activityPhase: 'ordinary', reducedEligibilityConfirmed: false,
-    ordinaryApplicabilityConfirmed: false, reducedSubstituteTaxRate: '5', ordinarySubstituteTaxRate: '15', ordinaryThreshold: '85000.00',
+    atecoCode: '62.20.10',
+    profitabilityCoefficient: '67',
+    contributionRate: '26.07',
+    contributionCeiling: '122295.00',
+    activityPhase: 'ordinary',
+    reducedEligibilityConfirmed: false,
+    ordinaryApplicabilityConfirmed: false,
+    reducedSubstituteTaxRate: '5',
+    ordinarySubstituteTaxRate: '15',
+    ordinaryThreshold: '85000.00',
     cessationThreshold: '100000.00',
   },
-  capacity: { hoursPerDay: '8', vacationDays: 20, unplannedDays: 5, clientTimePercentage: '60', localHolidays: [] },
+  capacity: {
+    hoursPerDay: '8',
+    vacationDays: 20,
+    unplannedDays: 5,
+    clientTimePercentage: '60',
+    localHolidays: [],
+  },
 });
 
 export const createBlankProfile = (year: number): EconomicProfile => ({
-  ...meta(), year, revision: 1, confirmed: false, revenueTarget: '0.00', specificAnnualExpenses: '0.00',
-  fiscal: { atecoCode: '', profitabilityCoefficient: '0', contributionRate: '0', contributionCeiling: '0.00',
-    activityPhase: 'ordinary', reducedEligibilityConfirmed: false, ordinaryApplicabilityConfirmed: false,
-    reducedSubstituteTaxRate: '0', ordinarySubstituteTaxRate: '0', ordinaryThreshold: '0.00', cessationThreshold: '0.00' },
-  capacity: { hoursPerDay: '0', vacationDays: 0, unplannedDays: 0, clientTimePercentage: '0', localHolidays: [] },
+  ...meta(),
+  year,
+  revision: 1,
+  confirmed: false,
+  revenueTarget: '0.00',
+  specificAnnualExpenses: '0.00',
+  fiscal: {
+    atecoCode: '',
+    profitabilityCoefficient: '0',
+    contributionRate: '0',
+    contributionCeiling: '0.00',
+    activityPhase: 'ordinary',
+    reducedEligibilityConfirmed: false,
+    ordinaryApplicabilityConfirmed: false,
+    reducedSubstituteTaxRate: '0',
+    ordinarySubstituteTaxRate: '0',
+    ordinaryThreshold: '0.00',
+    cessationThreshold: '0.00',
+  },
+  capacity: {
+    hoursPerDay: '0',
+    vacationDays: 0,
+    unplannedDays: 0,
+    clientTimePercentage: '0',
+    localHolidays: [],
+  },
 });
