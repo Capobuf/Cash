@@ -276,6 +276,8 @@ describe('fonti ufficiali', () => {
         new Response(
           JSON.stringify({
             data: [{ id: 9, name: 'Cliente', vat_number: '12345678901' }],
+            current_page: 1,
+            last_page: 1,
           }),
           { status: 200 },
         ),
@@ -285,12 +287,75 @@ describe('fonti ufficiali', () => {
   });
   it('costruisce una query FIC valida e protegge gli apostrofi nella ricerca clienti', async () => {
     const fetcher = vi.fn(
-      async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+      async () =>
+        new Response(
+          JSON.stringify({ data: [], current_page: 1, last_page: 1 }),
+          { status: 200 },
+        ),
     ) as unknown as typeof fetch;
     await searchClients('1', "D'Angelo", 'token', fetcher);
     const url = new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));
     expect(url.searchParams.get('q')).toBe("name contains 'D''Angelo'");
   });
+  it.each(['', 'Cliente'])(
+    'raccoglie tutte le pagine clienti per query %s',
+    async (query) => {
+      const fetcher = vi.fn<typeof fetch>(async (input) => {
+        const url = new URL(String(input));
+        const page = Number(url.searchParams.get('page') ?? '1');
+        expect(url.searchParams.get('q')).toBe(
+          query ? "name contains 'Cliente'" : null,
+        );
+        return new Response(
+          JSON.stringify({
+            current_page: page,
+            last_page: 2,
+            data: Array.from({ length: page === 1 ? 50 : 1 }, (_, index) => ({
+              id: (page - 1) * 50 + index + 1,
+              name: 'Cliente',
+            })),
+          }),
+        );
+      });
+      const result = await searchClients('1', query, 'token', fetcher);
+      expect(result.ok && result.value).toHaveLength(51);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(result.ok && result.value.at(-1)?.clientId).toBe('51');
+    },
+  );
+  it.each(['http', 'schema', 'pagination'])(
+    'non restituisce clienti parziali se la seconda pagina fallisce (%s)',
+    async (failure) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              current_page: 1,
+              last_page: 2,
+              data: [{ id: 1, name: 'Cliente' }],
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          failure === 'http'
+            ? new Response('', { status: 503 })
+            : new Response(
+                JSON.stringify({
+                  current_page: failure === 'pagination' ? 1 : 2,
+                  last_page: 2,
+                  data: failure === 'schema' ? [{}] : [],
+                }),
+              ),
+        );
+      expect(await searchClients('1', '', 'token', fetcher)).toMatchObject({
+        ok: false,
+        error: {
+          code: failure === 'http' ? 'SOURCE_UNAVAILABLE' : 'SOURCE_INVALID',
+        },
+      });
+    },
+  );
   it('recupera il dettaglio completo del cliente con fieldset detailed', async () => {
     const fetcher = vi.fn(
       async () =>

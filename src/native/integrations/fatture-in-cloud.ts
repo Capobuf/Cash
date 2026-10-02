@@ -23,6 +23,11 @@ const clientSchema = z.object({
   vat_number: z.string().nullish(),
 });
 const clientDetailsSchema = clientSchema.loose();
+const clientPageSchema = z.object({
+  data: z.array(clientSchema),
+  current_page: z.number().int().positive(),
+  last_page: z.number().int().positive(),
+});
 const productSummarySchema = z.object({
   id: z.union([z.string(), z.number()]),
   name: z.string().min(1),
@@ -515,41 +520,60 @@ export async function searchClients(
   const filter = normalized
     ? `&q=${encodeURIComponent(`name contains ${queryString(normalized)}`)}`
     : '';
-  const response = await ficFetch(
-    `/c/${encodeURIComponent(companyId)}/entities/clients?per_page=50${filter}`,
-    token,
-    {},
-    fetcher,
-  );
-  if (!response.ok) return response;
-  if (!response.value.ok)
-    return response.value.status === 401 || response.value.status === 403
-      ? permissionsError(['entity.clients:r'])
-      : err({
-          code: 'SOURCE_UNAVAILABLE',
-          source: 'FattureInCloud',
-          message: `Ricerca clienti rifiutata (HTTP ${response.value.status}).`,
-        });
-  try {
-    const json = (await response.value.json()) as { data?: unknown[] };
-    const clients = z.array(clientSchema).parse(json.data ?? []);
-    return ok(
-      clients.map((client) => ({
-        source: 'fatture_in_cloud' as const,
-        companyId,
-        clientId: String(client.id),
-        displayName: client.name,
-        ...(client.vat_number ? { vatNumber: client.vat_number } : {}),
-      })),
+  const clients: FicClientSnapshot[] = [];
+  const seen = new Set<string>();
+  let lastPage = 1;
+  for (let page = 1; page <= lastPage; page++) {
+    const response = await ficFetch(
+      `/c/${encodeURIComponent(companyId)}/entities/clients?per_page=50&page=${page}${filter}`,
+      token,
+      {},
+      fetcher,
     );
-  } catch (cause) {
-    return err({
-      code: 'SOURCE_INVALID',
-      source: 'FattureInCloud',
-      message: 'Risposta clienti non valida.',
-      details: [String(cause)],
-    });
+    if (!response.ok) return response;
+    if (!response.value.ok)
+      return response.value.status === 401 || response.value.status === 403
+        ? permissionsError(['entity.clients:r'])
+        : err({
+            code:
+              response.value.status === 429
+                ? 'RATE_LIMIT'
+                : 'SOURCE_UNAVAILABLE',
+            source: 'FattureInCloud',
+            message: `Ricerca clienti rifiutata alla pagina ${page} (HTTP ${response.value.status}).`,
+          });
+    try {
+      const result = clientPageSchema.parse(await response.value.json());
+      if (
+        result.current_page !== page ||
+        result.last_page < page ||
+        (page > 1 && result.last_page !== lastPage)
+      )
+        throw new Error('Paginazione clienti incoerente.');
+      lastPage = result.last_page;
+      for (const client of result.data) {
+        const clientId = String(client.id);
+        if (seen.has(clientId))
+          throw new Error('ID cliente duplicato nella stessa lettura.');
+        seen.add(clientId);
+        clients.push({
+          source: 'fatture_in_cloud',
+          companyId,
+          clientId,
+          displayName: client.name,
+          ...(client.vat_number ? { vatNumber: client.vat_number } : {}),
+        });
+      }
+    } catch (cause) {
+      return err({
+        code: 'SOURCE_INVALID',
+        source: 'FattureInCloud',
+        message: `Risposta clienti non valida alla pagina ${page}.`,
+        details: [String(cause)],
+      });
+    }
   }
+  return ok(clients);
 }
 
 function displayFicValue(value: unknown): string | undefined {
