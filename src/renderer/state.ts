@@ -39,7 +39,10 @@ export class AppState {
   bankExpenseImportSummary: BankExpenseImportSummary | null = null;
   private archiveContextVersion = 0;
   financialSyncError: CashError | null = null;
-  private requestArchiveDecision?: () => Promise<ArchiveDecision>;
+  private restoringBackup = false;
+  private requestArchiveDecision?: (
+    allowSave: boolean,
+  ) => Promise<ArchiveDecision>;
 
   get document(): CashDocument | undefined {
     return this.session?.document;
@@ -267,12 +270,15 @@ export class AppState {
       this.emit();
     }
   }
-  setArchiveDecisionHandler(handler: () => Promise<ArchiveDecision>): void {
+  setArchiveDecisionHandler(
+    handler: (allowSave: boolean) => Promise<ArchiveDecision>,
+  ): void {
     this.requestArchiveDecision = handler;
   }
 
   mutate(mutator: (document: CashDocument) => void): boolean {
     if (
+      this.restoringBackup ||
       !this.session?.document ||
       this.session.readOnly ||
       this.status === 'Conflitto esterno'
@@ -301,6 +307,7 @@ export class AppState {
 
   async save(): Promise<void> {
     if (
+      this.restoringBackup ||
       !this.session?.document ||
       this.session.readOnly ||
       this.status === 'Conflitto esterno' ||
@@ -310,6 +317,7 @@ export class AppState {
     if (this.timer) window.clearTimeout(this.timer);
     this.savePromise = this.savePromise.then(async () => {
       if (
+        this.restoringBackup ||
         !this.session?.document ||
         this.session.readOnly ||
         this.status === 'Conflitto esterno' ||
@@ -395,27 +403,74 @@ export class AppState {
   }
 
   async restoreBackup(): Promise<void> {
-    if (!this.session) return;
-    const result = await window.cash.archive.restoreBackup(
-      this.session.path,
-      this.session.token,
-    );
-    if (result.ok) this.accept(result.value);
-    else if (result.error.code !== 'CANCELLED') {
-      this.error = result.error;
-      this.emit();
+    if (!this.session || this.restoringBackup) return;
+    this.restoringBackup = true;
+    const context = this.archiveContextVersion;
+    if (this.timer) window.clearTimeout(this.timer);
+    try {
+      // A save already sent must finish before selecting the backup to restore.
+      await this.savePromise;
+      if (this.archiveContextVersion !== context) {
+        this.setError({
+          code: 'CONFLICT',
+          message:
+            'Archivio cambiato prima del ripristino. Ripeti l’operazione.',
+        });
+        return;
+      }
+      const session = this.session;
+      if (!(await this.mayReplaceSession(false))) return;
+      if (this.session !== session) {
+        this.setError({
+          code: 'CONFLICT',
+          message:
+            'Archivio cambiato durante la scelta di ripristino. Ripeti l’operazione.',
+        });
+        return;
+      }
+      const result = await window.cash.archive.restoreBackup(
+        session.path,
+        session.token,
+      );
+      if (this.session !== session) {
+        this.setError({
+          code: 'CONFLICT',
+          message:
+            'Archivio cambiato durante il ripristino. Riapri l’archivio ripristinato.',
+        });
+        return;
+      }
+      if (result.ok) this.accept(result.value);
+      else if (result.error.code !== 'CANCELLED') this.setError(result.error);
+    } catch (cause) {
+      this.setError({
+        code: 'IO',
+        source: 'archive',
+        message:
+          'Esito del ripristino non disponibile. Riapri l’archivio per verificarlo.',
+        details: [String(cause)],
+      });
+    } finally {
+      this.restoringBackup = false;
+      if (this.status === 'Modifiche non salvate') {
+        this.timer = window.setTimeout(() => {
+          void this.save();
+        }, 350);
+      }
     }
   }
 
-  private async mayReplaceSession(): Promise<boolean> {
+  private async mayReplaceSession(allowSave = true): Promise<boolean> {
+    if (this.restoringBackup && allowSave) return false;
     if (
       !this.session ||
       this.status === 'Salvato' ||
       this.status === 'Sola lettura'
     )
       return true;
-    const choice = (await this.requestArchiveDecision?.()) ?? 'cancel';
+    const choice = (await this.requestArchiveDecision?.(allowSave)) ?? 'cancel';
     if (choice === 'save') {
+      if (!allowSave) return false;
       await this.save();
       return this.isSaved();
     }

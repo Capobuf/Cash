@@ -78,6 +78,8 @@ export function App() {
   const [decisionResolver, setDecisionResolver] = useState<
     ((choice: ArchiveDecision) => void) | null
   >(null);
+  const [archiveDecisionAllowsSave, setArchiveDecisionAllowsSave] =
+    useState(true);
   const [hasFicToken, setHasFicToken] = useState(false);
   const [ficConnectionError, setFicConnectionError] = useState(false);
   const [ficSetupInfo, setFicSetupInfo] = useState<{
@@ -85,10 +87,11 @@ export function App() {
     requiredScopes: string[];
   }>({ clientId: '', requiredScopes: [] });
 
-  const requestArchiveDecision = () =>
-    new Promise<ArchiveDecision>((resolve) =>
-      setDecisionResolver(() => resolve),
-    );
+  const requestArchiveDecision = (allowSave = true) =>
+    new Promise<ArchiveDecision>((resolve) => {
+      setArchiveDecisionAllowsSave(allowSave);
+      setDecisionResolver(() => resolve);
+    });
 
   useEffect(() => {
     state.setArchiveDecisionHandler(requestArchiveDecision);
@@ -449,9 +452,15 @@ export function App() {
               Ci sono modifiche non ancora salvate
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Prima di aprire un altro archivio o chiudere Cash puoi attendere
-              il salvataggio, creare una copia di recupero oppure scartare le
-              modifiche locali.
+              {archiveDecisionAllowsSave ? (
+                <>
+                  Prima di aprire un altro archivio o chiudere Cash puoi
+                  attendere il salvataggio, creare una copia di recupero oppure
+                  scartare le modifiche locali.
+                </>
+              ) : (
+                'Prima del ripristino puoi creare una copia di recupero oppure scartare le modifiche locali. Salvare nel file corrente sostituirebbe il backup da recuperare.'
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-wrap">
@@ -482,14 +491,16 @@ export function App() {
             >
               Scarta modifiche
             </Button>
-            <Button
-              onClick={() => {
-                decisionResolver?.('save');
-                setDecisionResolver(null);
-              }}
-            >
-              Salva e continua
-            </Button>
+            {archiveDecisionAllowsSave ? (
+              <Button
+                onClick={() => {
+                  decisionResolver?.('save');
+                  setDecisionResolver(null);
+                }}
+              >
+                Salva e continua
+              </Button>
+            ) : null}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -6,7 +6,7 @@ import {
   type CashDocument,
 } from '../../src/domain/model';
 import type { ArchiveSession } from '../../src/native/persistence';
-import { AppState } from '../../src/renderer/state';
+import { AppState, type ArchiveDecision } from '../../src/renderer/state';
 
 const session = (document: CashDocument, revision = 1): ArchiveSession => ({
   path: 'C:\\Cash.data.json',
@@ -22,6 +22,112 @@ const session = (document: CashDocument, revision = 1): ArchiveSession => ({
 describe('coordinatore autosalvataggio', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  it.each(['cancel', 'recovery', 'discard', 'save'] as const)(
+    'protegge il ripristino dirty con scelta %s senza sovrascrivere il backup',
+    async (choice) => {
+      let decide!: (choice: ArchiveDecision) => void;
+      const decision = vi.fn(
+        () =>
+          new Promise<ArchiveDecision>((resolve) => {
+            decide = resolve;
+          }),
+      );
+      const restored = createEmptyDocument();
+      const restoreBackup = vi.fn(async () => ok(session(restored)));
+      const save = vi.fn();
+      const saveRecovery = vi.fn(async () => ok('recovery.json'));
+      vi.stubGlobal('window', {
+        cash: {
+          archive: { restoreBackup, save, saveRecovery },
+          setDirty: vi.fn(),
+        },
+        setTimeout,
+        clearTimeout,
+      });
+      try {
+        const state = new AppState();
+        state.acceptNativeSession(session(createEmptyDocument()));
+        state.setArchiveDecisionHandler(decision);
+        state.mutate((doc) => {
+          doc.settings.fuelTerritory = 'Lazio';
+        });
+        const local = structuredClone(state.document);
+        const restoring = state.restoreBackup();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(decision).toHaveBeenCalledWith(false);
+        expect(save).not.toHaveBeenCalled();
+        expect(restoreBackup).not.toHaveBeenCalled();
+        expect(
+          state.mutate((doc) => {
+            doc.settings.fuelTerritory = 'Sicilia';
+          }),
+        ).toBe(false);
+        decide(choice);
+        await restoring;
+        expect(save).not.toHaveBeenCalled();
+        if (choice === 'discard' || choice === 'recovery') {
+          expect(restoreBackup).toHaveBeenCalledOnce();
+          expect(state.document).toEqual(restored);
+        } else {
+          expect(restoreBackup).not.toHaveBeenCalled();
+          expect(state.document).toEqual(local);
+        }
+        if (choice === 'recovery')
+          expect(saveRecovery).toHaveBeenCalledWith(local);
+        else expect(saveRecovery).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it('ripristina un archivio salvato senza chiedere una scelta sulle modifiche', async () => {
+    const restoreBackup = vi.fn(async () => ok(session(createEmptyDocument())));
+    vi.stubGlobal('window', {
+      cash: { archive: { restoreBackup }, setDirty: vi.fn() },
+      setTimeout,
+      clearTimeout,
+    });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      const decision = vi.fn();
+      state.setArchiveDecisionHandler(decision);
+      await state.restoreBackup();
+      expect(decision).not.toHaveBeenCalled();
+      expect(restoreBackup).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('non ripristina se la copia di recupero viene annullata', async () => {
+    const restoreBackup = vi.fn();
+    const saveRecovery = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'CANCELLED' as const, message: 'Annullato' },
+    }));
+    vi.stubGlobal('window', {
+      cash: { archive: { restoreBackup, saveRecovery }, setDirty: vi.fn() },
+      setTimeout,
+      clearTimeout,
+    });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate((doc) => {
+        doc.settings.fuelTerritory = 'Lazio';
+      });
+      state.setArchiveDecisionHandler(async () => 'recovery');
+      await state.restoreBackup();
+      expect(saveRecovery).toHaveBeenCalledOnce();
+      expect(restoreBackup).not.toHaveBeenCalled();
+      expect(state.document?.settings.fuelTerritory).toBe('Lazio');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it('mantiene dirty dopo un reject IPC e consente un nuovo salvataggio esplicito', async () => {
     const save = vi
