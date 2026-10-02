@@ -16,13 +16,18 @@ export interface FiscalProjection {
   effectiveTaxRate: string; substituteTax: string; fiscalNet: string; totalToReserve: string;
 }
 
-// Shared for target planning and actual collections; costs never reduce the forfait base.
+// Management forecast, shared with target planning. Estimated contributions are
+// not the contributions actually paid and deductible in an income tax return.
 export function calculateFiscalProjection(revenueAmount: string, fiscal: FiscalParameters): Result<FiscalProjection> {
   try {
     const revenue = d(revenueAmount);
     if (!revenue.isFinite() || revenue.lt(0)) return fail('Il ricavo fiscale deve essere non negativo.', 'revenue');
     if (!fiscal.atecoCode.trim()) return fail('Il codice ATECO è obbligatorio.', 'atecoCode');
+    if (!['62.20.10', '62.02.00'].includes(fiscal.atecoCode.trim()) || !d(fiscal.ordinarySubstituteTaxRate).eq(15) || !d(fiscal.reducedSubstituteTaxRate).eq(5))
+      return fail('Profilo fuori perimetro: previsione disponibile solo per consulenza informatica in regime forfettario, Gestione Separata e aliquote 5%/15%.', 'fiscal');
     const profitability = d(fiscal.profitabilityCoefficient).div(100); const contributionRate = d(fiscal.contributionRate).div(100);
+    if (!contributionRate.isFinite() || contributionRate.lte(0) || contributionRate.gt(1))
+      return fail('Configura l’aliquota INPS dell’anno in Impostazioni → Profili annuali → Fiscalità: deve essere maggiore di 0% e non superiore a 100%.', 'contributionRate');
     const effectiveRate = fiscal.activityPhase === 'reduced_eligible' && fiscal.reducedEligibilityConfirmed ? fiscal.reducedSubstituteTaxRate : fiscal.ordinarySubstituteTaxRate;
     const taxRate = d(effectiveRate).div(100);
     if (profitability.lte(0) || profitability.gt(1) || contributionRate.lt(0) || contributionRate.gt(1) || taxRate.lt(0) || taxRate.gt(1)) return fail('Coefficienti e aliquote fiscali non validi.', 'fiscal');
@@ -33,6 +38,23 @@ export function calculateFiscalProjection(revenueAmount: string, fiscal: FiscalP
     const substituteTax = d(money(taxBase.mul(taxRate))); const fiscalNet = revenue.minus(contributions).minus(substituteTax);
     return ok({ forfaitIncome: money(forfaitIncome), contributionBase: money(contributionBase), contributions: money(contributions), taxBase: money(taxBase), effectiveTaxRate: effectiveRate, substituteTax: money(substituteTax), fiscalNet: money(fiscalNet), totalToReserve: money(contributions.plus(substituteTax)) });
   } catch { return fail('Parametri fiscali non validi.', 'fiscal'); }
+}
+
+export function calculateFiscalAdvances(projection: FiscalProjection, contributionRate: string) {
+  const substituteTax = d(projection.substituteTax);
+  const taxAdvance = substituteTax.lte('51.65') ? d(0) : substituteTax;
+  const taxFirst = taxAdvance.lt('257.52') ? '0.00' : money(taxAdvance.mul('0.4'));
+  const referenceContributions = d(projection.contributionBase).mul(contributionRate).div(100);
+  const contributionAdvance = money(referenceContributions.mul('0.8'));
+  const contributionFirst = money(referenceContributions.mul('0.4'));
+  return {
+    substituteTaxAdvance: money(taxAdvance), substituteTaxAdvanceFirst: taxFirst,
+    substituteTaxAdvanceSecond: money(taxAdvance.minus(taxFirst)),
+    contributionAdvance, contributionAdvanceFirst: contributionFirst,
+    // Assign any rounding cent to the second instalment so totals always reconcile.
+    contributionAdvanceSecond: money(d(contributionAdvance).minus(contributionFirst)),
+    totalAdvances: money(taxAdvance.plus(contributionAdvance)),
+  };
 }
 
 function calculateProfileCore(profile: EconomicProfile, costs: BusinessCost[], requireConfirmed: boolean): Result<ProfileAnalysis> {

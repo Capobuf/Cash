@@ -16,7 +16,7 @@ function applyAuthoritativeTaxProfile(document:CashDocument,taxProfile:FicTaxPro
   const index=document.profiles.findIndex(profile=>profile.year===year);const existing=index>=0?document.profiles[index]:undefined;
   const profile=existing?structuredClone(existing):createBlankProfile(year);
   if(taxProfile.profitCoefficient!==undefined)profile.fiscal.profitabilityCoefficient=taxProfile.profitCoefficient;
-  if(taxProfile.contributionsPercentage!==undefined)profile.fiscal.contributionRate=taxProfile.contributionsPercentage;
+  // The annual INPS rate is configured by the user; FIC must not overwrite it.
   const regime=taxProfile.regime?.trim().toLocaleLowerCase('it');
   if(regime==='forfettario_5'){
     profile.fiscal.activityPhase='reduced_eligible';profile.fiscal.reducedSubstituteTaxRate='5';profile.fiscal.ordinarySubstituteTaxRate='15';

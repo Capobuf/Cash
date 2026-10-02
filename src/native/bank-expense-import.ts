@@ -1,6 +1,8 @@
 import ExcelJS from 'exceljs';
 import Decimal from 'decimal.js';
 import { extname } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { normalizeBankDescription } from '../domain/bank-expenses';
 import { bankExpenseRowSchema } from '../domain/schema';
 import { err, ok, type BankExpenseImport, type Result } from '../domain/model';
@@ -102,5 +104,78 @@ export async function readBankExpenseXlsx(path: string): Promise<Result<BankExpe
     return parseBankExpenseWorkbook(workbook);
   } catch {
     return err({ code: 'SOURCE_INVALID', message: 'Impossibile leggere il file XLSX.', action: 'Verifica che il file sia accessibile e sia un XLSX valido non protetto da password.' });
+  }
+}
+
+const csvHeaders = ['Tipo', 'Prodotto', 'Data di inizio', 'Data di completamento', 'Descrizione', 'Importo', 'Costo', 'Valuta', 'State', 'Saldo'] as const;
+type CsvHeader = typeof csvHeaders[number];
+
+function csvAmount(text: string, column: string): Decimal {
+  // This export uses dot decimals, without thousands separators.
+  if (!/^[+-]?\d+(?:\.\d{1,2})?$/.test(text)) throw new Error(`${column}: importo non valido (massimo due decimali).`);
+  return new Decimal(text);
+}
+
+function csvDate(text: string): string {
+  // Preserve the bank's calendar date without applying the computer's timezone.
+  const match = /^(\d{4}-\d{2}-\d{2}) (\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(text);
+  if (!match || Number(match[2]) > 23) throw new Error('Data del movimento assente o non valida.');
+  return match[1]!;
+}
+
+export async function parseBankExpenseCsv(text: string): Promise<Result<BankExpenseImport>> {
+  let sheet: ExcelJS.Worksheet;
+  try {
+    // Reuse ExcelJS's CSV parser for quoted commas, escaped quotes, BOM and multiline fields.
+    // Keep all cells as text: dates and monetary values must not be coerced by ExcelJS.
+    sheet = await new ExcelJS.Workbook().csv.read(Readable.from([text]), { map: value => value });
+  } catch {
+    return err({ code: 'SOURCE_INVALID', message: 'Impossibile leggere il CSV: struttura o virgolette non valide.' });
+  }
+  const columns = new Map<CsvHeader, number>();
+  const header = sheet.getRow(1);
+  header.eachCell((cell, index) => {
+    const label = cell.text.trim();
+    if (csvHeaders.includes(label as CsvHeader)) columns.set(label as CsvHeader, index);
+  });
+  if (columns.size !== csvHeaders.length || header.cellCount !== csvHeaders.length) {
+    return err({ code: 'SOURCE_INVALID', message: 'Intestazione CSV bancaria non valida.', details: [`Colonne richieste: ${csvHeaders.join(', ')}.`] });
+  }
+  const result: BankExpenseImport = { rows: [], ignoredIncome: 0 };
+  for (let index = 2; index <= sheet.rowCount; index++) {
+    const row = sheet.getRow(index);
+    if (!row.hasValues || row.values instanceof Array && row.values.every(value => blank(value))) continue;
+    const raw = (column: CsvHeader) => row.getCell(columns.get(column)!).text.trim();
+    try {
+      if (row.cellCount !== header.cellCount) throw new Error('Numero di colonne diverso dall’intestazione.');
+      const amount = csvAmount(raw('Importo'), 'Importo');
+      const fee = csvAmount(raw('Costo'), 'Costo');
+      if (fee.lt(0)) throw new Error('Costo: la commissione non può essere negativa.');
+      const debit = fee.minus(amount);
+      if (debit.lte(0)) { if (amount.gt(0)) result.ignoredIncome++; continue; }
+      if (raw('Valuta') !== 'EUR') throw new Error('Valuta non supportata: sono ammesse solo uscite in EUR.');
+      const parsed = bankExpenseRowSchema.safeParse({
+        date: csvDate(raw('Data di completamento') || raw('Data di inizio')),
+        description: normalizeBankDescription(raw('Descrizione')),
+        amount: debit.toFixed(2),
+      });
+      if (!parsed.success) throw new Error(parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
+      result.rows.push(parsed.data);
+    } catch (cause) {
+      return err({ code: 'SOURCE_INVALID', message: `Importazione annullata: uscita non valida alla riga ${index}.`,
+        action: 'Correggi il file e ripeti l’importazione. Nessun movimento è stato importato.', details: [cause instanceof Error ? cause.message : String(cause)] });
+    }
+  }
+  return ok(result);
+}
+
+export async function readBankExpenseFile(path: string): Promise<Result<BankExpenseImport>> {
+  const extension = extname(path).toLowerCase();
+  if (extension === '.xlsx') return readBankExpenseXlsx(path);
+  if (extension !== '.csv') return err({ code: 'SOURCE_INVALID', message: 'Seleziona un file XLSX o CSV.' });
+  try {
+    return await parseBankExpenseCsv(await readFile(path, 'utf8'));
+  } catch {
+    return err({ code: 'SOURCE_INVALID', message: 'Impossibile leggere il file CSV.', action: 'Verifica che il file sia accessibile e sia un CSV valido in UTF-8.' });
   }
 }

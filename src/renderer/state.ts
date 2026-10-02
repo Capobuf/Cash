@@ -75,7 +75,7 @@ export class AppState {
     const path = this.session?.path;
     this.bankExpenseImporting = true; this.bankExpenseImportSummary = null; this.emit();
     try {
-      const result = await window.cash.bankExpenses.importXlsx();
+      const result = await window.cash.bankExpenses.importFile();
       if (context !== this.archiveContextVersion || this.document?.documentId !== documentId || this.session?.path !== path) {
         this.setError({ code: 'CONFLICT', message: 'Archivio cambiato durante l’importazione. Ripeti la selezione del file.' }); return;
       }
@@ -91,7 +91,7 @@ export class AppState {
       }
       this.bankExpenseImportSummary = { imported: added.length, duplicates, ignoredIncome: parsed.data.ignoredIncome };
     } catch {
-      this.setError({ code: 'IO', message: 'Importazione XLSX non riuscita. Nessun movimento è stato importato.' });
+      this.setError({ code: 'IO', message: 'Importazione bancaria non riuscita. Nessun movimento è stato importato.' });
     } finally { this.bankExpenseImporting = false; this.emit(); }
   }
   private hasExternalConflict(): boolean { return this.status === 'Conflitto esterno'; }

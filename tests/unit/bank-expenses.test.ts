@@ -9,7 +9,7 @@ function fixture() {
   const software = { ...meta(), name: 'Software' };
   const hosting = { ...meta(), name: 'Hosting', parentId: software.id };
   const travel = { ...meta(), name: 'Trasferte' };
-  doc.bankExpenseCategories = [software, hosting, travel];
+  doc.bankExpenseCategories = [software, hosting, travel, ...doc.bankExpenseCategories];
   doc.bankExpenses = [
     { ...meta(), date: '2026-01-05', description: 'Licenza', amount: '10.10', categoryIds: [software.id] },
     { ...meta(), date: '2026-02-06', description: 'HOSTING', amount: '20.20', categoryIds: [hosting.id] },
@@ -19,7 +19,7 @@ function fixture() {
   return { doc, software, hosting, travel };
 }
 
-describe('spese bancarie', () => {
+describe('uscite dal conto', () => {
   it.each(['OLD WAY', 'Oldway', 'old-way', 'OLD_WAY', ' old. / WAY '])('riconosce %s ignorando solo le differenze grafiche', value => {
     expect(normalizeBankRuleText(value)).toBe('oldway');
     expect(bankRuleMatches('OLD WAY DI VINCENZO F. CAMPOBASSO IT...', value)).toBe(true);
@@ -153,7 +153,7 @@ describe('spese bancarie', () => {
     expect(cashDocumentSchema.safeParse(doc).success).toBe(true);
     expect(bankCategoryDeletionBlocker(doc.bankExpenseCategories, doc.bankExpenses, software.id)).toBeDefined();
     expect(bankCategoryDeletionBlocker(doc.bankExpenseCategories, doc.bankExpenses, hosting.id)).toBeDefined();
-    expect(bankCategoryDeletionBlocker(doc.bankExpenseCategories, doc.bankExpenses, doc.bankExpenseCategories[3]!.id)).toBeUndefined();
+    expect(bankCategoryDeletionBlocker(doc.bankExpenseCategories, doc.bankExpenses, doc.bankExpenseCategories[4]!.id)).toBeUndefined();
   });
 
   it('include gli anni banca e preserva i calcoli FIC', () => {

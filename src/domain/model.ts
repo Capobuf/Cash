@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 export interface EntityMeta { id: string; createdAt: string; updatedAt: string }
 export type DecimalString = string;
@@ -244,6 +244,7 @@ export interface SharedSettings {
 
 export interface FicTaxProfileSnapshot {
   acquiredAt: string;
+  hasProfessionalFund?: boolean;
   companyType?: string;
   companySubtype?: string;
   profession?: string;
@@ -270,6 +271,7 @@ export interface FicIssuedDocument {
   entityId?: string;
   entityName?: string;
   amountGross: DecimalString;
+  stampDuty?: DecimalString;
   payments: FicFinancialPayment[];
 }
 export interface FicReceivedDocument {
@@ -313,6 +315,7 @@ export interface BankExpense extends EntityMeta {
 export interface BankExpenseCategory extends EntityMeta {
   name: string;
   parentId?: string;
+  systemRole?: 'vat_taxes';
 }
 
 export interface BankExpenseRule extends EntityMeta {
@@ -323,13 +326,6 @@ export interface BankExpenseRule extends EntityMeta {
 export type BankExpenseRow = Pick<BankExpense, 'date' | 'description' | 'amount'>;
 export interface BankExpenseImport { rows: BankExpenseRow[]; ignoredIncome: number }
 export interface BankExpenseImportSummary { imported: number; duplicates: number; ignoredIncome: number }
-
-export interface FinancialProvision {
-  year: number;
-  covered: DecimalString;
-  additions: { description: string; amount: DecimalString }[];
-  bankBalance?: { amount: DecimalString; date: string };
-}
 
 export interface CashDocument {
   schemaVersion: number;
@@ -345,7 +341,7 @@ export interface CashDocument {
   catalog: Catalog;
   quotes: Quote[];
   financialSnapshot?: FicFinancialSnapshot;
-  financialProvisions: FinancialProvision[];
+  fiscalPaymentOverrides?: { year: number; total: DecimalString }[];
   bankExpenseCategories: BankExpenseCategory[];
   bankExpenses: BankExpense[];
   bankExpenseRules: BankExpenseRule[];
@@ -354,6 +350,8 @@ export interface CashDocument {
 export const nowIso = (): string => new Date().toISOString();
 export const newId = (): string => globalThis.crypto.randomUUID();
 export const meta = (): EntityMeta => { const time = nowIso(); return { id: newId(), createdAt: time, updatedAt: time }; };
+
+export const createTaxCategory = (): BankExpenseCategory => ({ ...meta(), name: 'Imposte P.IVA', systemRole: 'vat_taxes' });
 
 export const modeForFuel = (fuel: Fuel): MimitMode =>
   fuel === 'Benzina' || fuel === 'Gasolio' ? 'SELF' : 'SERVITO';
@@ -371,8 +369,7 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   sites: [],
   catalog: { subItems: [], templates: [] },
   quotes: [],
-  financialProvisions: [],
-  bankExpenseCategories: [],
+  bankExpenseCategories: [createTaxCategory()],
   bankExpenses: [],
   bankExpenseRules: [],
 });

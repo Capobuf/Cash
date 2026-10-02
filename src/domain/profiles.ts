@@ -21,6 +21,6 @@ export function copyProfileToYear(profile: EconomicProfile, year: number): Resul
   if (!Number.isInteger(year) || year < 2000 || year > 2200)
     return err({ code: 'VALIDATION', field: 'year', message: 'Anno fiscale non valido.' });
   return ok({ ...structuredClone(profile), ...meta(), year, revision: 1, confirmed: false,
-    fiscal: { ...structuredClone(profile.fiscal), reducedEligibilityConfirmed: false,
+    fiscal: { ...structuredClone(profile.fiscal), contributionRate: '0', reducedEligibilityConfirmed: false,
       ordinaryApplicabilityConfirmed: false } });
 }

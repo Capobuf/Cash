@@ -39,14 +39,13 @@ Ogni salvataggio valido incrementa la revisione, conserva la versione precedente
 revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
-Gli archivi schema 1–6 richiedono anteprima e conferma prima della migrazione allo schema 7.
-Il passaggio v5→v6 aggiunge `bankExpenseCategories`, `bankExpenses` e `bankExpenseRules` vuoti e conserva tutti i dati,
-incluso lo snapshot Fatture in Cloud. Le migrazioni storiche proseguono fino a v7.
-Il passaggio v6→v7 conserva movimenti, categorie, regole e snapshot e aggiunge `financialProvisions: []`:
-copertura iniziale zero, nessuna integrazione e nessun saldo presunto. Ogni previsione riguarda l’anno
-selezionato e contiene `covered`, `additions` (solo descrizione/importo) e l’eventuale `bankBalance`
-(importo/data inseriti manualmente). Non si copia la copertura all’anno successivo.
-Le raccolte bancarie assenti vengono lette con liste vuote; le vecchie
+Gli archivi schema 1–9 richiedono anteprima e conferma prima della migrazione allo schema 10.
+La migrazione rimuove il saldo bancario manuale e il relativo contenitore annuale, senza
+trasferirli altrove. Conserva profili, movimenti, categorie, regole, snapshot FIC, preventivi
+e gli altri dati. Per gli archivi storici elimina anche covered/additions senza creare
+movimenti e aggiunge la categoria di sistema Imposte P.IVA solo se assente.
+Una categoria utente omonima rimane distinta.
+Movimenti e regole assenti vengono letti con liste vuote; le vecchie
 assegnazioni `categoryId` diventano categorie manuali in `categoryIds`. L’apertura non riscrive
 il file: il successivo salvataggio conserva il formato precedente nel consueto backup.
 Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando i dati nuovi. La migrazione
@@ -74,12 +73,21 @@ locale funziona senza token, azienda o prodotto. Il Client ID dell’app privata
 **Impostazioni → Integrazioni** o direttamente nel primo passaggio della procedura guidata. Viene salvato
 soltanto nelle preferenze locali della postazione e non è incorporato nella build.
 
+L’aliquota INPS si inserisce in **Impostazioni → Profili annuali → Fiscalità**, anche con FIC collegato.
+Un nuovo profilo o una copia per un nuovo anno mostra **Configura INPS**, con istruzioni per cercare
+su inps.it la circolare «Gestione Separata aliquote contributive» dell’anno e scegliere la voce
+Professionisti in base a pensione e altra copertura previdenziale. La copia non riporta l’aliquota:
+va inserita nuovamente; anche il massimale deve essere verificato. Un’aliquota mancante o zero
+non consente la previsione fiscale. Gli archivi esistenti conservano i dati: gli eventuali zeri
+vanno corretti e il profilo riconfermato. Il valore FIC `contributions_percentage` non sovrascrive
+più l’aliquota manuale.
+
 La procedura guidata richiede un token manuale con i soli permessi `entity.clients:r`, `products:r`,
 `settings:r`, `issued_documents.quotes:a`, `issued_documents.invoices:r`,
 `issued_documents.credit_notes:r` e `received_documents:r` e lo salva nel Gestore credenziali di Windows non appena viene confermato,
 anche se il wizard viene poi interrotto. Fa quindi scegliere azienda e prodotto con nome esatto
 `Consulenza`, verifica i permessi e importa il profilo fiscale aziendale. I valori disponibili in Fatture in
-Cloud prevalgono su quelli manuali; i campi non esposti restano da compilare. Ogni postazione deve essere configurata
+Cloud prevalgono su quelli manuali per regime e redditività; aliquota e massimale INPS restano manuali. Ogni postazione deve essere configurata
 separatamente. Disattivare il modulo conserva configurazione e token; `Rimuovi collegamento` elimina il
 token locale e i riferimenti condivisi, senza modificare snapshot o esportazioni storiche.
 
@@ -92,7 +100,7 @@ La sezione **Analisi finanziaria → Panoramica** confronta Fatturato obiettivo 
 e pagamenti FIC. Fatture in Cloud resta la source of truth: i documenti amministrativi sono in sola lettura.
 La Panoramica nell’area Preventivazione resta distinta dalla Panoramica finanziaria.
 
-**Spese → Movimenti** importa un XLSX della banca tramite dialog nativo. Il parser legge il primo
+**Spese → Movimenti** importa un file XLSX o CSV della banca tramite dialog nativo. Per gli XLSX il parser legge il primo
 foglio e cerca l’intestazione `Data_Operazione`, `Data_Valuta`, `Entrate`, `Uscite`, `Descrizione`,
 `Descrizione_Completa`, `Stato`, anche dopo un preambolo. Acquisisce solo le righe con `Uscite < 0`, indipendentemente
 dallo stato, usando data valuta, descrizione completa (con fallback) e importo positivo a due decimali.
@@ -101,6 +109,14 @@ movimenti aggiunti, duplicati e entrate ignorate. La deduplica esatta data/descr
 anche all’interno del file e conserva le categorie già assegnate. Due spese reali con la stessa terna
 sono intenzionalmente considerate duplicate.
 
+I CSV UTF-8 con intestazione `Tipo,Prodotto,Data di inizio,Data di completamento,Descrizione,Importo,Costo,Valuta,State,Saldo`
+usano la data di completamento, con fallback alla data di inizio (anche per i movimenti in sospeso).
+Gli importi hanno il punto decimale: l’uscita è `Costo - Importo` quando positiva, così le commissioni
+sono incluse anche con importo zero. Gli accrediti netti sono ignorati. Sono ammesse solo uscite in EUR;
+struttura, date o importi non validi annullano l’intera importazione. Sono supportati campi tra virgolette,
+virgole nelle descrizioni e descrizioni su più righe. Valgono le stesse regole di deduplica degli XLSX:
+un movimento in sospeso poi completato con data diversa non viene riconciliato automaticamente.
+
 La tabella consente ricerca, filtri e assegnazione manuale di più categorie con autosalvataggio.
 **Nuova spesa** e **Modifica** consentono di gestire data, descrizione, importo positivo e categorie
 manuali; data/descrizione/importo duplicati vengono rifiutati. Cambiando descrizione si ricalcolano le regole.
@@ -108,7 +124,7 @@ Le checkbox selezionano singole spese o tutti i risultati visibili nell’anno e
 cambiando filtri o anno la selezione si azzera. La barra mostra numero e totale delle spese selezionate.
 Le azioni di massa aggiungono, rimuovono, sostituiscono o svuotano le categorie manuali in un solo
 salvataggio, senza alterare quelle automatiche. L’eliminazione singola o multipla richiede conferma
-con l’elenco delle spese; categorie e regole vengono conservate. Reimportare un XLSX può reinserire
+con l’elenco delle spese; categorie e regole vengono conservate. Reimportare un file XLSX o CSV può reinserire
 le spese eliminate. Le modifiche rispettano sola lettura e blocco per conflitto esterno.
 Nei dialoghi di categorizzazione, creazione/modifica spesa e regola è disponibile **Nuova categoria /
 sottocategoria**: nome e padre facoltativo permettono di creare la voce senza lasciare le spese.
@@ -135,7 +151,7 @@ L’anno è condiviso con la Panoramica finanziaria, include gli anni bancari ed
 L’import acquisisce tutti gli anni del file; Categorie è indipendente dall’anno.
 
 I movimenti bancari restano separati dai documenti e dai KPI Fatture in Cloud: nessuna somma,
-riconciliazione o categorizzazione automatica non configurata dall’utente. Lettura XLSX e filesystem restano nel processo Electron;
+riconciliazione o categorizzazione automatica non configurata dall’utente. Lettura XLSX/CSV e filesystem restano nel processo Electron;
 il renderer riceve solo righe normalizzate e applica un’unica mutazione dell’archivio.
 
 **Aggiorna dati Fatture in Cloud** acquisisce manualmente tutte le pagine di invoice, credit_note,
@@ -145,31 +161,48 @@ I nuovi permessi sono di sola lettura; i vecchi token vanno riconfigurati con gl
 
 L’emesso segue la data fattura; l’incassato segue paid_date, anche per fatture di anni precedenti.
 I pagamenti paid senza data valida bloccano l’intera acquisizione. Note di credito e costi documentati
-restano separati da ricavi e costi pianificati. La **Stima fiscale sull’incassato** riusa il motore forfettario
+restano separati da ricavi e costi pianificati. La **Previsione fiscale gestionale** riusa il calcolo forfettario
 con il profilo confermato dello stesso anno. Sono disponibili tabella mensile e dettagli dei residui.
 
 Lo snapshot rimane consultabile offline, con integrazione disattivata o rimossa e su postazioni senza token.
 La data dell’ultimo aggiornamento è sempre mostrata. Un cambio azienda viene segnalato e una sincronizzazione
 riuscita sostituisce interamente i dati, senza mescolarli. Cash non ricostruisce saldi bancari dai movimenti e non gestisce contabilità.
 
-La **Situazione fiscale** distingue Stima automatica, Integrazioni, Previsione totale, Già coperto e
-Da accantonare. **Modifica situazione** permette di gestire copertura e integrazioni (aggiunta,
-modifica, rimozione) con un unico salvataggio. Il motore forfettario rimane una stima finanziaria
-incompleta, non una posizione fiscale definitiva. Il bollo previsto è una normale integrazione:
-nessun uso di `stamp_duty`, soglie d’importo delle fatture o lettura F24 da FIC.
+La **Previsione fiscale gestionale** comprende contributi INPS stimati, sostitutiva stimata,
+bollo di 2 euro per ogni fattura dell’anno con importo lordo superiore a 77,46 euro
+e numerazione che non inizia con PA, e acconti dell’anno successivo (sostitutiva 100%
+oltre 51,65 euro, INPS 80%). Il profilo annuale fornisce coefficienti e aliquote; in assenza
+di un profilo successivo confermato l’acconto INPS usa l’aliquota corrente con avviso.
+Non è un calcolo dichiarativo: la base sostitutiva usa contributi stimati anziché versamenti
+fiscali effettivi. Il bollo viene calcolato indipendentemente dall’incasso e dal campo
+stamp_duty importato, anche se assente o pari a zero.
 
-`Da accantonare = max(0, stima automatica + integrazioni − già coperto)`.
-La copertura è sempre decisa dall’utente: le uscite fiscali non la aggiornano automaticamente,
-anche se categorizzate tramite le regole esistenti. Restano comprese in storico, flussi mensili,
-totali bancari e analisi per categoria. Nessuna modifica o riclassificazione dei vecchi movimenti.
-Una copertura superiore alla previsione azzera il residuo senza creare crediti o riporti.
+Il box **Correzione con il prospetto del commercialista** permette di sostituire la stima con un
+solo totale annuale facoltativo, riferito ai versamenti dell’anno selezionato. La guida spiega
+quali saldi e acconti includere, come evitare duplicazioni tra totale e rate, e come trattare
+bollo, compensazioni e importi già pagati. Non è un’aggiunta alla stima e non modifica i movimenti.
+`Residuo = max(0, totale del commercialista − pagamenti bancari Imposte P.IVA nell’anno)`.
+La stima automatica resta visibile per confronto; **Torna alla stima** elimina la correzione.
+Zero è un totale valido; un’eccedenza pagata non viene trasformata in credito fiscale.
+La correzione funziona anche quando la stima è indisponibile, resta confinata al suo anno ed è
+salvata in `fiscalPaymentOverrides` (schema 10); la migrazione non inventa importi dagli archivi precedenti.
 
-`Disponibilità effettiva = saldo bancario di riferimento − da accantonare`.
-Poiché l’import bancario acquisisce solo uscite, il saldo reale viene inserito manualmente con
-la sua data nella situazione dell’anno selezionato. Include già i pagamenti effettuati: non si
-sottraggono nuovamente le uscite importate. L’import non aggiorna il saldo; l’utente deve mantenerlo
-aggiornato. Senza saldo o stima fiscale il KPI resta non disponibile, senza fallback.
-Il **Margine dei flussi annuali** resta separato: incassato FIC − uscite bancarie − da accantonare.
+La categoria di sistema **Imposte P.IVA** è rinominabile e non eliminabile. Il riconoscimento
+usa systemRole, anche dopo un rename, e le categorie effettive manuali/automatiche.
+`Residuo fiscale = max(0, monte fiscale − imposte pagate tramite banca)`.
+Le imposte pagate restano nel totale delle uscite. L’eccedenza è mostrata come differenza,
+senza crediti o riporti. La dashboard distingue anno corrente e acconti successivi.
+
+`Margine dopo le uscite = Incassato − Uscite dal conto`.
+`Disponibilità stimata = Margine dopo le uscite − Fiscalità ancora da coprire`.
+La panoramica non richiede dati finanziari manuali. Il risultato negativo è un **Disavanzo stimato**;
+se la previsione fiscale non è calcolabile, il KPI mostra il motivo reale.
+Le imposte già pagate sono comprese nelle uscite e riducono il residuo fiscale: non si sottraggono due volte.
+Il Sankey Recharts rappresenta Top 5 clienti + Altri clienti → Incassato → Uscite dal conto / Margine.
+Le uscite si dividono in Imposte P.IVA già pagate / Altre uscite; il margine in Fiscalità ancora da coprire /
+Disponibilità stimata. Le normali categorie, potenzialmente sovrapposte, restano nel grafico separato.
+Nella stessa Card, Fatturato emesso, Incassato nell’anno e Da incassare forniscono il contesto:
+fatturato e incassato hanno perimetri temporali diversi e non sono collegati nel Sankey.
 Costi pianificati, costi FIC e preventivazione mantengono le loro logiche precedenti.
 
 ## OpenRouteService

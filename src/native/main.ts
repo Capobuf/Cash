@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { readBankExpenseXlsx } from './bank-expense-import';
+import { readBankExpenseFile } from './bank-expense-import';
 import { join } from 'node:path';
 import { createEmptyDocument, err, ok, type CashDocument, type Coordinates, type Fuel, type Result } from '../domain/model';
 import { createArchive, inspectArchive, migrateArchive, openArchive, previewMigration, restoreBackup, saveArchive, saveRecoveryCopy, type ArchiveSession, type ConcurrencyToken } from './persistence';
@@ -56,9 +56,9 @@ async function selectOpen() {
 function registerHandlers(): void {
   ipcMain.handle(IPC.bankExpenseImport, async () => {
     if (!current?.document || current.readOnly) return err({ code: 'VALIDATION', message: 'Apri un archivio modificabile prima di importare.' });
-    const choice = await dialog.showOpenDialog({ title: 'Importa spese bancarie', properties: ['openFile'], filters: [{ name: 'Movimenti bancari XLSX', extensions: ['xlsx'] }] });
+    const choice = await dialog.showOpenDialog({ title: 'Importa uscite dal conto', properties: ['openFile'], filters: [{ name: 'Movimenti bancari XLSX e CSV', extensions: ['xlsx', 'csv'] }] });
     if (choice.canceled || !choice.filePaths[0]) return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
-    return readBankExpenseXlsx(choice.filePaths[0]);
+    return readBankExpenseFile(choice.filePaths[0]);
   });
   ipcMain.handle(IPC.archiveOpen, () => selectOpen());
   ipcMain.handle(IPC.archiveOpenLast, async () => {

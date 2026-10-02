@@ -14,6 +14,7 @@ const productSummarySchema = z.object({ id: z.union([z.string(), z.number()]), n
 const vatSchema = z.object({ id: z.union([z.string(),z.number()]), value:z.number().nullish(), description:z.string().nullish() });
 const productSchema = productSummarySchema.extend({ default_vat: vatSchema.nullish() });
 const taxProfileSchema = z.object({ company_type:z.string().nullish(), company_subtype:z.string().nullish(), profession:z.string().nullish(),
+  cassa_name: z.string().nullish(), cassa2_name: z.string().nullish(), default_cassa: z.number().nonnegative().nullish(), default_cassa2: z.number().nonnegative().nullish(),
   regime:z.string().nullish(), profit_coefficient:z.number().nullish(), contributions_percentage:z.number().nullish(), default_vat:vatSchema.nullish() });
 export interface VerifiedProduct { id:string; name:string; vat:{id:string;value?:number;description?:string} }
 const companySchema = z.object({ id: z.union([z.string(), z.number()]), name: z.string().min(1) });
@@ -115,6 +116,8 @@ export async function getTaxProfile(companyId:string,token:string,fetcher:typeof
     ?err({code:'CREDENTIALS',source:'FattureInCloud',message:`Accesso al profilo fiscale negato (HTTP ${response.value.status}); verificare lo scope settings:r e i permessi dell’utente sull’azienda.`})
     :err({code:'SOURCE_UNAVAILABLE',source:'FattureInCloud',message:`Profilo fiscale aziendale non disponibile (HTTP ${response.value.status}).`});
   try{const json=await response.value.json() as {data?:unknown};const profile=taxProfileSchema.parse(json.data);return ok({acquiredAt:new Date().toISOString(),
+    ...([profile.cassa_name, profile.cassa2_name, profile.default_cassa, profile.default_cassa2].some(value => value != null)
+      ? { hasProfessionalFund: Boolean(profile.cassa_name?.trim() || profile.cassa2_name?.trim() || profile.default_cassa || profile.default_cassa2) } : {}),
     ...(profile.company_type?{companyType:profile.company_type}:{}),...(profile.company_subtype?{companySubtype:profile.company_subtype}:{}),
     ...(profile.profession?{profession:profile.profession}:{}),...(profile.regime?{regime:profile.regime}:{}),
     ...(profile.profit_coefficient!=null?{profitCoefficient:String(profile.profit_coefficient)}:{}),
@@ -233,7 +236,9 @@ export async function verifyProduct(companyId: string, productId: string, token:
 
 const remoteId = z.union([z.string().regex(/^\d+$/), z.number().int().positive().safe()]).transform(String);
 const remoteMoney = z.union([z.number().finite(), z.string().regex(/^-?\d+(?:\.\d+)?$/)])
-  .refine(value => d(value).isFinite() && d(value).gte(0), 'Importo non valido').transform(value => money(value));
+  .refine(value => {
+    try { return d(value).isFinite() && d(value).gte(0); } catch { return false; }
+  }, 'Importo non valido').transform(value => money(value));
 const remotePayment = z.object({
   id: remoteId.nullish(), amount: remoteMoney, due_date: z.string().date().nullish(),
   paid_date: z.string().date().nullish(), status: z.enum(['paid', 'not_paid', 'reversed']),
@@ -248,6 +253,8 @@ const remoteFinancialDocument = z.object({
   invoice_number: z.string().nullish(), entity: z.object({ id: remoteId.nullish(), name: z.string().nullish() }).nullish(),
   description: z.string().nullish(), subject: z.string().nullish(), category: z.string().nullish(),
   payments_list: z.array(remotePayment).nullable(),
+  // Missing or malformed stamp data must not discard otherwise usable cash flows.
+  stamp_duty: remoteMoney.optional().catch(undefined),
 });
 const financialPage = z.object({ data: z.array(remoteFinancialDocument), current_page: z.number().int().positive(), last_page: z.number().int().positive() });
 
@@ -310,7 +317,7 @@ async function listPendingDocuments(companyId: string, token: string, source: 'a
 async function listFinancialDocuments(companyId: string, token: string, type: z.infer<typeof remoteFinancialDocument>['type'], fetcher: typeof fetch) {
   const issued = type === 'invoice' || type === 'credit_note';
   const endpoint = issued ? 'issued_documents' : 'received_documents';
-  const fields = `id,type,date,entity,amount_gross,payments_list,${issued ? 'number,numeration,subject' : 'invoice_number,description,category'}`;
+  const fields = `id,type,date,entity,amount_gross,payments_list,${issued ? 'number,numeration,subject,stamp_duty' : 'invoice_number,description,category'}`;
   const scope = issued ? type === 'invoice' ? 'issued_documents.invoices:r' : 'issued_documents.credit_notes:r' : 'received_documents:r';
   const documents: z.infer<typeof remoteFinancialDocument>[] = [];
   let lastPage = 1;
@@ -363,6 +370,7 @@ export async function syncFinancialData(companyId: string, token: string, fetche
             ...(payment.id != null ? { id: payment.id } : {}), ...(payment.due_date ? { dueDate: payment.due_date } : {}),
             ...(payment.paid_date ? { paidDate: payment.paid_date } : {}) })) };
         if (type === 'invoice' || type === 'credit_note') snapshot.issuedDocuments.push({ ...common, type,
+          ...(document.stamp_duty !== undefined ? { stampDuty: document.stamp_duty } : {}),
           ...(document.subject != null ? { description: document.subject } : {}),
           ...(document.number != null ? { number: String(document.number) } : {}), ...(document.numeration != null ? { numeration: document.numeration } : {}) });
         else snapshot.receivedDocuments.push({ ...common, type,

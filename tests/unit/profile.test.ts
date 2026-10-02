@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateProfile, previewProfile } from '../../src/domain/calculations';
+import { calculateFiscalProjection, calculateProfile, previewProfile } from '../../src/domain/calculations';
 import { createFiscalPreset2026, meta } from '../../src/domain/model';
 import { confirmProfile, copyProfileToYear, saveProfileRevision } from '../../src/domain/profiles';
 
@@ -47,4 +47,21 @@ describe('profilo economico e fiscale', () => {
   });
 
   it('richiede conferma specifica oltre la soglia ordinaria',()=>{const profile=createFiscalPreset2026();profile.revenueTarget='90000.00';expect(confirmProfile(profile,[]).ok).toBe(false);profile.fiscal.ordinaryApplicabilityConfirmed=true;expect(confirmProfile(profile,[]).ok).toBe(true);});
+
+  it('richiede di configurare INPS nel nuovo anno senza modificare il profilo originale', () => {
+    const source = createFiscalPreset2026(); source.revenueTarget = '50000.00'; source.confirmed = true;
+    const copied = copyProfileToYear(source, 2027);
+    expect(copied.ok).toBe(true);
+    if (!copied.ok) return;
+    expect(copied.value.fiscal.contributionRate).toBe('0');
+    expect(source.fiscal.contributionRate).toBe('26.07');
+    expect(confirmProfile(copied.value, [])).toMatchObject({ ok: false, error: { field: 'contributionRate' } });
+    copied.value.fiscal.contributionRate = '24';
+    expect(confirmProfile(copied.value, [])).toMatchObject({ ok: true, value: { confirmed: true } });
+  });
+
+  it.each(['0', '0.00', '-1', '100.01', 'NaN', 'Infinity'])('non produce una previsione con aliquota INPS %s', (rate) => {
+    const fiscal = createFiscalPreset2026().fiscal; fiscal.contributionRate = rate;
+    expect(calculateFiscalProjection('27268.40', fiscal)).toMatchObject({ ok: false, error: { field: 'contributionRate' } });
+  });
 });

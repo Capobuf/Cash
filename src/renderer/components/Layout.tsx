@@ -41,7 +41,7 @@ const descriptions: Record<View, string> = {
   dashboard: "Obiettivi, fiscalità e capacità", quotes: "Componi e verifica le tue offerte",
   clients: "Clienti Fatture in Cloud e sedi correlate",
   "financial-analysis": "Obiettivi e dati amministrativi registrati",
-  "bank-summary": "Analisi delle uscite bancarie", "bank-movements": "Importazione e categorizzazione delle spese", "bank-categories": "Organizza categorie e sottocategorie",
+  "bank-summary": "Analisi delle uscite dal conto", "bank-movements": "Importazione e categorizzazione delle uscite", "bank-categories": "Organizza categorie e sottocategorie",
   catalog: "Template e contenuti riutilizzabili", settings: "Profili, risorse, integrazioni e archivio",
 }
 

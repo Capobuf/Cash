@@ -1171,7 +1171,7 @@ Ogni versione del client dichiara le versioni di schema dati che può leggere e 
 
 Quando uno schema precedente non contiene lo stato esplicito dell'integrazione, la migrazione imposta Fatture in Cloud su `Disattivata` e conserva gli eventuali riferimenti non segreti esistenti per una futura riattivazione esplicita.
 
-Lo schema corrente è 5. La migrazione v4→v5 conserva identici tutti i dati validi v4, senza blocker, e cambia solo schemaVersion; il nuovo snapshot è assente. Le migrazioni 1→2→3→4→5 restano disponibili con i blocker storici per le conversioni ambigue. Anteprima, conferma e backup precedono la migrazione atomica. Un client precedente tratta lo schema 5 come più nuovo e lo apre in sola lettura, impedendo che una validazione elimini lo snapshot.
+Lo schema corrente è 10. Le migrazioni dagli schemi 1–9 conservano i dati validi, inclusi profili, snapshot FIC, movimenti, categorie, regole e preventivi; rimuovono il saldo bancario manuale e il relativo contenitore senza trasferirli altrove, oltre ai campi fiscali manuali superati, e garantiscono una sola categoria di sistema Imposte P.IVA. Restano i blocker storici per le conversioni ambigue. Anteprima, conferma e backup precedono la migrazione atomica. Un client precedente apre il nuovo schema in sola lettura, impedendo che una validazione elimini i dati nuovi.
 
 Non è ammesso che due versioni diverse del client scrivano contemporaneamente lo stesso file.
 
@@ -1542,7 +1542,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **62.** Conservare lo snapshot offline, con FIC disattivato/rimosso o token assente; mostrare mismatch azienda e data aggiornamento.
 
-**63.** Migrare allo schema 5 preservando i dati v4 e mantenendo migrazioni precedenti, backup, restore e protezione da scrittura dei client precedenti.
+**63.** Migrare allo schema 10 preservando i dati validi degli archivi precedenti secondo la sezione 31.9 e mantenendo backup, restore e protezione da scrittura dei client precedenti.
 
 ## 30. Fonti normative e tecniche
 
@@ -1601,13 +1601,37 @@ Gli indicatori di residuo descrivono lo stato dei pagamenti presenti nello snaps
 
 Non viene calcolato un saldo reale sottraendo costi documentati o pianificati dall’incassato. Tutti gli importi vengono elaborati con decimal.js e le utility monetarie comuni, arrotondando i componenti monetari al centesimo prima delle somme.
 
-### 31.3 Stima fiscale sull’incassato
+### 31.3 Previsione fiscale gestionale sull’incassato
 
-La sezione si chiama **Stima fiscale sull’incassato**, mai “Tasse da pagare”. Usa le stesse formule forfettarie della sezione 5, sostituendo il ricavo di pianificazione con l’Incassato dell’anno. La funzione pura comune riceve ricavo e parametri fiscali; non si costruisce un EconomicProfile fittizio e non si duplicano formule. Il comportamento di calculateProfile resta invariato.
+**Configurazione INPS annuale.** Aliquota Gestione Separata e massimale sono manuali nelle Impostazioni del profilo, anche con FIC collegato. Il campo FIC `contributions_percentage` non sovrascrive l’aliquota né ne blocca la modifica. Un profilo nuovo o da verificare mostra l’avviso **Configura INPS**, con pulsante per aprire Fiscalità. La guida indica come trovare su inps.it la circolare dell’anno, sezione Professionisti, e scegliere la voce secondo pensione e altra copertura obbligatoria. La copia per un nuovo anno azzera l’aliquota, mostrata vuota; anche il massimale copiato va verificato. Cambiare anno nell’editor svuota l’aliquota. Uno zero non abilita la previsione e impedisce la conferma, ma gli archivi storici restano leggibili e correggibili. Questa regola prevale sulle indicazioni generali di precedenza dei dati FIC per i parametri INPS.
 
-Mostra reddito forfettario, contributi stimati, imposta sostitutiva stimata, totale stimato da accantonare (contributi + imposta) e netto fiscale stimato sull’incassato. Usa solo il profilo dello stesso anno. Profilo mancante, non confermato, parametri non validi o soglie/conferme non compatibili rendono indisponibile soltanto la fiscalità con una spiegazione; gli altri indicatori rimangono consultabili. Un incassato nullo può produrre una stima nulla con profilo valido.
+La sezione si chiama **Previsione fiscale gestionale**. Riusa le formule della sezione 5 sui pagamenti FIC `paid` con `paid_date` nell’anno N, incluse fatture di anni precedenti. Fatture non incassate e incassi in N+1 non entrano nei compensi N. Rivalsa INPS 4% e bollo riaddebitato già compresi nei pagamenti restano nei compensi senza sottrazioni o ulteriori maggiorazioni. Emesso e incassato restano KPI distinti.
 
-I costi FIC non riducono la base forfettaria. Non sono inclusi F24, acconti/saldi reali, scadenze o altri regimi.
+Il perimetro è il professionista in regime forfettario senza Cassa, Gestione Separata, consulenza informatica. Il preset 2026 mantiene ATECO 62.20.10 (62.02.00 per profili storici della stessa attività), coefficiente 67%, INPS 26,07%, massimale 122.295,00 euro e sostitutiva 5%/15%. Regime e redditività disponibili nel profilo annuale, anche importati da FIC, sono autorevoli; aliquota e massimale INPS sono configurati manualmente. Non vengono creati parametri 2027. Profili mancanti, non confermati, fuori perimetro o incompatibili con soglie e conferme rendono indisponibile la previsione con una spiegazione; gli altri KPI rimangono calcolabili.
+
+Il profilo FIC mantiene inoltre la sola indicazione opzionale hasProfessionalFund, ricavata dai campi ufficiali cassa_name/cassa2_name/default_cassa/default_cassa2 quando esposti. Una Cassa configurata, un regime diverso o una tipologia aziendale diversa dal professionista individuale bloccano la previsione. Non vengono modellate altre Casse. Le vecchie acquisizioni senza questa indicazione continuano a usare il perimetro del profilo annuale confermato; per verificarne la compatibilità con i dati FIC correnti occorre riacquisire il profilo mediante il collegamento esistente.
+
+Con importi Decimal e arrotondamento monetario comune:
+
+- Reddito forfettario = compensi percepiti × coefficiente / 100.
+- Base INPS = min(reddito forfettario, massimale).
+- Contributi INPS stimati = base INPS × aliquota contributiva / 100.
+- Base sostitutiva stimata = max(reddito forfettario − contributi INPS stimati, 0).
+- Imposta sostitutiva stimata = base sostitutiva stimata × aliquota / 100; 5% solo con fase agevolata e requisiti esplicitamente confermati, altrimenti 15%.
+
+La deduzione dei contributi stimati è un’approssimazione gestionale: la dichiarazione deduce i contributi effettivamente versati nel periodo, dettaglio che Cash non possiede. Non si ricostruiscono F24 o un motore fiscale generico. È ammessa soltanto la correzione del totale annuale descritta sotto; non modifica basi, aliquote o deduzioni. I costi FIC e bancari non riducono il reddito forfettario.
+
+**Correzione facoltativa del commercialista.** La stima resta predefinita. Il box nella panoramica consente un solo importo annuale non negativo, anche zero, in `fiscalPaymentOverrides: { year, total }[]` opzionale, con anno univoco. Il totale si riferisce ai versamenti dell’anno selezionato, sostituisce il monte automatico nel residuo e nella disponibilità e non vi si somma. Cash sottrae i movimenti della categoria di sistema dell’anno una sola volta. Il dettaglio automatico rimane visibile per confronto, anche se riferito agli incassi dell’anno e agli acconti successivi. La correzione è utilizzabile senza una stima valida; in assenza dello snapshot gli indicatori sugli incassi restano indisponibili. **Torna alla stima** rimuove la correzione. Nessun riporto o copia automatica; gli anni con correzione restano nel selettore. Le mutazioni rispettano sola lettura e conflitto esterno.
+
+Il box spiega di includere saldi dell’anno precedente e acconti dell’anno selezionato, evitando di sommare sia il totale sia le rate della stessa voce; includere il secondo acconto se separato e non già compreso; considerare bollo e maggiorazioni pertinenti una sola volta, con pagamenti nella stessa categoria. Il totale deve essere comprensivo del già pagato nell’anno e al netto delle compensazioni già applicate dal prospetto, non un residuo da sottrarre nuovamente. Sono esclusi compenso del commercialista, tributi estranei, versamenti di altri anni e vecchi acconti già scomputati dal saldo. Il bollo automatico non viene aggiunto alla correzione. Una differenza pagata in eccesso non diventa un credito fiscale.
+
+Il bollo è pari a 2 euro per ogni fattura con data documento in N e importo lordo strettamente superiore a 77,46 euro, indipendentemente dall’incasso. Sono escluse le fatture la cui numerazione (`numeration`) o numero (`number`) inizia con PA, ignorando maiuscole/minuscole e spazi esterni. Le fatture di importo pari a 77,46 euro e le note di credito non generano bollo. Il campo importato `stamp_duty` è conservato ma non determina il calcolo: anche se assente o pari a zero, bollo, totale anno e monte fiscale restano calcolabili.
+
+L’acconto sostitutiva N+1 è zero se l’imposta stimata N è ≤ 51,65 euro, altrimenti il 100%. Sotto 257,52 euro è in unica seconda rata; da 257,52 euro la ripartizione informativa è 40% + 60%.
+
+L’acconto INPS N+1 è base INPS N × aliquota contributiva N+1 / 100 × 80%, con due quote informative del 40%. Si usa il profilo N+1 confermato, se disponibile e supportato; altrimenti l’aliquota N soltanto come proiezione, con avviso esplicito. Un profilo successivo confermato ma non valido/supportato blocca la previsione senza formule alternative. Nessun servizio esterno per aliquote future, calendario o reminder. Le seconde rate assorbono l’eventuale centesimo di arrotondamento per garantire la somma esatta.
+
+Totale anno = INPS stimata + sostitutiva stimata + bollo. Totale acconti = acconto sostitutiva + acconto INPS. Monte fiscale = totale anno + totale acconti. La UI espone i due gruppi **Anno corrente** e **Acconti anno successivo**, con ATECO, coefficiente, basi, aliquote, massimale e rate informative.
 
 ### 31.4 Acquisizione manuale completa
 
@@ -1626,9 +1650,9 @@ Non vengono introdotti SDK, database, server, worker, webhook, polling o sincron
 
 ### 31.5 Snapshot finanziario minimale
 
-Un solo nuovo concetto persistito: financialSnapshot opzionale nello schema 5. Contiene source=fatture_in_cloud, azienda (ID e nome), acquiredAt e le raccolte normalizzate issuedDocuments e receivedDocuments, più pendingReceivedDocuments opzionale. Lo schema resta v5: gli archivi già creati senza pending continuano ad aprirsi; il campo assente viene letto come lista vuota e la UI invita ad aggiornare per acquisirlo.
+Il financialSnapshot opzionale contiene source=fatture_in_cloud, azienda (ID e nome), acquiredAt e le raccolte normalizzate issuedDocuments e receivedDocuments, più pendingReceivedDocuments opzionale. Lo schema corrente è v10. Gli snapshot senza pending o bollo sono preservati dalla migrazione: i pending assenti equivalgono a una lista vuota, mentre il campo stampDuty assente non impedisce il calcolo automatico del bollo da importo e numerazione.
 
-Ogni documento emesso conserva ID FIC, type, date, numero/numerazione, cliente e subject (normalizzato in description) quando presenti, amount_gross normalizzato e pagamenti. Ogni documento ricevuto conserva ID FIC, type, date, invoice_number, fornitore, descrizione/categoria FIC quando presenti, amount_gross e pagamenti. Ogni pagamento conserva solo ID remoto opzionale, amount, due_date opzionale, paid_date opzionale (obbligatoria con paid) e status remoto.
+Ogni documento emesso conserva ID FIC, type, date, numero/numerazione, cliente e subject (normalizzato in description) quando presenti, amount_gross normalizzato, pagamenti e il solo nuovo campo opzionale stampDuty da stamp_duty. Questo campo viene richiesto esplicitamente in fields insieme a fieldset=detailed. Ogni documento ricevuto conserva ID FIC, type, date, invoice_number, fornitore, descrizione/categoria FIC quando presenti, amount_gross e pagamenti. Ogni pagamento conserva solo ID remoto opzionale, amount, due_date opzionale, paid_date opzionale (obbligatoria con paid) e status remoto.
 
 I campi normalizzati usano le convenzioni TypeScript Cash (amountGross, entityName, invoiceNumber, payments, dueDate, paidDate). Non vengono conservate risposte JSON complete, righe prodotto o campi estranei all’analisi. I documenti remoti non hanno EntityMeta o UUID Cash e non sono modificabili dall’utente. Le categorie restano testo FIC e non introducono un’anagrafica categorie Cash.
 
@@ -1670,38 +1694,37 @@ Per issued_documents.quotes:a viene mostrato il permesso azienda rilevato; l’a
 
 Contratti ufficiali: [PendingReceivedDocument](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/PendingReceivedDocument.md), [ReceivedDocumentsApi](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/ReceivedDocumentsApi.md), [Permissions](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/Permissions.md) e [PermissionsFicIssuedDocumentsDetailed](https://github.com/fattureincloud/fattureincloud-python-sdk/blob/master/docs/PermissionsFicIssuedDocumentsDetailed.md).
 
-### 31.9 Previsione fiscale e disponibilità (aggiornamento 1 ottobre 2026)
+### 31.9 Riconciliazione gestionale con la banca
 
-Questa sezione prevale sulle precedenti indicazioni in conflitto relative a disponibilità e versamenti fiscali.
-Il motore fiscale esistente rimane una stima finanziaria sull’incassato, potenzialmente incompleta,
-senza pretendere di rappresentare la posizione fiscale definitiva.
+Ogni archivio contiene esattamente una categoria di sistema **Imposte P.IVA**, identificata dalla proprietà stabile opzionale `systemRole: 'vat_taxes'`. È rinominabile, non eliminabile e utilizzabile dalle normali regole automatiche. Il nome visualizzato non determina il significato. Non vengono create sottocategorie o registri fiscali. La UI identifica la categoria con un Badge di sistema anche dopo il rename.
 
-Per la previsione dell’anno selezionato l’utente può indicare **Già coperto** e gestire integrazioni
-manuali con soli descrizione e importo, modificabili ed eliminabili. Non sono movimenti bancari.
+Imposte pagate = somma dei movimenti dell’anno N la cui categoria effettiva, ottenuta con `effectiveCategoryIds()`, comprende la categoria di sistema. Assegnazioni manuali e regole si uniscono senza contare due volte il movimento. Non si deduce l’appartenenza fiscale da una sottocategoria o dal testo del nome.
 
-> Previsione totale = Stima automatica + Somma integrazioni
+> Residuo fiscale = max(monte fiscale − imposte pagate, 0)
 >
-> Da accantonare = max(0, Previsione totale − Già coperto)
+> Pagato oltre la previsione = max(imposte pagate − monte fiscale, 0)
 >
-> Disponibilità effettiva = Saldo bancario di riferimento − Da accantonare
+> Margine dopo le uscite = Incassato − Uscite dal conto
+>
+> Disponibilità stimata = Margine dopo le uscite − Fiscalità ancora da coprire
 
-Il saldo non è ricostruibile dall’importazione delle sole uscite: viene inserito manualmente con la
-data di riferimento, mostrata accanto al KPI. È responsabilità dell’utente aggiornarlo; l’import non
-lo modifica. Senza saldo o senza stima automatica la disponibilità resta non disponibile.
-Il margine annuale (incassi FIC − uscite bancarie − residuo da accantonare) rimane separato dal saldo.
-Costi FIC e costi pianificati non vengono sommati alle uscite; la preventivazione resta invariata.
+Le imposte pagate restano nelle **Uscite dal conto**, nei grafici e nel totale banca. Esempio: incassato 50.000, altre uscite 10.000, imposte pagate 7.000 e previsione fiscale totale 12.000 producono uscite 17.000, margine 33.000, fiscalità ancora da coprire 5.000 e disponibilità stimata 28.000: 50.000 − 17.000 − 5.000, senza sottrarre nuovamente i 7.000.
 
-I versamenti fiscali sono uscite reali già comprese nel saldo: restano in storico, grafici e analisi
-per le categorie liberamente assegnate dall’utente. Non aumentano automaticamente Già coperto.
-Cash non determina composizione, periodo, saldo/acconto o pertinenza di F24 e non li acquisisce da FIC.
-Il bollo previsto si inserisce come normale integrazione, senza utilizzare `stamp_duty` o soglie
-d’importo delle fatture. Copertura eccedente non genera crediti, compensazioni o riporti.
+La Card principale mostra **Disponibilità stimata**, oppure **Disavanzo stimato** se negativa, con la formula Incassato − Uscite dal conto − Fiscalità ancora da coprire. I KPI secondari mantengono Fatturato emesso, Incassato, Da incassare, Uscite dal conto, Margine dopo le uscite e Ancora da coprire. Il riepilogo dei flussi espone gli stessi passaggi di calcolo.
 
-Lo schema 7 aggiunge la raccolta `financialProvisions`, inizialmente vuota, con anno della previsione,
-copertura e integrazioni; il saldo datato è facoltativo. Le integrazioni non hanno un proprio anno
-fiscale né categorie. Nessuna copia automatica dei valori tra anni, sincronizzazione FIC o
-riclassificazione retroattiva. La migrazione v6→v7 conserva tutti i dati preesistenti con backup,
-riutilizzando la procedura esplicita dell’archivio. La UI usa i componenti shadcn già presenti.
+Il Sankey Recharts con integrazione shadcn resta il grafico principale del cash-flow annuale: **Top 5 clienti + Altri clienti → Incassato nell’anno → Uscite dal conto / Margine dopo le uscite**. Le uscite si dividono in **Imposte P.IVA già pagate / Altre uscite**, con Altre uscite = Uscite dal conto − Imposte pagate. Il margine si divide in **Fiscalità ancora da coprire / Disponibilità stimata**. Ogni nodo intermedio conserva incoming = outgoing alla precisione monetaria del dominio. Le categorie utente possono sovrapporsi e non costituiscono rami del Sankey: restano nel grafico **Uscite per categoria**, con avviso di ripartizione non esclusiva.
+
+Prima del Sankey, nella stessa Card **Flusso finanziario · ANNO**, una griglia compatta mostra Fatturato emesso, Incassato nell’anno e Da incassare. Fatturato e incassato hanno perimetri diversi: l’incassato dell’anno può comprendere fatture emesse in anni precedenti. Da incassare riguarda le fatture emesse nell’anno e segue le scadenze FIC, che possono differire dal lordo. Non esiste collegamento Fatturato → Incassato, percentuale Incassato / Fatturato o identità forzata Fatturato = Incassato + Da incassare.
+
+Il Sankey omette rami a zero e nodi isolati, senza flussi negativi. Con incassi nulli non inventa entrate. Se le uscite superano gli incassi mostra il motivo e nessun flusso; i KPI mantengono il disavanzo. Se la fiscalità residua supera il margine, il grafico si ferma al margine con un messaggio di disavanzo. Se la fiscalità non è disponibile, mantiene i flussi noti e mostra il motivo fiscale. Il mensile mostra Incassato, Uscite dal conto e Margine dopo le uscite, senza distribuire arbitrariamente la fiscalità residua sui mesi. Nel confronto fonti restano separati Costi pianificati Cash, Costi documentati FIC, Costi pagati FIC e Uscite dal conto.
+
+La dashboard rende leggibili **Previsione fiscale totale**, **Pagato tramite banca**, **Ancora da coprire** ed eventuale **Pagato oltre la previsione**, senza attribuire all’eccedenza natura di credito, conguaglio o riporto. La nota esplicita è: “La previsione è gestionale e usa i dati disponibili in Cash e Fatture in Cloud. I versamenti bancari classificati come Imposte P.IVA indicano quanto è già uscito dal conto e non identificano il singolo tributo o anno fiscale.”
+
+Non esiste saldo bancario manuale né contenitore annuale per registrarlo. La panoramica usa esclusivamente dati derivati da FIC, movimenti bancari e previsione fiscale; non chiede altri input finanziari manuali e non ricostruisce il saldo reale del conto. Se la previsione fiscale non è calcolabile, la disponibilità stimata è indisponibile con il motivo fiscale reale. Nessun pulsante di modifica saldo o fiscalità, nessuna copertura o integrazione fiscale manuale; nessuna associazione a F24, tributo o anno di competenza. Gli anni disponibili derivano soltanto da profili, movimenti, documenti e date di pagamento/scadenza FIC.
+
+Lo schema corrente è **10**. La migrazione esplicita con backup **1–9 → 10** rimuove `financialProvisions` e l’eventuale `bankBalance` senza copiarli altrove; il modello corrente e i nuovi documenti non contengono questi campi. L’anteprima dichiara l’abbandono del saldo manuale e del relativo contenitore. Le trasformazioni storiche restano supportate, compresa la rimozione di covered/additions senza trasferirli in movimenti. Profili, movimenti, categorie, `systemRole: 'vat_taxes'`, regole, snapshot FIC, preventivi e gli altri dati validi sono preservati. Aggiunge una categoria di sistema solo se non esiste già: una categoria utente omonima resta distinta e non viene convertita. Per questa collisione i due nomi possono coesistere; le categorie utente mantengono l’unicità per livello. Salvataggi, riaperture e migrazioni non duplicano l’identità di sistema.
+
+Contratto FIC verificato il 2 ottobre 2026: [IssuedDocument](https://github.com/fattureincloud/fattureincloud-ts-sdk/blob/master/docs/IssuedDocument.md), [campi detailed](https://developers.fattureincloud.it/docs/basics/customize-response/), [totali e pagamenti](https://developers.fattureincloud.it/docs/guides/invoice-totals/). Il bollo è un importo numerico esplicito, non un booleano; il pagamento è già comprensivo degli elementi riaddebitati. La precedente selezione fields scartava stamp_duty. Fixture realistiche verificano ora importazione, rivalsa inclusa e bollo. Non è stata eseguita una lettura autenticata di documenti dell’account reale: la verifica riguarda il contratto ufficiale e le fixture, non un riscontro sui dati privati.
 
 ## Appendice A - Esempio di preventivo
 

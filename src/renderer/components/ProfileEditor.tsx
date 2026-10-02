@@ -1,4 +1,4 @@
-import { CalendarPlus, CheckCircle2, Cloud, Copy, MoreHorizontal } from "lucide-react"
+import { AlertTriangle, CalendarPlus, CheckCircle2, Cloud, Copy, MoreHorizontal } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { previewProfile, type ProfileAnalysis } from "../../domain/calculations"
 import { italianNationalHolidayEntries } from "../../domain/calendar"
@@ -32,7 +32,7 @@ function draftFromForm(source: EconomicProfile, form: HTMLFormElement, localHoli
     localHolidays,
   })
   Object.assign(draft.fiscal, {
-    atecoCode: get("atecoCode"), profitabilityCoefficient: get("profitabilityCoefficient"), contributionRate: get("contributionRate"),
+    atecoCode: get("atecoCode"), profitabilityCoefficient: get("profitabilityCoefficient"), contributionRate: get("contributionRate") || "0",
     contributionCeiling: Number(money("contributionCeiling")).toFixed(2), activityPhase: get("activityPhase") as EconomicProfile["fiscal"]["activityPhase"],
     reducedEligibilityConfirmed: data.get("reducedEligibilityConfirmed") === "on", ordinaryApplicabilityConfirmed: data.get("ordinaryApplicabilityConfirmed") === "on",
     reducedSubstituteTaxRate: get("reducedSubstituteTaxRate"), ordinarySubstituteTaxRate: get("ordinarySubstituteTaxRate"),
@@ -42,6 +42,8 @@ function draftFromForm(source: EconomicProfile, form: HTMLFormElement, localHoli
 }
 
 export function ProfileEditor({ profile, doc, appState, onCopy }: { profile: EconomicProfile; doc: CashDocument; appState: AppState; onCopy: (id: string) => void }) {
+  const [tab, setTab] = useState("goals")
+  const [contributionRate, setContributionRate] = useState(Number(profile.fiscal.contributionRate) === 0 ? "" : profile.fiscal.contributionRate)
   const [holidays, setHolidays] = useState<LocalHoliday[]>(() => structuredClone(profile.capacity.localHolidays))
   const [calendarYear, setCalendarYear] = useState(profile.year)
   const [holidayIndex, setHolidayIndex] = useState<number | null>()
@@ -55,7 +57,7 @@ export function ProfileEditor({ profile, doc, appState, onCopy }: { profile: Eco
   const ficTaxYear = ficTaxProfile ? new Date(ficTaxProfile.acquiredAt).getFullYear() : undefined
   const importedFromFic = ficTaxYear === profile.year
   const ficProvidesProfitability = importedFromFic && ficTaxProfile?.profitCoefficient !== undefined
-  const ficProvidesContributions = importedFromFic && ficTaxProfile?.contributionsPercentage !== undefined
+  const needsInpsConfiguration = !profile.confirmed || calendarYear !== profile.year || !(Number(profile.fiscal.contributionRate) > 0)
   const ficProvidesRegime = importedFromFic && ficTaxProfile?.regime !== undefined
 
   const updatePreview = (event: FormEvent<HTMLFormElement>) => {
@@ -81,12 +83,16 @@ export function ProfileEditor({ profile, doc, appState, onCopy }: { profile: Eco
   }
 
   return (
-    <Card><CardHeader><div><CardTitle className="flex items-center gap-2">Profilo {profile.year}<Badge variant={profile.confirmed ? "default" : "secondary"}>{profile.confirmed ? "Confermato" : importedFromFic ? "Da completare" : "Da verificare"}</Badge>{importedFromFic ? <Badge variant="outline">Fatture in Cloud</Badge> : null}</CardTitle><CardDescription>{importedFromFic ? "I dati disponibili in Fatture in Cloud prevalgono; completa soltanto quelli non esposti dal servizio." : "Le modifiche creano una nuova revisione e richiedono una nuova conferma."}</CardDescription></div><CardAction><Button variant="outline" onClick={() => onCopy(profile.id)}><Copy />Copia per nuovo anno</Button></CardAction></CardHeader><CardContent>
+    <Card><CardHeader><div><CardTitle className="flex items-center gap-2">Profilo {profile.year}<Badge variant={profile.confirmed ? "default" : "secondary"}>{profile.confirmed ? "Confermato" : importedFromFic ? "Da completare" : "Da verificare"}</Badge>{importedFromFic ? <Badge variant="outline">Fatture in Cloud</Badge> : null}</CardTitle><CardDescription>{importedFromFic ? "Regime e redditività sono collegati a Fatture in Cloud. Configura qui aliquota e massimale INPS per ogni anno." : "Le modifiche creano una nuova revisione e richiedono una nuova conferma."}</CardDescription></div><CardAction><Button variant="outline" onClick={() => onCopy(profile.id)}><Copy />Copia per nuovo anno</Button></CardAction></CardHeader><CardContent>
       <form onSubmit={submit} onInput={updatePreview} className="space-y-5" noValidate>
-        <Tabs defaultValue="goals" className="space-y-5">
+        {needsInpsConfiguration ? <Alert><AlertTriangle /><AlertTitle>Verifica l’aliquota INPS per il {calendarYear}</AlertTitle><AlertDescription>
+          <p>Aliquota e massimale possono cambiare ogni anno. Inserisci i valori dell’anno nella scheda Fiscalità e conferma il profilo.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setTab("fiscal")}>Configura INPS</Button>
+        </AlertDescription></Alert> : null}
+        <Tabs value={tab} onValueChange={setTab} className="space-y-5">
           <TabsList><TabsTrigger value="goals">Obiettivi</TabsTrigger><TabsTrigger value="capacity">Capacità lavorativa</TabsTrigger><TabsTrigger value="fiscal">Fiscalità</TabsTrigger><TabsTrigger value="preview">Anteprima</TabsTrigger></TabsList>
           <TabsContent value="goals" keepMounted><Section title="Obiettivi annuali" description="Il fatturato da generare con il tempo esclude le spese specifiche previste."><FieldGroup className="grid grid-cols-3">
-            <Field><FieldLabel htmlFor="profile-year">Anno fiscale{importedFromFic ? <Badge variant="outline">FIC</Badge> : null}</FieldLabel><Input id="profile-year" name="year" type="number" defaultValue={profile.year} min={2000} max={2200} onChange={(event) => setCalendarYear(Number(event.target.value))} readOnly={importedFromFic} required /></Field>
+            <Field><FieldLabel htmlFor="profile-year">Anno fiscale{importedFromFic ? <Badge variant="outline">FIC</Badge> : null}</FieldLabel><Input id="profile-year" name="year" type="number" defaultValue={profile.year} min={2000} max={2200} onChange={(event) => { setCalendarYear(Number(event.target.value)); setContributionRate("") }} readOnly={importedFromFic} required /></Field>
             <MoneyField id="revenueTarget" label="Fatturato obiettivo" value={profile.revenueTarget} />
             <MoneyField id="specificAnnualExpenses" label="Spese specifiche annue" value={profile.specificAnnualExpenses} />
           </FieldGroup></Section></TabsContent>
@@ -98,10 +104,10 @@ export function ProfileEditor({ profile, doc, appState, onCopy }: { profile: Eco
           </FieldGroup></Section>
           <div className="rounded-lg border"><div className="flex items-center justify-between border-b p-4"><div><p className="font-medium">Festività italiane e locali</p><p className="text-sm text-muted-foreground">Le festività nazionali sono incluse automaticamente; puoi aggiungere ricorrenze locali o date specifiche.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setHolidayIndex(null)}><CalendarPlus />Aggiungi festività locale</Button></div><Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Tipo</TableHead><TableHead>Data</TableHead><TableHead className="w-12" /></TableRow></TableHeader><TableBody>{nationalHolidays.map((holiday) => <TableRow key={`national-${holiday.date}`}><TableCell className="font-medium">{holiday.name}</TableCell><TableCell><Badge variant="outline">Nazionale</Badge></TableCell><TableCell>{holiday.date.split("-").reverse().join("/")}</TableCell><TableCell /></TableRow>)}{holidays.map((holiday, index) => <TableRow key={`${holiday.name}-${index}`}><TableCell className="font-medium">{holiday.name}</TableCell><TableCell>{holiday.kind === "recurring" ? "Locale ricorrente" : "Locale specifica"}</TableCell><TableCell>{holiday.kind === "recurring" ? `${String(holiday.day).padStart(2, "0")}/${String(holiday.month).padStart(2, "0")}` : holiday.date.split("-").reverse().join("/")}</TableCell><TableCell><DropdownMenu><DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={`Azioni per ${holiday.name}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setHolidayIndex(index)}>Modifica</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setHolidays((current) => current.filter((_, candidate) => candidate !== index))}>Elimina</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell></TableRow>)}</TableBody></Table></div>
           </TabsContent>
-          <TabsContent value="fiscal" keepMounted className="space-y-4">{importedFromFic ? <Alert><Cloud /><AlertTitle>Fiscalità collegata</AlertTitle><AlertDescription>Regime {ficTaxProfile?.regime === "forfettario_5" ? "forfettario 5%" : ficTaxProfile?.regime ?? "non indicato"}{ficTaxProfile?.profitCoefficient ? ` · coefficiente ${ficTaxProfile.profitCoefficient}%` : ""}. I valori importati sono autorevoli; i campi restanti devono essere compilati qui.</AlertDescription></Alert> : null}<Section title="Parametri fiscali" description={importedFromFic ? "Completa i parametri che Fatture in Cloud non rende disponibili." : "Verifica questi dati con il tuo consulente prima di confermare."}><FieldGroup className="grid grid-cols-3">
+          <TabsContent value="fiscal" keepMounted className="space-y-4">{importedFromFic ? <Alert><Cloud /><AlertTitle>Fiscalità collegata</AlertTitle><AlertDescription>Regime {ficTaxProfile?.regime === "forfettario_5" ? "forfettario 5%" : ficTaxProfile?.regime ?? "non indicato"}{ficTaxProfile?.profitCoefficient ? ` · coefficiente ${ficTaxProfile.profitCoefficient}%` : ""}. Regime e redditività seguono Fatture in Cloud; aliquota e massimale INPS si configurano manualmente.</AlertDescription></Alert> : null}<Section title="Parametri fiscali" description={importedFromFic ? "Configura INPS e completa gli altri parametri annuali." : "Verifica questi dati con il tuo consulente prima di confermare."}><FieldGroup className="grid grid-cols-3">
             <Field><FieldLabel htmlFor="atecoCode">Codice ATECO 2025</FieldLabel><Input id="atecoCode" name="atecoCode" defaultValue={profile.fiscal.atecoCode} required /></Field>
             <NumberField id="profitabilityCoefficient" label="Coefficiente di redditività" value={profile.fiscal.profitabilityCoefficient} suffix="%" step={0.0001} max={100} readOnly={ficProvidesProfitability} />
-            <NumberField id="contributionRate" label="Aliquota Gestione Separata" value={profile.fiscal.contributionRate} suffix="%" step={0.0001} max={100} readOnly={ficProvidesContributions} />
+            <Field><FieldLabel htmlFor="contributionRate">Aliquota INPS · Gestione Separata</FieldLabel><InputGroup><InputGroupInput id="contributionRate" name="contributionRate" type="number" value={contributionRate} onChange={(event) => setContributionRate(event.target.value)} min={0.0001} max={100} step={0.0001} placeholder="Da configurare" aria-describedby="inps-instructions" required /><InputGroupAddon align="inline-end"><InputGroupText>%</InputGroupText></InputGroupAddon></InputGroup></Field>
             <MoneyField id="contributionCeiling" label="Massimale contributivo" value={profile.fiscal.contributionCeiling} />
             <Field><FieldLabel htmlFor="activityPhase">Fase attività{ficProvidesRegime ? <Badge variant="outline">FIC</Badge> : null}</FieldLabel>{ficProvidesRegime ? <input type="hidden" name="activityPhase" value={profile.fiscal.activityPhase} /> : null}<NativeSelect id="activityPhase" name="activityPhase" defaultValue={profile.fiscal.activityPhase} disabled={ficProvidesRegime}><NativeSelectOption value="ordinary">Oltre i primi 5 periodi / non spettante</NativeSelectOption><NativeSelectOption value="reduced_eligible">Primi 5 periodi · agevolazione spettante</NativeSelectOption></NativeSelect></Field>
             <NumberField id="reducedSubstituteTaxRate" label="Aliquota agevolata" value={profile.fiscal.reducedSubstituteTaxRate} suffix="%" step={0.0001} max={100} readOnly={ficProvidesRegime} />
@@ -110,7 +116,15 @@ export function ProfileEditor({ profile, doc, appState, onCopy }: { profile: Eco
             <MoneyField id="cessationThreshold" label="Soglia di cessazione" value={profile.fiscal.cessationThreshold} />
             <Field orientation="horizontal" className="col-span-3">{ficProvidesRegime&&profile.fiscal.reducedEligibilityConfirmed?<input type="hidden" name="reducedEligibilityConfirmed" value="on" />:null}<Checkbox id="reducedEligibilityConfirmed" name="reducedEligibilityConfirmed" defaultChecked={profile.fiscal.reducedEligibilityConfirmed} disabled={ficProvidesRegime} /><FieldLabel htmlFor="reducedEligibilityConfirmed">Confermo di possedere i requisiti per l’aliquota agevolata{ficProvidesRegime ? <Badge variant="outline">FIC</Badge> : null}</FieldLabel></Field>
             <Field orientation="horizontal" className="col-span-3">{ficProvidesRegime&&profile.fiscal.ordinaryApplicabilityConfirmed?<input type="hidden" name="ordinaryApplicabilityConfirmed" value="on" />:null}<Checkbox id="ordinaryApplicabilityConfirmed" name="ordinaryApplicabilityConfirmed" defaultChecked={profile.fiscal.ordinaryApplicabilityConfirmed} disabled={ficProvidesRegime} /><FieldLabel htmlFor="ordinaryApplicabilityConfirmed">Confermo l’applicabilità oltre la soglia ordinaria{ficProvidesRegime ? <Badge variant="outline">FIC</Badge> : null}</FieldLabel></Field>
-          </FieldGroup></Section></TabsContent>
+          </FieldGroup><div id="inps-instructions" className="space-y-2 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Dove trovare aliquota e massimale INPS</p>
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>Su inps.it cerca «Gestione Separata aliquote contributive {calendarYear}» e apri la circolare ufficiale riferita a quell’anno.</li>
+              <li>Consulta la sezione «Professionisti»: scegli la voce in base alla presenza di pensione o di altra previdenza obbligatoria. Il solo codice ATECO non determina l’aliquota.</li>
+              <li>Inserisci l’aliquota complessiva e il massimale di reddito annuo. Non usare la rivalsa esposta in fattura né il minimale per l’accredito pensionistico.</li>
+            </ol>
+            <p>Questi due parametri sono manuali e non vengono sovrascritti da Fatture in Cloud. Se la circolare dell’anno non è ancora pubblicata, i valori dell’anno precedente sono soltanto un’ipotesi per la stima.</p>
+          </div></Section></TabsContent>
           <TabsContent value="preview"><Preview value={preview.value} error={preview.error} /></TabsContent>
         </Tabs>
         <div className="flex items-center justify-between border-t pt-5"><p className="max-w-2xl text-xs text-muted-foreground">Cash fornisce una stima interna per la preventivazione e non sostituisce il commercialista.</p><div className="flex gap-2"><Button type="submit" name="profileAction" value="save" variant="secondary">Salva come Da verificare</Button><Button type="submit" name="profileAction" value="confirm"><CheckCircle2 />Conferma profilo</Button></div></div>
