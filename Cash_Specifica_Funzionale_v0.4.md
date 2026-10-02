@@ -1,5 +1,7 @@
 **CASH**
 
+> Documento storico, superato. La specifica corrente autorevole del prodotto e dello schema dati si trova in [Cash v0.7](Cash_Specifica_Funzionale_v0.7.md).
+
 # SPECIFICA FUNZIONALE
 
 *Specifica canonica consolidata - v0.4*

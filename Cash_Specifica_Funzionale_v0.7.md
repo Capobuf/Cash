@@ -1010,7 +1010,7 @@ Il modello seguente descrive concetti funzionali e relazioni, senza imporre tabe
 | Trasferta | Sottovoce di una sola Voce preventivo con Partenza, Destinazione, A/R, Veicolo, Occorrenze previste, Distanza e Tempo per occorrenza e relativi risultati complessivi; i valori di percorso sono precompilabili tramite OpenRouteService o manuali. |
 | Configurazione OpenRouteService | Basic API key necessaria alle operazioni live di ricerca, geocodifica e routing; nelle Impostazioni è disponibile l'azione Verifica connessione. |
 | Configurazione Fatture in Cloud | Stato attivo/disattivo e riferimenti non segreti di azienda, prodotto e ultima verifica; il token resta fuori dal file dati. |
-| File dati | Schema 5, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, veicoli, Sedi, catalogo, preventivi e snapshot finanziario opzionale. |
+| File dati | Schema 10, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, veicoli, Sedi, catalogo, preventivi, movimenti bancari, categorie e regole; snapshot finanziario e correzioni annuali `fiscalPaymentOverrides` opzionali. |
 | Snapshot finanziario Fatture in Cloud | Sorgente, azienda, acquiredAt, documenti emessi e ricevuti normalizzati con ID FIC e pagamenti; un solo snapshot sostituito integralmente, non entità modificabili locali. |
 | Riferimento esportazione | UUID del tentativo, azienda, data/ora, righe e impronta del payload, eventuale identificativo documento Fatture in Cloud ed esito da verificare; non è uno stato commerciale. |
 
@@ -1334,7 +1334,7 @@ Non sono configurabili: formule economiche, regola di snapshot, atomicità, divi
 
 - Contabilità, prima nota e modifica di fatture, note di credito, spese o pagamenti FIC. L’acquisizione in sola lettura dei costi documentati e pagati è invece inclusa nell’Analisi finanziaria.
 
-- Integrazione bancaria, import estratto conto/CSV, PSD2/Open Banking, riconciliazione, matching, categorizzazione bancaria, saldo conto, dashboard patrimoniale e cash-flow previsionale: soltanto possibili estensioni future, senza modello dati in questa versione.
+- Collegamento bancario diretto tramite PSD2/Open Banking, matching tra movimenti e documenti, ricostruzione del saldo reale del conto, dashboard patrimoniale e cash-flow previsionale. Sono invece incluse l'importazione locale dell'estratto conto XLSX/CSV, la gestione e categorizzazione dei movimenti e il confronto gestionale descritto nella sezione 31.9.
 
 - F24, acconti e saldi fiscali reali, scadenze tributarie, gestione fiscale completa.
 
@@ -1660,7 +1660,7 @@ Disattivare FIC o rimuovere il collegamento conserva lo snapshot. Senza token lo
 
 ### 31.6 Pagina e stati
 
-L’header mostra anno, azienda/ID dello snapshot, ultimo aggiornamento e pulsante manuale. L’anno è stato UI locale. Le opzioni sono l’unione degli anni nei profili, nei documenti e nelle date dei pagamenti; il default è l’anno corrente se presente, altrimenti il più recente. Se non esistono anni, non ne viene inventato uno.
+L’header mostra anno, azienda/ID dello snapshot, ultimo aggiornamento e pulsante manuale. L’anno è stato UI locale. Le opzioni sono l’unione degli anni nei profili, nei movimenti bancari, nei documenti, nelle date di pagamento/scadenza FIC e nelle correzioni `fiscalPaymentOverrides`; il default è l’anno corrente se presente, altrimenti il più recente. Se non esistono anni, non ne viene inventato uno.
 
 La pagina usa i componenti shadcn base-nova/Base UI esistenti e aggiunge tramite CLI soltanto Chart e Progress. Cinque Card principali mostrano Obiettivo, Fatturato emesso con progresso, Incassato con progresso e gerarchia principale, Da incassare con quota scaduta (Badge destructive soltanto se positiva), Stima fiscale o motivo di indisponibilità. Le percentuali possono superare 100%; la barra si ferma al 100%. Obiettivo assente o nullo non produce percentuali inventate.
 
@@ -1720,7 +1720,7 @@ Il Sankey omette rami a zero e nodi isolati, senza flussi negativi. Con incassi 
 
 La dashboard rende leggibili **Previsione fiscale totale**, **Pagato tramite banca**, **Ancora da coprire** ed eventuale **Pagato oltre la previsione**, senza attribuire all’eccedenza natura di credito, conguaglio o riporto. La nota esplicita è: “La previsione è gestionale e usa i dati disponibili in Cash e Fatture in Cloud. I versamenti bancari classificati come Imposte P.IVA indicano quanto è già uscito dal conto e non identificano il singolo tributo o anno fiscale.”
 
-Non esiste saldo bancario manuale né contenitore annuale per registrarlo. La panoramica usa esclusivamente dati derivati da FIC, movimenti bancari e previsione fiscale; non chiede altri input finanziari manuali e non ricostruisce il saldo reale del conto. Se la previsione fiscale non è calcolabile, la disponibilità stimata è indisponibile con il motivo fiscale reale. Nessun pulsante di modifica saldo o fiscalità, nessuna copertura o integrazione fiscale manuale; nessuna associazione a F24, tributo o anno di competenza. Gli anni disponibili derivano soltanto da profili, movimenti, documenti e date di pagamento/scadenza FIC.
+Non esiste saldo bancario manuale né contenitore annuale per registrarlo. La panoramica usa i dati FIC, i movimenti bancari e la previsione fiscale gestionale, con la sola correzione annuale facoltativa del commercialista descritta nella sezione 31.3. La correzione `fiscalPaymentOverrides` sostituisce il monte fiscale automatico per l'anno selezionato; non costituisce una copertura aggiuntiva né modifica i movimenti. Se non sono disponibili né una previsione valida né una correzione, la disponibilità stimata è indisponibile con il motivo fiscale reale; senza snapshot restano indisponibili gli indicatori basati sugli incassi. Cash non ricostruisce il saldo reale del conto e non associa i movimenti a F24, tributo o anno di competenza. Gli anni disponibili seguono l'unione definita nella sezione 31.6, comprese le correzioni annuali.
 
 Lo schema corrente è **10**. La migrazione esplicita con backup **1–9 → 10** rimuove `financialProvisions` e l’eventuale `bankBalance` senza copiarli altrove; il modello corrente e i nuovi documenti non contengono questi campi. L’anteprima dichiara l’abbandono del saldo manuale e del relativo contenitore. Le trasformazioni storiche restano supportate, compresa la rimozione di covered/additions senza trasferirli in movimenti. Profili, movimenti, categorie, `systemRole: 'vat_taxes'`, regole, snapshot FIC, preventivi e gli altri dati validi sono preservati. Aggiunge una categoria di sistema solo se non esiste già: una categoria utente omonima resta distinta e non viene convertita. Per questa collisione i due nomi possono coesistere; le categorie utente mantengono l’unicità per livello. Salvataggi, riaperture e migrazioni non duplicano l’identità di sistema.
 

@@ -1,5 +1,7 @@
 # Specification Quality Checklist: Cash MVP
 
+> Documento storico della fase MVP v0.6 / schema 4. Non descrive il prodotto corrente: per i requisiti attivi e lo schema 10 consultare la [specifica canonica v0.7](../../../Cash_Specifica_Funzionale_v0.7.md).
+
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-09-08
 **Feature**: [spec.md](../spec.md)

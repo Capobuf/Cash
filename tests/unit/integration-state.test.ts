@@ -15,7 +15,7 @@ const active: SharedSettings = {
     lastVerification: { at: '2026-09-08T00:00:00.000Z', result: 'success' },
   },
 };
-describe('stato Fatture in Cloud v0.6', () => {
+describe('stato Fatture in Cloud', () => {
   it('parte disattivato e blocca prima di una chiamata live', () => {
     const settings: SharedSettings = { fic: { enabled: false } };
     expect(requireActiveFic(settings, '1').ok).toBe(false);

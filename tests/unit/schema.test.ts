@@ -106,7 +106,7 @@ describe('periodi mensili', () => {
   );
 });
 
-describe('schema archivio v9', () => {
+describe('schema archivio corrente', () => {
   it('richiede una sola categoria di sistema e conserva il significato dopo rename', () => {
     const doc = createEmptyDocument();
     expect(doc.bankExpenseCategories).toHaveLength(1);

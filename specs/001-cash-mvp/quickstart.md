@@ -1,5 +1,7 @@
 # Quickstart di verifica — v0.6
 
+> Documento storico della fase MVP v0.6 / schema 4. Non descrive il prodotto corrente: per i requisiti attivi e lo schema 10 consultare la [specifica canonica v0.7](../../Cash_Specifica_Funzionale_v0.7.md).
+
 ## Preparazione
 
 ```powershell

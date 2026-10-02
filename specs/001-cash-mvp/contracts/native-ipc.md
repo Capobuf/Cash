@@ -1,5 +1,7 @@
 # Contratto IPC native — schema 4
 
+> Documento storico della fase MVP v0.6 / schema 4. Non descrive il prodotto corrente: per i requisiti attivi e lo schema 10 consultare la [specifica canonica v0.7](../../../Cash_Specifica_Funzionale_v0.7.md).
+
 Il preload espone solo funzioni tipizzate; `contextIsolation` resta attivo. Token e API key vengono risolti nel processo native e non sono restituiti al renderer.
 
 ## OpenRouteService

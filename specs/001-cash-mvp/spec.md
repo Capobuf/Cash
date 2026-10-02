@@ -1,8 +1,10 @@
-# Specifica tecnica attiva — Cash MVP
+# Specifica tecnica storica — Cash MVP
 
-**Fonte autorevole:** `Cash_Specifica_Funzionale_v0.6.md`
+> Documento storico della fase MVP v0.6 / schema 4. Non descrive il prodotto corrente: per i requisiti attivi e lo schema 10 consultare la [specifica canonica v0.7](../../Cash_Specifica_Funzionale_v0.7.md).
 
-**Schema persistente:** 4
+**Fonte della fase storica:** `Cash_Specifica_Funzionale_v0.6.md`
+
+**Schema della fase storica:** 4
 
 **Stato:** implementato
 
