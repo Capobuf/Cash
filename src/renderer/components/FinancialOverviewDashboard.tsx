@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { dateIt, eur, formatNumber } from '@/lib/format';
+import { ExpenseCategoryChart } from '@/components/ExpenseCategoryChart';
 
 const amount = (value?: string) => value === undefined ? 'Non disponibile' : eur(value);
 const percentage = (value: string) => `${formatNumber(value, 2)}%`;
@@ -214,7 +215,7 @@ export function FinancialOverviewDashboard({ overview, onEdit, readOnly }: { ove
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <HorizontalAmounts title={`Incassi per cliente · ${overview.year}`} description="Da dove arrivano i soldi · Top 10 per pagamenti avvenuti nell’anno, anche su fatture di anni precedenti. I nomi completi sono visibili al passaggio sul grafico."
           rows={overview.collectionsByClient.slice(0, 10)} empty={overview.analysis ? 'Nessun incasso nell’anno selezionato.' : 'Incassi non disponibili: manca lo snapshot FIC.'} />
-        <HorizontalAmounts title={`Spese per categoria · ${overview.year}`} description="Dove vanno i soldi · Prime 10 categorie principali, comprensive delle sottocategorie. Una spesa può appartenere a più categorie; questi valori non costituiscono una ripartizione esclusiva del totale."
+        <ExpenseCategoryChart title={`Spese per categoria · ${overview.year}`} description="Dove vanno i soldi · Prime 10 categorie principali, comprensive delle sottocategorie. Le fette rappresentano il peso relativo degli importi mostrati. Una spesa può appartenere a più categorie: non è una ripartizione esclusiva del totale."
           rows={categories} empty="Nessuna spesa bancaria nell’anno selezionato." />
       </div>
     </section>
