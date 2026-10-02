@@ -37,5 +37,5 @@ export function disableFic(settings: SharedSettings): SharedSettings {
 }
 
 export function removeFicLink(settings: SharedSettings): SharedSettings {
-  return { ...(settings.fuelTerritory ? { fuelTerritory: settings.fuelTerritory } : {}), fic: { enabled: false } };
+  return { ...structuredClone(settings), fic: { enabled: false } };
 }

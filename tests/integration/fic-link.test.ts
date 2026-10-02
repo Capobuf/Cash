@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument, createFiscalPreset2026, err, ok, type CashDocument } from '../../src/domain/model';
+import { createEmptyDocument, createFiscalPreset2026, err, meta, ok, type CashDocument } from '../../src/domain/model';
 import { commitFicActivation, removeFicLinkAtomically, type FicLinkServices } from '../../src/native/fic-link';
 import type { ArchiveSession, ConcurrencyToken } from '../../src/native/persistence';
 
@@ -12,6 +12,29 @@ function services(overrides:Partial<FicLinkServices>={}):FicLinkServices{
 }
 
 describe('collegamento Fatture in Cloud atomico',()=>{
+  it('rimuove solo il collegamento FIC conservando territorio e default globali', async () => {
+    const document = createEmptyDocument();
+    const site = { ...meta(), name: 'Studio' };
+    const vehicle = { ...meta(), name: 'Auto', fuel: 'Benzina' as const, consumption: '20', consumptionUnit: 'km/l' as const, annualKm: '10000', annualInsurance: '0', annualTax: '0', annualMaintenance: '0' };
+    document.sites.push(site);
+    document.vehicles.push(vehicle);
+    document.settings = {
+      fuelTerritory: 'Lazio', defaultDepartureSiteId: site.id, defaultVehicleId: vehicle.id,
+      fic: { enabled: true, company: { id: '1', name: 'Studio' }, product: { id: '2', name: 'Consulenza' },
+        taxProfile: { acquiredAt: '2026-09-12T10:00:00.000Z', regime: 'forfettario_5' },
+        lastVerification: { at: '2026-09-12T10:00:00.000Z', result: 'success' },
+        legacyReferences: { companyId: '1', productId: '2' } },
+    };
+    const original = structuredClone(document);
+    const api = services();
+    const result = await removeFicLinkAtomically(input(document), api);
+    expect(result.ok).toBe(true);
+    expect(api.deleteToken).toHaveBeenCalledOnce();
+    expect(vi.mocked(api.save).mock.calls[0]?.[1]).toEqual({
+      ...original, settings: { ...original.settings, fic: { enabled: false } },
+    });
+    expect(document).toEqual(original);
+  });
   it('non cambia credenziali o archivio quando la verifica fallisce o viene annullata prima della conferma',async()=>{const api=services({verify:vi.fn(async()=>err({code:'CREDENTIALS',message:'Token non valido'}))});const result=await commitFicActivation(input(createEmptyDocument()),api);expect(result.ok).toBe(false);expect(api.writeToken).not.toHaveBeenCalled();expect(api.save).not.toHaveBeenCalled();});
   it('attiva soltanto dopo verifica e salva insieme azienda e prodotto',async()=>{const api=services();const result=await commitFicActivation(input(createEmptyDocument()),api);expect(result.ok).toBe(true);expect(api.writeToken).toHaveBeenCalledWith('nuovo');const saved=vi.mocked(api.save).mock.calls[0]?.[1];expect(saved?.settings.fic.enabled).toBe(true);expect(saved?.settings.fic.company?.id).toBe('1');expect(saved?.settings.fic.product?.name).toBe('Consulenza');});
   it('fa prevalere la fiscalità FIC e lascia da completare soltanto i dati non esposti',async()=>{const document=createEmptyDocument();const profile=createFiscalPreset2026();profile.confirmed=true;profile.fiscal.profitabilityCoefficient='67';profile.fiscal.contributionRate='24';profile.fiscal.activityPhase='ordinary';document.profiles.push(profile);const api=services();const result=await commitFicActivation(input(document),api);expect(result.ok).toBe(true);const saved=vi.mocked(api.save).mock.calls[0]?.[1];const fiscal=saved?.profiles[0]?.fiscal;expect(fiscal?.profitabilityCoefficient).toBe('78');expect(fiscal?.contributionRate).toBe('24');expect(fiscal?.activityPhase).toBe('reduced_eligible');expect(saved?.profiles[0]?.confirmed).toBe(true);expect(saved?.settings.fic.taxProfile?.regime).toBe('forfettario_5');});
