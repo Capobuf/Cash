@@ -57,6 +57,9 @@ vi.mock('../../src/native/persistence', () => ({
   restoreBackup: vi.fn(),
   saveRecoveryCopy: vi.fn(),
 }));
+vi.mock('../../src/native/bank-expense-import', () => ({
+  readBankExpenseFile: vi.fn(),
+}));
 vi.mock('../../src/native/preferences', () => ({
   readPreferences: async () => ({ lastArchivePath: 'Cash.json' }),
   rememberArchive: vi.fn(),
