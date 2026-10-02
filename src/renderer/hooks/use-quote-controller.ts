@@ -118,17 +118,11 @@ export function useQuoteController({
     const departure = doc.sites.find((entry) => entry.id === departureId);
     const destination = doc.sites.find((entry) => entry.id === destinationId);
     const vehicle = doc.vehicles.find((entry) => entry.id === vehicleId);
-    if (
-      direct?.destinationSiteId &&
-      (!targetQuote.client ||
-        destination?.client?.companyId !== targetQuote.client.companyId ||
-        destination.client.clientId !== targetQuote.client.clientId)
-    ) {
+    if (direct?.destinationSiteId && !destination) {
       appState.setError({
-        code: 'VALIDATION',
+        code: 'MISSING_DATA',
         field: 'destination',
-        message:
-          'La Destinazione deve essere una Sede del Cliente del Preventivo.',
+        message: 'La Sede di destinazione selezionata non esiste più.',
       });
       return undefined;
     }

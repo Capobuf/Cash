@@ -210,6 +210,35 @@ function setup() {
 }
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
+  it.each([false, true])(
+    'salva una trasferta verso un fornitore (cliente presente: %s)',
+    async (withClient) => {
+      const { state, document, quote, complete, controller, item } = setup();
+      if (!withClient) delete quote.client;
+      const departure = { ...meta(), name: 'Laboratorio' };
+      const supplier = { ...meta(), name: 'Fornitore ABC' };
+      document.sites.push(departure, supplier);
+      complete();
+      expect(
+        await controller.saveTravel(item.id, {
+          description: 'Ritiro server',
+          departureSiteId: departure.id,
+          destinationSiteId: supplier.id,
+          roundTrip: true,
+          occurrences: 1,
+          distanceKmPerOccurrence: '40.0',
+          travelMinutesPerOccurrence: 60,
+        }),
+      ).toBe(true);
+      expect(
+        state.document?.quotes[0]?.items[0]?.subItems.at(-1),
+      ).toMatchObject({
+        kind: 'travel',
+        departure: { sourceId: departure.id },
+        destination: { sourceId: supplier.id },
+      });
+    },
+  );
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();

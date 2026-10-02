@@ -6,11 +6,7 @@ import {
 } from '../../../domain/calculations';
 import { parseDuration } from '../../../domain/duration';
 import { siteHasUsableLocation } from '../../../domain/locations';
-import {
-  type CashDocument,
-  type FicClientSnapshot,
-  type QuoteSubItem,
-} from '../../../domain/model';
+import { type CashDocument, type QuoteSubItem } from '../../../domain/model';
 import { SiteDialog, VehicleDialog } from '@/components/EntityDialogs';
 import {
   AlertDialog,
@@ -58,7 +54,6 @@ export function SubItemDialog({
   initialKind,
   doc,
   appState,
-  quoteClient,
   defaultDestinationSiteId,
   onClose,
   onSaveSimple,
@@ -68,7 +63,6 @@ export function SubItemDialog({
   initialKind?: 'time' | 'expense' | 'travel';
   doc: CashDocument;
   appState: AppState;
-  quoteClient?: FicClientSnapshot;
   defaultDestinationSiteId?: string;
   onClose: () => void;
   onSaveSimple: (input: SimpleSubInput) => boolean;
@@ -105,14 +99,6 @@ export function SubItemDialog({
   const [confirmRecalculation, setConfirmRecalculation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [durationError, setDurationError] = useState<string>();
-  const destinationSites = quoteClient
-    ? doc.sites.filter(
-        (site) =>
-          site.client?.companyId === quoteClient.companyId &&
-          site.client.clientId === quoteClient.clientId,
-      )
-    : [];
-
   const calculateRoute = async (overwrite = false) => {
     const departure = doc.sites.find((site) => site.id === departureSiteId);
     const destination = doc.sites.find((site) => site.id === destinationSiteId);
@@ -348,11 +334,9 @@ export function SubItemDialog({
                         }
                       >
                         <NativeSelectOption value="">
-                          {quoteClient
-                            ? 'Scegli sede del cliente'
-                            : 'Seleziona prima un cliente'}
+                          Scegli sede
                         </NativeSelectOption>
-                        {destinationSites.map((site) => (
+                        {doc.sites.map((site) => (
                           <NativeSelectOption key={site.id} value={site.id}>
                             {site.name}
                           </NativeSelectOption>

@@ -34,25 +34,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { eur, hours } from '@/lib/format';
 import { ChoiceButton } from './ChoiceButton';
 
-function withQuoteClientSites(
-  document: CashDocument,
-  quote: Quote,
-): CashDocument {
-  const client = quote.client;
-  if (!client) return { ...document, sites: [] };
-  return {
-    ...document,
-    sites: document.sites.filter(
-      (site) =>
-        site.client?.companyId === client.companyId &&
-        site.client.clientId === client.clientId,
-    ),
-  };
-}
-
 export function CatalogPickerDialog({
   itemId,
-  doc: sourceDocument,
+  doc,
   quote,
   onClose,
   onAdd,
@@ -66,7 +50,6 @@ export function CatalogPickerDialog({
     context: { siteId?: string; vehicleId?: string },
   ) => Promise<boolean>;
 }) {
-  const doc = withQuoteClientSites(sourceDocument, quote);
   const [selectedId, setSelectedId] = useState('');
   const [siteId, setSiteId] = useState(quote.mainSite?.sourceId ?? '');
   const [vehicleId, setVehicleId] = useState(
@@ -183,7 +166,7 @@ export function CatalogPickerDialog({
 }
 
 export function InsertTemplateDialog({
-  doc: sourceDocument,
+  doc,
   quote,
   onClose,
   onInsert,
@@ -197,7 +180,6 @@ export function InsertTemplateDialog({
     context: { siteId?: string; vehicleId?: string },
   ) => Promise<boolean>;
 }) {
-  const doc = withQuoteClientSites(sourceDocument, quote);
   const [templateId, setTemplateId] = useState(
     doc.catalog.templates[0]?.id ?? '',
   );
@@ -423,7 +405,7 @@ export function InsertTemplateDialog({
 export function VariantChangeDialog({
   group,
   optionId,
-  doc: sourceDocument,
+  doc,
   quote,
   hasManualChanges,
   onClose,
@@ -440,7 +422,6 @@ export function VariantChangeDialog({
     force: boolean,
   ) => Promise<boolean>;
 }) {
-  const doc = withQuoteClientSites(sourceDocument, quote);
   const option = group.options.find((entry) => entry.id === optionId);
   const needsTravel =
     option?.subItems.some((entry) => entry.kind === 'travel') ?? false;

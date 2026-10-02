@@ -544,7 +544,6 @@ export function QuotesView({
           initialKind={overlay.initialKind}
           doc={doc}
           appState={appState}
-          quoteClient={quote.client}
           defaultDestinationSiteId={quote.mainSite?.sourceId}
           onClose={() => setOverlay(undefined)}
           onSaveSimple={(input) =>
