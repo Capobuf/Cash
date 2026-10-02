@@ -37,7 +37,35 @@ describe('collegamento Fatture in Cloud atomico',()=>{
   });
   it('non cambia credenziali o archivio quando la verifica fallisce o viene annullata prima della conferma',async()=>{const api=services({verify:vi.fn(async()=>err({code:'CREDENTIALS',message:'Token non valido'}))});const result=await commitFicActivation(input(createEmptyDocument()),api);expect(result.ok).toBe(false);expect(api.writeToken).not.toHaveBeenCalled();expect(api.save).not.toHaveBeenCalled();});
   it('attiva soltanto dopo verifica e salva insieme azienda e prodotto',async()=>{const api=services();const result=await commitFicActivation(input(createEmptyDocument()),api);expect(result.ok).toBe(true);expect(api.writeToken).toHaveBeenCalledWith('nuovo');const saved=vi.mocked(api.save).mock.calls[0]?.[1];expect(saved?.settings.fic.enabled).toBe(true);expect(saved?.settings.fic.company?.id).toBe('1');expect(saved?.settings.fic.product?.name).toBe('Consulenza');});
-  it('fa prevalere la fiscalità FIC e lascia da completare soltanto i dati non esposti',async()=>{const document=createEmptyDocument();const profile=createFiscalPreset2026();profile.confirmed=true;profile.fiscal.profitabilityCoefficient='67';profile.fiscal.contributionRate='24';profile.fiscal.activityPhase='ordinary';document.profiles.push(profile);const api=services();const result=await commitFicActivation(input(document),api);expect(result.ok).toBe(true);const saved=vi.mocked(api.save).mock.calls[0]?.[1];const fiscal=saved?.profiles[0]?.fiscal;expect(fiscal?.profitabilityCoefficient).toBe('78');expect(fiscal?.contributionRate).toBe('24');expect(fiscal?.activityPhase).toBe('reduced_eligible');expect(saved?.profiles[0]?.confirmed).toBe(true);expect(saved?.settings.fic.taxProfile?.regime).toBe('forfettario_5');});
+  it('riporta Da verificare il profilo modificato da FIC con una nuova revisione', async () => {
+    const document = createEmptyDocument();
+    const profile = createFiscalPreset2026();
+    profile.confirmed = true;
+    profile.fiscal.contributionRate = '24';
+    document.profiles.push(profile);
+    const original = structuredClone(document);
+    const api = services();
+    const result = await commitFicActivation(input(document), api);
+    expect(result.ok).toBe(true);
+    const saved = vi.mocked(api.save).mock.calls[0]?.[1];
+    expect(saved?.profiles[0]).toMatchObject({
+      id: profile.id, createdAt: profile.createdAt, revision: profile.revision + 1, confirmed: false,
+      fiscal: { profitabilityCoefficient: '78', contributionRate: '24', activityPhase: 'reduced_eligible' },
+    });
+    expect(saved?.settings.fic.taxProfile?.regime).toBe('forfettario_5');
+    expect(document).toEqual(original);
+  });
+  it('conserva conferma e revisione se la nuova verifica FIC non cambia i dati del profilo', async () => {
+    const document = createEmptyDocument();
+    const profile = createFiscalPreset2026();
+    profile.confirmed = true;
+    Object.assign(profile.fiscal, { profitabilityCoefficient: '78', activityPhase: 'reduced_eligible',
+      reducedEligibilityConfirmed: true, ordinaryApplicabilityConfirmed: true });
+    document.profiles.push(profile);
+    const api = services();
+    expect((await commitFicActivation(input(document), api)).ok).toBe(true);
+    expect(vi.mocked(api.save).mock.calls[0]?.[1].profiles).toEqual([profile]);
+  });
   it('non inventa i campi fiscali che FIC non restituisce',async()=>{const api=services();await commitFicActivation(input(createEmptyDocument()),api);const saved=vi.mocked(api.save).mock.calls[0]?.[1];expect(saved?.profiles[0]?.fiscal.atecoCode).toBe('');expect(saved?.profiles[0]?.fiscal.contributionRate).toBe('0');expect(saved?.profiles[0]?.fiscal.contributionCeiling).toBe('0.00');expect(saved?.profiles[0]?.confirmed).toBe(false);});
   it('ripristina il token precedente se il salvataggio di attivazione fallisce',async()=>{const api=services({save:vi.fn(async()=>err({code:'CONFLICT',message:'Conflitto'}))});expect((await commitFicActivation(input(createEmptyDocument()),api)).ok).toBe(false);expect(api.writeToken).toHaveBeenNthCalledWith(1,'nuovo');expect(api.writeToken).toHaveBeenNthCalledWith(2,'precedente');});
   it('rimuove configurazione e token insieme e ripristina il token se il file non viene salvato',async()=>{const document=createEmptyDocument();document.settings.fic={enabled:true,company:{id:'1',name:'Studio'},product:{id:'2',name:'Consulenza'}};const failing=services({save:vi.fn(async()=>err({code:'IO',message:'Disco non disponibile'}))});expect((await removeFicLinkAtomically(input(document),failing)).ok).toBe(false);expect(failing.writeToken).toHaveBeenCalledWith('precedente');const successful=services();const result=await removeFicLinkAtomically(input(document),successful);expect(result.ok).toBe(true);const saved=vi.mocked(successful.save).mock.calls[0]?.[1];expect(saved?.settings.fic).toEqual({enabled:false});});

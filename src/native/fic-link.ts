@@ -1,5 +1,6 @@
 import { createBlankProfile, err, type CashDocument, type FicTaxProfileSnapshot, type Result } from '../domain/model';
 import { removeFicLink } from '../domain/integration';
+import { saveProfileRevision } from '../domain/profiles';
 import type { ArchiveSession, ConcurrencyToken } from './persistence';
 
 export interface FicLinkServices {
@@ -25,8 +26,8 @@ function applyAuthoritativeTaxProfile(document:CashDocument,taxProfile:FicTaxPro
     profile.fiscal.activityPhase='ordinary';profile.fiscal.reducedSubstituteTaxRate='5';profile.fiscal.ordinarySubstituteTaxRate='15';
     profile.fiscal.reducedEligibilityConfirmed=false;profile.fiscal.ordinaryApplicabilityConfirmed=true;
   }
-  profile.confirmed=existing?.confirmed??false;profile.updatedAt=taxProfile.acquiredAt;if(existing)profile.revision=existing.revision+1;
-  if(index>=0)document.profiles[index]=profile;else document.profiles.push(profile);
+  const saved = saveProfileRevision(existing, profile);
+  if(index>=0)document.profiles[index]=saved;else document.profiles.push(saved);
 }
 
 async function previousToken(services:FicLinkServices):Promise<Result<string|undefined>>{
