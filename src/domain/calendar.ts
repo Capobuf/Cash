@@ -1,6 +1,10 @@
 import type { LocalHoliday, Result } from './model';
 import { err, ok } from './model';
 
+export function isYearMonth(value: string): boolean {
+  return value.length === 7 && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(value);
+}
+
 export interface WorkCalendar {
   year: number;
   weekdays: number;

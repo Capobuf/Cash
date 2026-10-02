@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isYearMonth } from './calendar';
 import { err, meta, ok, type CashError, type Result, type SubItemDefinition, type Template } from './model';
 
 const nonEmptyString = z.string().refine((value) => value.trim().length > 0, 'stringa non vuota richiesta');
@@ -6,7 +7,7 @@ const nonNegativeDecimal = (maxDecimals: number) => z.string().regex(
   new RegExp(`^(?:0|[1-9]\\d*)(?:\\.\\d{1,${maxDecimals}})?$`),
   `decimale non negativo con massimo ${maxDecimals} decimali richiesto`,
 );
-const period = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, 'periodo YYYY-MM non valido');
+const period = z.string().refine(isYearMonth, 'periodo YYYY-MM non valido');
 
 const timeDefinitionSchema = z.object({
   kind: z.literal('time'),

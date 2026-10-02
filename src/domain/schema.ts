@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
+import { isYearMonth } from './calendar';
 import { CURRENT_SCHEMA_VERSION, type CashDocument, type CashError } from './model';
 import { bankExpenseIdentity, normalizeBankDescription, normalizeBankRuleText } from './bank-expenses';
 
@@ -28,6 +29,7 @@ export function validationErrorFromIssues(issues: readonly ValidationIssue[]): C
 
 const uuid = z.string().uuid();
 const iso = z.string().datetime({ offset: true });
+const period = z.string().refine(isYearMonth, 'periodo YYYY-MM non valido');
 const decimal = z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/, 'decimale non valido');
 const boundedDecimal = (maxDecimals: number, min?: string, max?: string, exclusiveMin = false) => decimal.superRefine((value, ctx) => {
   const parsed = new Decimal(value);
@@ -53,7 +55,7 @@ const siteSnapshotSchema = z.object({ sourceId: uuid, name: z.string().min(1), a
 const fuel = z.enum(['Benzina', 'Gasolio', 'GPL', 'Metano']);
 
 export const fuelEvidenceSchema = z.object({ fuel, mode: z.enum(['SELF', 'SERVITO']), territory: z.string().min(1), network: z.literal('NON_AUTOSTRADALE'), price: boundedDecimal(3, '0', undefined, true), priceUnit: z.enum(['EUR/l', 'EUR/kg']), referenceDate: z.string().date(), acquiredAt: iso });
-export const foiEvidenceSchema = z.object({ fromPeriod: z.string().regex(/^\d{4}-\d{2}$/), toPeriod: z.string().regex(/^\d{4}-\d{2}$/), fromIndex: decimal, toIndex: decimal, fromBase: z.string().min(1), toBase: z.string().min(1), fromLinkFactor: decimal, toLinkFactor: decimal, revaluedAmount: decimal, acquiredAt: iso });
+export const foiEvidenceSchema = z.object({ fromPeriod: period, toPeriod: period, fromIndex: decimal, toIndex: decimal, fromBase: z.string().min(1), toBase: z.string().min(1), fromLinkFactor: decimal, toLinkFactor: decimal, revaluedAmount: decimal, acquiredAt: iso });
 
 const variantOwner = z.object({ groupId: uuid, optionId: uuid, definitionIndex: z.number().int().nonnegative().optional() });
 const baseSub = { ...entity, description: z.string().min(1), variantOwner: variantOwner.optional(), manuallyModified: z.boolean().optional() };
@@ -88,14 +90,14 @@ export const profileSchema = z.object({ ...entity, year: z.number().int().min(20
 });
 
 const profileSnapshotSchema = z.object({ sourceId: uuid, year: z.number().int(), revision: z.number().int().positive(), revenueTarget: decimal, specificAnnualExpenses: decimal, revenueFromTime: decimal, availableClientMinutes: z.number().int().positive(), hourlyTarget: decimal, fiscal: fiscalSchema });
-const priceReferenceSchema = z.object({ amount: moneyInput, period: z.string().regex(/^\d{4}-\d{2}$/), foiEvidence: foiEvidenceSchema.optional() });
+const priceReferenceSchema = z.object({ amount: moneyInput, period, foiEvidence: foiEvidenceSchema.optional() });
 const quoteItemSchema = z.object({ ...entity, name: z.string().min(1), subItems: z.array(quoteSubItemSchema), variantGroups: variantGroupsSchema, variantSelections: z.array(z.object({ groupId: uuid, optionId: uuid })), referencePrice: priceReferenceSchema.optional(), chosenPrice: moneyInput.optional() }).superRefine((item, ctx) => {
   const selected = new Set<string>();
   for (const [index, selection] of item.variantSelections.entries()) { const group = item.variantGroups.find((candidate) => candidate.id === selection.groupId); if (!group?.options.some((option) => option.id === selection.optionId)) ctx.addIssue({ code: 'custom', path: ['variantSelections', index], message: 'selezione variante non appartenente alla voce' }); if (selected.has(selection.groupId)) ctx.addIssue({ code: 'custom', path: ['variantSelections', index], message: 'gruppo variante selezionato più volte' }); selected.add(selection.groupId); }
 });
 const exportLineSchema = z.object({ itemIds: z.array(uuid).min(1), description: z.string().min(1), amount: moneyInput, quantity: z.literal(1) });
 const exportAttemptSchema = z.object({ ...entity, companyId: z.string().min(1), lines: z.array(exportLineSchema).min(1), payloadHash: z.string().regex(/^[a-f0-9]{64}$/), outcome: z.enum(['pending', 'success', 'rejected', 'uncertain']), remoteDocumentId: z.string().optional(), diagnostic: z.string().optional() });
-const templateItemSchema = z.object({ ...entity, name: z.string().min(1), referencePrice: z.object({ amount: moneyInput, period: z.string().regex(/^\d{4}-\d{2}$/) }).optional(), subItems: z.array(reusableSubItemSchema), variantGroups: variantGroupsSchema });
+const templateItemSchema = z.object({ ...entity, name: z.string().min(1), referencePrice: z.object({ amount: moneyInput, period }).optional(), subItems: z.array(reusableSubItemSchema), variantGroups: variantGroupsSchema });
 const templateSchema = z.object({ ...entity, name: z.string().min(1), items: z.array(templateItemSchema).min(1) });
 
 const financialPaymentSchema = z.object({

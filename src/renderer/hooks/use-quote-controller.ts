@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { isYearMonth } from "../../domain/calendar"
 import { calculateTravel, calculateVehicleCost } from "../../domain/calculations"
 import { cloneTemplate, reusableFromQuoteSubItem, templateFromQuote } from "../../domain/catalog"
 import { buildExportLines, createPendingAttempt } from "../../domain/export"
@@ -145,7 +146,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
       appState.mutate((document) => { delete document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.referencePrice })
       return true
     }
-    if (!referenceAmount || !referencePeriod || !Number.isFinite(Number(referenceAmount)) || Number(referenceAmount) < 0 || !/^\d{4}-\d{2}$/.test(referencePeriod)) {
+    if (!referenceAmount || !referencePeriod || !Number.isFinite(Number(referenceAmount)) || Number(referenceAmount) < 0 || !isYearMonth(referencePeriod)) {
       appState.setError({ code: "VALIDATION", field: "referencePrice", message: "Completa importo e mese/anno del Prezzo di riferimento, oppure rimuovilo." })
       return false
     }

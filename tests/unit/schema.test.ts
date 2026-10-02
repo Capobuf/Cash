@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { createBlankProfile, createEmptyDocument, createFiscalPreset2026, meta } from '../../src/domain/model';
-import { cashDocumentSchema } from '../../src/domain/schema';
+import { cashDocumentSchema, foiEvidenceSchema } from '../../src/domain/schema';
+import { parseTemplatePack } from '../../src/domain/template-pack';
+
+describe('periodi mensili', () => {
+  const periods = [
+    ...Array.from({ length: 12 }, (_, index) => ({ period: `2026-${String(index + 1).padStart(2, '0')}`, valid: true })),
+    ...['2026-00', '2026-13', '2026-1', '26-01', '2026/01', '2026-01-01', '', '2026-01\n'].map(period => ({ period, valid: false })),
+  ];
+  it.each(periods)('valida $period coerentemente in archivio, template pack e snapshot FOI', ({ period, valid }) => {
+    const referencePrice = { amount: '100.00', period };
+    const document = createEmptyDocument();
+    document.quotes.push({ ...meta(), date: '2026-01-01', snapshotRevision: 0, exportAttempts: [],
+      items: [{ ...meta(), name: 'Lavoro', referencePrice, subItems: [], variantGroups: [], variantSelections: [] }] });
+    expect(cashDocumentSchema.safeParse(document).success).toBe(valid);
+    document.quotes = [];
+    document.catalog.templates.push({ ...meta(), name: 'Modello', items: [{ ...meta(), name: 'Lavoro', referencePrice, subItems: [], variantGroups: [] }] });
+    expect(cashDocumentSchema.safeParse(document).success).toBe(valid);
+    expect(parseTemplatePack({ format: 'cash-template-pack', formatVersion: 1, templates: [{ name: 'Modello',
+      items: [{ name: 'Lavoro', referencePrice, subItems: [{ kind: 'time', description: 'Lavoro', minutes: 60 }], variantGroups: [] }] }] }).ok).toBe(valid);
+    const evidence = { fromPeriod: '2026-01', toPeriod: '2026-12', fromIndex: '100', toIndex: '101',
+      fromBase: '2025', toBase: '2025', fromLinkFactor: '1', toLinkFactor: '1', revaluedAmount: '101.00', acquiredAt: '2026-10-02T10:00:00Z' };
+    expect(foiEvidenceSchema.safeParse({ ...evidence, fromPeriod: period }).success).toBe(valid);
+    expect(foiEvidenceSchema.safeParse({ ...evidence, toPeriod: period }).success).toBe(valid);
+  });
+});
 
 describe('schema archivio v9',()=>{
   it('richiede una sola categoria di sistema e conserva il significato dopo rename', () => {
