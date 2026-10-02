@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateVehicleCost } from '../../domain/calculations';
-import type { CashDocument } from '../../domain/model';
+import type { CashDocument, Vehicle } from '../../domain/model';
 import {
   CostDialog,
   SiteDialog,
@@ -50,6 +50,19 @@ import type { DeleteTarget } from '../types';
 
 type Editor = { kind: 'cost' | 'vehicle' | 'site'; id?: string } | null;
 
+function vehicleCostInputs(vehicle: Vehicle, territory?: string): string {
+  return JSON.stringify([
+    territory,
+    vehicle.fuel,
+    vehicle.consumption,
+    vehicle.consumptionUnit,
+    vehicle.annualKm,
+    vehicle.annualInsurance,
+    vehicle.annualTax,
+    vehicle.annualMaintenance,
+  ]);
+}
+
 export function ResourcesView({
   doc,
   appState,
@@ -61,7 +74,15 @@ export function ResourcesView({
 }) {
   const [editor, setEditor] = useState<Editor>(null);
   const [vehicleCostPreviews, setVehicleCostPreviews] = useState<
-    Record<string, { costPerKm: string; referenceDate: string }>
+    Record<
+      string,
+      {
+        costPerKm: string;
+        referenceDate: string;
+        inputs: string;
+        archiveContext: number;
+      }
+    >
   >({});
   const otherSites = doc.sites.filter((site) => !site.client);
   const annualCosts = doc.businessCosts
@@ -77,6 +98,8 @@ export function ResourcesView({
       });
       return;
     }
+    const inputs = vehicleCostInputs(vehicle, doc.settings.fuelTerritory);
+    const archiveContext = appState.archiveContext;
     const fuel = await window.cash.mimit.latestFuelPrice({
       territory: doc.settings.fuelTerritory,
       fuel: vehicle.fuel,
@@ -95,6 +118,8 @@ export function ResourcesView({
       [id]: {
         costPerKm: result.value.costPerKm,
         referenceDate: fuel.value.referenceDate,
+        inputs,
+        archiveContext,
       },
     }));
   };
@@ -273,7 +298,16 @@ export function ResourcesView({
                   </TableHeader>
                   <TableBody>
                     {doc.vehicles.map((vehicle) => {
-                      const preview = vehicleCostPreviews[vehicle.id];
+                      const savedPreview = vehicleCostPreviews[vehicle.id];
+                      const preview =
+                        savedPreview?.inputs ===
+                          vehicleCostInputs(
+                            vehicle,
+                            doc.settings.fuelTerritory,
+                          ) &&
+                        savedPreview.archiveContext === appState.archiveContext
+                          ? savedPreview
+                          : undefined;
                       return (
                         <TableRow key={vehicle.id}>
                           <TableCell>
@@ -296,17 +330,14 @@ export function ResourcesView({
                                   MIMIT {dateIt(preview.referenceDate)}
                                 </span>
                               </>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  void checkVehicleCost(vehicle.id)
-                                }
-                              >
-                                Verifica ora
-                              </Button>
-                            )}
+                            ) : null}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void checkVehicleCost(vehicle.id)}
+                            >
+                              Verifica ora
+                            </Button>
                           </TableCell>
                           <TableCell>
                             <RowMenu
