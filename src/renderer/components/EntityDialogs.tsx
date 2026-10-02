@@ -248,10 +248,10 @@ export function SiteDialog({
     const name = String(
       new FormData(event.currentTarget).get('name') ?? '',
     ).trim();
-    if (!name || (!address.trim() && !coordinateText.trim())) {
+    if (!name) {
       appState.setError({
         code: 'VALIDATION',
-        message: 'Inserisci nome e almeno un indirizzo o coordinate.',
+        message: 'Inserisci il nome della Sede.',
       });
       return;
     }

@@ -112,6 +112,39 @@ describe('salvataggio dal dialogo veicolo', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('salva una sede con il solo nome senza inventare indirizzo o coordinate', () => {
+    const document = createEmptyDocument();
+    const state = new AppState();
+    state.acceptNativeSession({
+      path: 'Cash.json',
+      document,
+      readOnly: false,
+      token: {
+        documentId: document.documentId,
+        revision: document.revision,
+        fingerprint: 'hash',
+      },
+    });
+    const onOpenChange = vi.fn();
+    renderToStaticMarkup(
+      createElement(SiteDialog, {
+        open: true,
+        appState: state,
+        doc: document,
+        onOpenChange,
+      }),
+    );
+    form.submit!({
+      preventDefault: vi.fn(),
+      currentTarget: {},
+    } as unknown as FormEvent<HTMLFormElement>);
+    expect(state.document?.sites).toHaveLength(1);
+    expect(state.document?.sites[0]?.name).toBe('Auto');
+    expect(state.document?.sites[0]?.address).toBeUndefined();
+    expect(state.document?.sites[0]?.location).toBeUndefined();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it.each([true, false])(
     'con archivio in sola lettura %s chiude solo dopo una modifica accettata',
     (readOnly) => {

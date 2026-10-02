@@ -3,10 +3,19 @@ import {
   coordinatesInput,
   parseCoordinates,
   siteHasUsableLocation,
+  snapshotSite,
 } from '../../src/domain/locations';
 import { meta, type Site } from '../../src/domain/model';
 
 describe('Sedi e valori predefiniti globali', () => {
+  it('mantiene una sede con solo nome negli snapshot ma non la abilita al routing', () => {
+    const site = { ...meta(), name: 'Fornitore' };
+    expect(snapshotSite(site)).toEqual({
+      sourceId: site.id,
+      name: 'Fornitore',
+    });
+    expect(siteHasUsableLocation(site)).toBe(false);
+  });
   it('interpreta il formato Google Maps latitudine, longitudine e controlla gli intervalli', () => {
     expect(parseCoordinates('41.468225188142576, 14.562198586305103')).toEqual({
       ok: true,
