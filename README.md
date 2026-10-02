@@ -88,3 +88,47 @@ npm run package:win
 Il comando crea `release/Cash.exe`, un’applicazione portable autosufficiente. Non richiede installazione,
 Node.js, database, container o server sulla macchina dell’utente. Il prodotto è destinato a Windows 10/11
 x64 e a uso sequenziale monoutente.
+
+## Dipendenze e manutenzione
+
+La CI usa Node.js 24, cache npm e `npm ci` con il lockfile versionato; esegue typecheck,
+lint, test e `package:win`, quindi pubblica come artefatto `release/Cash.exe` (Windows x64).
+Non è previsto un installer distinto dal portable.
+
+Le credenziali restano nel Gestore credenziali di Windows. `@zowe/secrets-for-zowe-sdk`
+sostituisce `keytar` usando gli stessi identificatori (`it.cash.desktop`,
+`fatture-in-cloud-token` e `openrouteservice-api-key`) e lo stesso formato. Non occorre
+reinserire o trasferire i segreti: è stata verificata su Windows la lettura di credenziali
+fittizie scritte con keytar 7.9.0, compresi Unicode, aggiornamento e cancellazione.
+Il test Windows in `tests/integration/credentials-windows.test.ts` verifica il modulo
+nativo con un servizio temporaneo distinto e ne cancella le credenziali a fine test.
+I test del collegamento FIC verificano anche il ripristino del token quando il salvataggio fallisce.
+
+Il pacchetto Zowe è una dipendenza runtime necessaria, con binario Node-API precompilato
+per Windows x64 incluso nel pacchetto npm: non usa `prebuild-install`. Rimane esterno al
+bundle esbuild e viene estratto dall'ASAR per il caricamento nativo. Non serve uno step
+CI dedicato; electron-builder gestisce già i moduli nativi. `safeStorage` non è usato:
+richiederebbe un nuovo archivio cifrato e un percorso di migrazione dal Credential Manager.
+
+Electron, electron-builder, ESLint, TypeScript, Vitest e la CLI shadcn restano nelle
+`devDependencies`. Anche le librerie applicative JavaScript vi risiedono perché esbuild
+le incorpora in `dist`; il solo modulo esterno per le credenziali va distribuito in
+`dependencies`.
+
+ESLint 10 è abbinato a `@eslint/js` 10 e typescript-eslint 8 compatibile con ESLint 10 e
+TypeScript 5.9. `globals` 16.3.0 resta compatibile. Le tre nuove regole recommended di
+ESLint 10 sono disattivate esplicitamente per conservare il perimetro del lint precedente.
+La serie ESLint 9 è [fuori supporto](https://eslint.org/version-support/).
+
+Restano warning upstream della toolchain electron-builder 26.15.3:
+
+- `app-builder-lib → @electron/asar@3.4.1 → glob@7.2.3 → inflight@1.0.6`;
+- `app-builder-lib → @electron/get@3.1.0 → global-agent@3.0.0 → boolean@3.2.0`
+  (anche tramite `roarr`);
+- `app-builder-lib → electron-builder-squirrel-windows → electron-winstaller → temp → rimraf@2.6.3`.
+
+Queste catene restano anche nella linea 26.17.0 esaminata; non vengono forzate tramite
+`overrides` o dipendenze dirette. Il target di Cash rimane portable, non Squirrel.
+Per controllare la sicurezza usare sia `npm audit` sia `npm audit --omit=dev`:
+quest'ultimo esclude anche le librerie JavaScript incorporate nel bundle, quindi da solo
+non rappresenta tutta la superficie runtime dell'app.

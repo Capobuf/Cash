@@ -1,4 +1,4 @@
-import { createEmptyDocument, type CashDocument, type CashError } from '../domain/model';
+import { CURRENT_SCHEMA_VERSION, createEmptyDocument, type CashDocument, type CashError } from '../domain/model';
 import { cashDocumentSchema, validationErrorFromIssues } from '../domain/schema';
 import type { ArchiveSession } from '../native/persistence';
 
@@ -46,7 +46,12 @@ export class AppState {
     this.mutationVersion = 0;
     this.sessionVersion += 1;
     this.status = session.readOnly ? 'Sola lettura' : 'Salvato';
-    this.error = null;
+    this.error = session.headerOnly ? {
+      code: 'SCHEMA_NEWER', source: 'archive',
+      message: `L’archivio usa uno schema più recente${session.schemaVersion ? ` (${session.schemaVersion})` : ''} di quello supportato da questa versione di Cash (${CURRENT_SCHEMA_VERSION}).`,
+      action: 'Apri il file con una versione di Cash compatibile. I dati non sono stati modificati.',
+      details: [session.path, `Revisione: ${session.token.revision} · Sola lettura: contenuto non disponibile in questa versione.`],
+    } : null;
     window.cash.setDirty(false);
     this.emit();
   }

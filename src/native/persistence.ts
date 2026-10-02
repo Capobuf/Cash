@@ -7,7 +7,7 @@ import { CURRENT_SCHEMA_VERSION, err, ok, type CashDocument, type Result } from 
 import { cashDocumentSchema, documentHeaderSchema, parseDocument, validationErrorFromIssues } from '../domain/schema';
 
 export interface ConcurrencyToken { documentId: string; revision: number; fingerprint: string }
-export interface ArchiveSession { path: string; document?: CashDocument; token: ConcurrencyToken; readOnly: boolean; headerOnly?: true }
+export interface ArchiveSession { path: string; document?: CashDocument; token: ConcurrencyToken; readOnly: boolean; headerOnly?: true; schemaVersion?: number }
 export interface MigrationPreview { fromVersion: number; toVersion: number; changes: string[]; blockers: string[]; backupPath: string }
 
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -44,7 +44,7 @@ export async function openArchive(path: string): Promise<Result<ArchiveSession>>
     const header = headerResult.data;
     const token = { documentId: header.documentId, revision: header.revision, fingerprint: sha256(bytes) };
     if (header.schemaVersion > CURRENT_SCHEMA_VERSION)
-      return ok({ path, token, readOnly: true, headerOnly: true });
+      return ok({ path, token, readOnly: true, headerOnly: true, schemaVersion: header.schemaVersion });
     if (header.schemaVersion < CURRENT_SCHEMA_VERSION)
       return err({ code: 'MIGRATION_REQUIRED', source: 'archive', message: `Lo schema ${header.schemaVersion} richiede una migrazione esplicita con backup.`, action: 'Aggiornare l’archivio dopo conferma.' });
     const parsed = cashDocumentSchema.safeParse(raw.value);

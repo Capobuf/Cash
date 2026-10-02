@@ -14,7 +14,7 @@ await mkdir('dist/renderer', { recursive: true });
 
 await Promise.all([
   build({ entryPoints: ['src/native/main.ts'], outfile: 'dist/native/main.cjs', bundle: true,
-    platform: 'node', format: 'cjs', target: 'node22', external: ['electron', 'keytar'], ...optimization }),
+    platform: 'node', format: 'cjs', target: 'node22', external: ['electron', '@zowe/secrets-for-zowe-sdk'], ...optimization }),
   build({ entryPoints: ['src/native/preload.ts'], outfile: 'dist/native/preload.cjs', bundle: true,
     platform: 'node', format: 'cjs', target: 'node22', external: ['electron'], ...optimization }),
   build({ entryPoints: ['src/renderer/main.tsx'], outfile: 'dist/renderer/app.js', bundle: true,
