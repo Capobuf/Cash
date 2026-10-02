@@ -9,6 +9,50 @@ describe('coordinatore autosalvataggio',()=>{
   beforeEach(()=>vi.useFakeTimers());
   afterEach(()=>vi.useRealTimers());
 
+  it('mantiene dirty dopo un reject IPC e consente un nuovo salvataggio esplicito', async () => {
+    const save = vi.fn<Window['cash']['archive']['save']>()
+      .mockRejectedValueOnce(new Error('IPC interrotto'))
+      .mockImplementationOnce(async (_path, document) => ok(session({ ...document, revision: 2 }, 2)));
+    const setDirty = vi.fn();
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty }, setTimeout, clearTimeout });
+    try {
+      const state = new AppState(); state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate(document => { document.settings.fuelTerritory = 'Lazio'; });
+      await expect(state.save()).resolves.toBeUndefined();
+      expect(state.status).toBe('Errore di salvataggio');
+      expect(state.error).toMatchObject({ code: 'IO', details: ['Error: IPC interrotto'] });
+      expect(state.document?.settings.fuelTerritory).toBe('Lazio');
+      expect(setDirty).toHaveBeenLastCalledWith(true);
+      await vi.runAllTimersAsync();
+      expect(save).toHaveBeenCalledTimes(1);
+      await state.save();
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(state.status).toBe('Salvato');
+      expect(state.document?.settings.fuelTerritory).toBe('Lazio');
+      expect(state.error).toBeNull();
+      expect(setDirty).toHaveBeenLastCalledWith(false);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('non applica un reject tardivo alla nuova sessione', async () => {
+    let reject!: (cause: Error) => void;
+    const save = vi.fn(() => new Promise((_, fail) => { reject = fail; }));
+    const setDirty = vi.fn();
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty }, setTimeout, clearTimeout });
+    try {
+      const state = new AppState(); state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate(document => { document.settings.fuelTerritory = 'Lazio'; });
+      const saving = state.save(); await Promise.resolve();
+      const other = createEmptyDocument(); state.acceptNativeSession(session(other));
+      reject(new Error('Vecchio IPC interrotto'));
+      await expect(saving).resolves.toBeUndefined();
+      expect(state.document).toEqual(other);
+      expect(state.status).toBe('Salvato');
+      expect(state.error).toBeNull();
+      expect(setDirty).toHaveBeenLastCalledWith(false);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('non perde una mutazione arrivata mentre un salvataggio è in corso',async()=>{
     let completeFirst!:(value:ReturnType<typeof ok<ArchiveSession>>)=>void;
     const first=new Promise<ReturnType<typeof ok<ArchiveSession>>>(resolve=>{completeFirst=resolve;});

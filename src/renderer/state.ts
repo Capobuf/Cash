@@ -157,7 +157,11 @@ export class AppState {
       const savingVersion = this.mutationVersion;
       const savingSessionVersion = this.sessionVersion;
       this.status = 'Salvataggio'; this.emit();
-      const result = await window.cash.archive.save(snapshot.path, snapshot.document!, snapshot.token);
+      let result: Awaited<ReturnType<typeof window.cash.archive.save>>;
+      try { result = await window.cash.archive.save(snapshot.path, snapshot.document!, snapshot.token); }
+      catch (cause) {
+        result = { ok: false, error: { code: 'IO', source: 'archive', message: 'Comunicazione interrotta durante il salvataggio. Le modifiche restano non salvate.', details: [String(cause)] } };
+      }
       if (savingSessionVersion !== this.sessionVersion) return;
       if (result.ok && this.mutationVersion === savingVersion) this.accept(result.value);
       else if (result.ok) {
