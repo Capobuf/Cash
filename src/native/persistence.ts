@@ -491,6 +491,7 @@ export async function createArchive(
       source: 'archive',
       message: 'Il nome dell’archivio deve terminare con .json.',
     });
+  let temp: string | undefined;
   try {
     try {
       await access(path, constants.F_OK);
@@ -499,8 +500,8 @@ export async function createArchive(
         source: 'archive',
         message: 'Nel percorso scelto esiste già un file.',
       });
-    } catch {
-      /* expected */
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
     }
     const parsed = cashDocumentSchema.safeParse({
       ...document,
@@ -511,8 +512,12 @@ export async function createArchive(
       return err(validationErrorFromIssues(parsed.error.issues));
     const normalized = parsed.data;
     const bytes = encode(normalized);
-    const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
-    const handle = await open(temp, 'wx');
+    const tempPath = join(
+      dirname(path),
+      `.${basename(path)}.${randomUUID()}.tmp`,
+    );
+    const handle = await open(tempPath, 'wx');
+    temp = tempPath;
     try {
       await handle.writeFile(bytes);
       await handle.sync();
@@ -520,18 +525,24 @@ export async function createArchive(
       await handle.close();
     }
     parseDocument(JSON.parse((await readFile(temp)).toString('utf8')));
+    let destinationExists = true;
     try {
       await access(path, constants.F_OK);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+      destinationExists = false;
+    }
+    if (destinationExists) {
       await rm(temp, { force: true });
+      temp = undefined;
       return err({
         code: 'CONFLICT',
         source: 'archive',
         message: 'Il file è comparso durante la creazione.',
       });
-    } catch {
-      /* still absent */
     }
     await rename(temp, path);
+    temp = undefined;
     const persisted = await readFile(path);
     return ok({
       path,
@@ -544,11 +555,21 @@ export async function createArchive(
       readOnly: false,
     });
   } catch (cause) {
+    const details = [String(cause)];
+    if (temp) {
+      try {
+        await rm(temp, { force: true });
+      } catch (cleanupCause) {
+        details.push(
+          `Temporary file cleanup failed (${temp}): ${String(cleanupCause)}`,
+        );
+      }
+    }
     return err({
       code: 'IO',
       source: 'archive',
       message: 'Creazione atomica non riuscita.',
-      details: [String(cause)],
+      details,
     });
   }
 }
