@@ -577,51 +577,27 @@ export function ProfileEditor({
                     value={profile.fiscal.cessationThreshold}
                   />
                   <Field orientation="horizontal" className="col-span-3">
-                    {ficProvidesRegime &&
-                    profile.fiscal.reducedEligibilityConfirmed ? (
-                      <input
-                        type="hidden"
-                        name="reducedEligibilityConfirmed"
-                        value="on"
-                      />
-                    ) : null}
                     <Checkbox
                       id="reducedEligibilityConfirmed"
                       name="reducedEligibilityConfirmed"
                       defaultChecked={
                         profile.fiscal.reducedEligibilityConfirmed
                       }
-                      disabled={ficProvidesRegime}
                     />
                     <FieldLabel htmlFor="reducedEligibilityConfirmed">
                       Confermo di possedere i requisiti per l’aliquota agevolata
-                      {ficProvidesRegime ? (
-                        <Badge variant="outline">FIC</Badge>
-                      ) : null}
                     </FieldLabel>
                   </Field>
                   <Field orientation="horizontal" className="col-span-3">
-                    {ficProvidesRegime &&
-                    profile.fiscal.ordinaryApplicabilityConfirmed ? (
-                      <input
-                        type="hidden"
-                        name="ordinaryApplicabilityConfirmed"
-                        value="on"
-                      />
-                    ) : null}
                     <Checkbox
                       id="ordinaryApplicabilityConfirmed"
                       name="ordinaryApplicabilityConfirmed"
                       defaultChecked={
                         profile.fiscal.ordinaryApplicabilityConfirmed
                       }
-                      disabled={ficProvidesRegime}
                     />
                     <FieldLabel htmlFor="ordinaryApplicabilityConfirmed">
                       Confermo l’applicabilità oltre la soglia ordinaria
-                      {ficProvidesRegime ? (
-                        <Badge variant="outline">FIC</Badge>
-                      ) : null}
                     </FieldLabel>
                   </Field>
                 </FieldGroup>

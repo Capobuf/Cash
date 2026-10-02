@@ -53,14 +53,10 @@ function applyAuthoritativeTaxProfile(
     profile.fiscal.activityPhase = 'reduced_eligible';
     profile.fiscal.reducedSubstituteTaxRate = '5';
     profile.fiscal.ordinarySubstituteTaxRate = '15';
-    profile.fiscal.reducedEligibilityConfirmed = true;
-    profile.fiscal.ordinaryApplicabilityConfirmed = true;
   } else if (regime?.startsWith('forfettario')) {
     profile.fiscal.activityPhase = 'ordinary';
     profile.fiscal.reducedSubstituteTaxRate = '5';
     profile.fiscal.ordinarySubstituteTaxRate = '15';
-    profile.fiscal.reducedEligibilityConfirmed = false;
-    profile.fiscal.ordinaryApplicabilityConfirmed = true;
   }
   const saved = saveProfileRevision(existing, profile);
   if (index >= 0) document.profiles[index] = saved;

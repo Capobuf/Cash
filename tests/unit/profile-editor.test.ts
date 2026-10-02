@@ -10,6 +10,48 @@ import type { AppState } from '../../src/renderer/state';
 import { copyProfileToYear } from '../../src/domain/profiles';
 
 describe('editor del profilo', () => {
+  it.each([false, true])(
+    'lascia le conferme fiscali modificabili con FIC (confermate: %s)',
+    (confirmed) => {
+      const profile = createFiscalPreset2026();
+      profile.fiscal.reducedEligibilityConfirmed = confirmed;
+      profile.fiscal.ordinaryApplicabilityConfirmed = confirmed;
+      const doc = createEmptyDocument();
+      doc.profiles.push(profile);
+      doc.settings.fic.taxProfile = {
+        acquiredAt: '2026-09-01T12:00:00Z',
+        regime: 'forfettario_5',
+        profitCoefficient: '78',
+      };
+      const markup = renderToStaticMarkup(
+        React.createElement(ProfileEditor, {
+          profile,
+          doc,
+          appState: {} as AppState,
+          onCopy: () => undefined,
+        }),
+      );
+      for (const name of [
+        'reducedEligibilityConfirmed',
+        'ordinaryApplicabilityConfirmed',
+      ]) {
+        const control = markup.match(
+          new RegExp(`<[^>]*id="${name}"[^>]*>`),
+        )?.[0];
+        expect(control).toBeDefined();
+        expect(control).not.toMatch(/\s(?:disabled|aria-disabled)=/i);
+        expect(markup).not.toMatch(
+          new RegExp(`<input[^>]*type="hidden"[^>]*name="${name}"`),
+        );
+      }
+      expect(
+        markup.match(/<select[^>]*id="activityPhase"[^>]*>/)?.[0],
+      ).toContain('disabled');
+      expect(
+        markup.match(/<input[^>]*id="profitabilityCoefficient"[^>]*>/)?.[0],
+      ).toMatch(/readonly/i);
+    },
+  );
   it('mantiene nel form i campi di tutte le schede', () => {
     const profile = createFiscalPreset2026();
     profile.revenueTarget = '50000.00';

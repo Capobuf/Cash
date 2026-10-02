@@ -16,6 +16,7 @@ import type {
   ArchiveSession,
   ConcurrencyToken,
 } from '../../src/native/persistence';
+import { confirmProfile } from '../../src/domain/profiles';
 
 const token: ConcurrencyToken = {
   documentId: '6dadb063-1796-429d-9a8a-ad9a0ec9827b',
@@ -62,6 +63,44 @@ function services(overrides: Partial<FicLinkServices> = {}): FicLinkServices {
 }
 
 describe('collegamento Fatture in Cloud atomico', () => {
+  it.each(['forfettario_5', 'forfettario'])(
+    'richiede le conferme utente dopo import %s',
+    async (regime) => {
+      const document = createEmptyDocument();
+      const profile = createFiscalPreset2026();
+      profile.revenueTarget = '90000.00';
+      document.profiles.push(profile);
+      const api = services();
+      const verified = await api.verify('token', '1', '2');
+      if (!verified.ok) throw new Error(verified.error.message);
+      verified.value.taxProfile.regime = regime;
+      api.verify = vi.fn(async () => verified);
+      const result = await commitFicActivation(input(document), api);
+      if (!result.ok) throw new Error(result.error.message);
+      const imported = result.value.document?.profiles[0];
+      if (!imported) throw new Error('Profilo importato mancante');
+      expect(imported.fiscal).toMatchObject({
+        profitabilityCoefficient: '78',
+        activityPhase:
+          regime === 'forfettario_5' ? 'reduced_eligible' : 'ordinary',
+        reducedEligibilityConfirmed: false,
+        ordinaryApplicabilityConfirmed: false,
+      });
+      if (regime === 'forfettario_5') {
+        expect(confirmProfile(imported, [])).toMatchObject({
+          ok: false,
+          error: { field: 'reducedEligibilityConfirmed' },
+        });
+        imported.fiscal.reducedEligibilityConfirmed = true;
+      }
+      expect(confirmProfile(imported, [])).toMatchObject({
+        ok: false,
+        error: { field: 'ordinaryApplicabilityConfirmed' },
+      });
+      imported.fiscal.ordinaryApplicabilityConfirmed = true;
+      expect(confirmProfile(imported, []).ok).toBe(true);
+    },
+  );
   it('rimuove solo il collegamento FIC conservando territorio e default globali', async () => {
     const document = createEmptyDocument();
     const site = { ...meta(), name: 'Studio' };
