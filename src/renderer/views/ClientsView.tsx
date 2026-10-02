@@ -118,10 +118,12 @@ function clientFieldValue(value: string): string {
 
 export function ClientsView({
   doc,
+  hasToken,
   appState,
   requestDelete,
 }: {
   doc: CashDocument;
+  hasToken: boolean;
   appState: AppState;
   requestDelete: (target: DeleteTarget) => void;
 }) {
@@ -136,11 +138,12 @@ export function ClientsView({
   const clientsRequest = useRef(0);
   const detailRequest = useRef(0);
   const companyId = doc.settings.fic.company?.id;
-  const integrationReady = doc.settings.fic.enabled && Boolean(companyId);
+  const integrationReady =
+    doc.settings.fic.enabled && hasToken && Boolean(companyId);
 
   const loadClients = useCallback(
     async (search: string) => {
-      if (!companyId || !doc.settings.fic.enabled) return;
+      if (!companyId || !integrationReady) return;
       const request = ++clientsRequest.current;
       setLoading(true);
       setClients([]);
@@ -157,7 +160,7 @@ export function ClientsView({
       }
       setClients(result.value);
     },
-    [appState, companyId, doc.settings.fic.enabled],
+    [appState, companyId, integrationReady],
   );
 
   useEffect(() => {
@@ -171,6 +174,7 @@ export function ClientsView({
   }, [integrationReady, loadClients]);
 
   const openDetails = async (client: FicClientSnapshot) => {
+    if (!integrationReady) return;
     const request = ++detailRequest.current;
     setSelectedClient(client);
     setDetails(undefined);
@@ -235,10 +239,15 @@ export function ClientsView({
           {!integrationReady ? (
             <Alert>
               <Cloud />
-              <AlertTitle>Fatture in Cloud non è attivo</AlertTitle>
+              <AlertTitle>
+                {doc.settings.fic.enabled && !hasToken
+                  ? 'Richiede configurazione locale'
+                  : 'Fatture in Cloud non è attivo'}
+              </AlertTitle>
               <AlertDescription>
-                Configura e attiva il collegamento nelle Impostazioni per
-                recuperare i clienti.
+                {doc.settings.fic.enabled && !hasToken
+                  ? 'Collega questa postazione a Fatture in Cloud nelle Impostazioni per recuperare i clienti.'
+                  : 'Configura e attiva il collegamento nelle Impostazioni per recuperare i clienti.'}
               </AlertDescription>
             </Alert>
           ) : null}

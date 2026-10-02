@@ -259,6 +259,7 @@ export function App() {
     ) : view === 'quotes' ? (
       <QuotesView
         doc={doc}
+        hasToken={hasFicToken}
         appState={appState}
         activeQuoteId={activeQuoteId}
         setActiveQuoteId={setActiveQuoteId}
@@ -267,6 +268,7 @@ export function App() {
     ) : view === 'clients' ? (
       <ClientsView
         doc={doc}
+        hasToken={hasFicToken}
         appState={appState}
         requestDelete={setDeleteTarget}
       />

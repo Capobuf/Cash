@@ -125,12 +125,14 @@ interface PendingQuoteUpdate {
 
 export function QuotesView({
   doc,
+  hasToken,
   appState,
   activeQuoteId,
   setActiveQuoteId,
   requestDelete,
 }: {
   doc: CashDocument;
+  hasToken: boolean;
   appState: AppState;
   activeQuoteId?: string;
   setActiveQuoteId: (id?: string) => void;
@@ -138,6 +140,7 @@ export function QuotesView({
 }) {
   const controller = useQuoteController({
     doc,
+    hasToken,
     appState,
     activeQuoteId,
     setActiveQuoteId,
@@ -146,6 +149,8 @@ export function QuotesView({
   const { quote } = controller;
   const [overlay, setOverlay] = useState<Overlay>();
   const [pendingUpdate, setPendingUpdate] = useState<PendingQuoteUpdate>();
+  const ficReady =
+    doc.settings.fic.enabled && hasToken && Boolean(doc.settings.fic.company);
 
   if (!quote)
     return (
@@ -267,15 +272,17 @@ export function QuotesView({
             <TooltipTrigger render={<span />}>
               <Button
                 onClick={() => setOverlay({ kind: 'export' })}
-                disabled={!doc.settings.fic.enabled}
+                disabled={!ficReady}
               >
                 <CloudUpload />
                 Esporta FIC
               </Button>
             </TooltipTrigger>
-            {!doc.settings.fic.enabled ? (
+            {!ficReady ? (
               <TooltipContent>
-                Attiva Fatture in Cloud nelle Impostazioni.
+                {doc.settings.fic.enabled && !hasToken
+                  ? 'Richiede configurazione locale: collega questa postazione nelle Impostazioni.'
+                  : 'Attiva Fatture in Cloud nelle Impostazioni.'}
               </TooltipContent>
             ) : null}
           </Tooltip>
@@ -516,6 +523,7 @@ export function QuotesView({
           }}
           quote={quote}
           doc={doc}
+          hasToken={hasToken}
           results={controller.clientResults}
           onSearch={controller.searchRemoteClients}
           onSelect={selectCustomer}
@@ -613,7 +621,7 @@ export function QuotesView({
           onSave={controller.saveTemplate}
         />
       ) : null}
-      {overlay?.kind === 'export' ? (
+      {overlay?.kind === 'export' && ficReady ? (
         <ExportDialog
           quote={quote}
           doc={doc}

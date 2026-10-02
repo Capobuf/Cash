@@ -53,12 +53,14 @@ interface TravelContext {
 
 export function useQuoteController({
   doc,
+  hasToken,
   appState,
   activeQuoteId,
   setActiveQuoteId,
   requestDelete,
 }: {
   doc: CashDocument;
+  hasToken: boolean;
   appState: AppState;
   activeQuoteId?: string;
   setActiveQuoteId: (id?: string) => void;
@@ -275,6 +277,15 @@ export function useQuoteController({
   };
 
   const searchRemoteClients = async (query: string) => {
+    if (!hasToken) {
+      appState.setError({
+        code: 'CREDENTIALS',
+        source: 'FattureInCloud',
+        message:
+          'Richiede configurazione locale: collega questa postazione nelle Impostazioni.',
+      });
+      return;
+    }
     const isCurrent = guardQuoteContext();
     if (!isCurrent()) return;
     const companyId = doc.settings.fic.company?.id;
@@ -745,6 +756,15 @@ export function useQuoteController({
     client: FicClientSnapshot,
     groups: Array<{ itemIds: string[]; description: string }>,
   ) => {
+    if (!hasToken) {
+      appState.setError({
+        code: 'CREDENTIALS',
+        source: 'FattureInCloud',
+        message:
+          'Richiede configurazione locale: collega questa postazione nelle Impostazioni.',
+      });
+      return false;
+    }
     if (!quote) return false;
     let isCurrent = guardQuoteContext();
     if (!isCurrent()) return false;

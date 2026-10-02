@@ -29,6 +29,7 @@ export function CustomerDialog({
   onOpenChange,
   quote,
   doc,
+  hasToken,
   results,
   onSearch,
   onSelect,
@@ -37,6 +38,7 @@ export function CustomerDialog({
   onOpenChange: (open: boolean) => void;
   quote: Quote;
   doc: CashDocument;
+  hasToken: boolean;
   results: FicClientSnapshot[];
   onSearch: (query: string) => Promise<void>;
   onSelect: (clientId: string | FicClientSnapshot) => boolean;
@@ -52,7 +54,15 @@ export function CustomerDialog({
             Cloud collegata.
           </DialogDescription>
         </DialogHeader>
-        {doc.settings.fic.enabled ? (
+        <ChoiceButton
+          selected={!quote.client}
+          title="Nessun cliente"
+          detail="Puoi sceglierlo in seguito"
+          onClick={() => {
+            if (onSelect('')) onOpenChange(false);
+          }}
+        />
+        {doc.settings.fic.enabled && hasToken && doc.settings.fic.company ? (
           <div className="space-y-3">
             <form
               className="flex gap-2"
@@ -80,14 +90,6 @@ export function CustomerDialog({
             </form>
             <ScrollArea className="h-72 rounded-lg border">
               <div className="p-2">
-                <ChoiceButton
-                  selected={!quote.client}
-                  title="Nessun cliente"
-                  detail="Puoi sceglierlo in seguito"
-                  onClick={() => {
-                    if (onSelect('')) onOpenChange(false);
-                  }}
-                />
                 {results.length ? (
                   results.map((client) => (
                     <ChoiceButton
@@ -113,10 +115,15 @@ export function CustomerDialog({
           </div>
         ) : (
           <Alert>
-            <AlertTitle>Fatture in Cloud non è attivo</AlertTitle>
+            <AlertTitle>
+              {doc.settings.fic.enabled && !hasToken
+                ? 'Richiede configurazione locale'
+                : 'Fatture in Cloud non è attivo'}
+            </AlertTitle>
             <AlertDescription>
-              Attiva il collegamento nelle Impostazioni per recuperare e
-              selezionare un cliente.
+              {doc.settings.fic.enabled && !hasToken
+                ? 'Collega questa postazione a Fatture in Cloud nelle Impostazioni per cercare un cliente. Lo snapshot già salvato resta disponibile.'
+                : 'Attiva il collegamento nelle Impostazioni per recuperare e selezionare un cliente.'}
             </AlertDescription>
           </Alert>
         )}

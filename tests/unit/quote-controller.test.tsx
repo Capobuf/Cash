@@ -30,7 +30,7 @@ function session(document: CashDocument, path = 'Cash.json'): ArchiveSession {
   };
 }
 
-function setup() {
+function setup(hasToken = true) {
   const document = createEmptyDocument();
   const profile = createFiscalPreset2026();
   profile.confirmed = true;
@@ -174,6 +174,7 @@ function setup() {
   function Harness() {
     controller = useQuoteController({
       doc: document,
+      hasToken,
       appState: state,
       activeQuoteId: quote.id,
       setActiveQuoteId,
@@ -210,6 +211,17 @@ function setup() {
 }
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
+  it('senza token locale blocca ricerca ed export ma consente modifiche locali', async () => {
+    const { state, controller, operations, verifyProduct, exportQuote } =
+      setup(false);
+    await controller.searchRemoteClients('Cliente');
+    expect(state.error?.code).toBe('CREDENTIALS');
+    expect(await operations.performExport()).toBe(false);
+    expect(verifyProduct).not.toHaveBeenCalled();
+    expect(exportQuote).not.toHaveBeenCalled();
+    expect(controller.addItem('Lavoro offline')).toBe(true);
+    expect(state.document?.quotes[0]?.client?.displayName).toBe('Cliente');
+  });
   it('richiede conferma esplicita per associare un profilo di un altro anno', () => {
     const { state, document, controller, quote } = setup();
     const profile = createFiscalPreset2026();
