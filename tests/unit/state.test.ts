@@ -136,14 +136,18 @@ describe('coordinatore autosalvataggio', () => {
     appState.mutate((document) => {
       document.settings.fuelTerritory = 'Sicilia';
     });
+    vi.mocked(cash.setDirty).mockClear();
     completeFirst(ok(session(createEmptyDocument(), 2)));
     await saving;
+    expect(cash.setDirty).toHaveBeenCalledWith(true);
+    expect(cash.setDirty).not.toHaveBeenCalledWith(false);
     await vi.runAllTimersAsync();
     await Promise.resolve();
     expect(save).toHaveBeenCalledTimes(2);
     expect(appState.document?.settings.fuelTerritory).toBe('Sicilia');
     expect(appState.session?.token.revision).toBe(3);
     expect(appState.status).toBe('Salvato');
+    expect(cash.setDirty).toHaveBeenLastCalledWith(false);
     vi.unstubAllGlobals();
   });
 

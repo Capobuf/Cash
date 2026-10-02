@@ -215,7 +215,6 @@ function registerHandlers(): void {
       const result = await saveArchive(path, document, token);
       if (result.ok) {
         current = result.value;
-        dirty = false;
       }
       return result;
     },
