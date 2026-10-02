@@ -84,7 +84,13 @@ export function ResourcesView({
       }
     >
   >({});
-  const otherSites = doc.sites.filter((site) => !site.client);
+  const siteGroups = [
+    {
+      label: 'Sedi associate ai clienti',
+      sites: doc.sites.filter((site) => site.client),
+    },
+    { label: 'Altre sedi', sites: doc.sites.filter((site) => !site.client) },
+  ];
   const annualCosts = doc.businessCosts
     .reduce((sum, cost) => sum + Number(cost.monthlyAmount) * 12, 0)
     .toFixed(2);
@@ -194,7 +200,7 @@ export function ResourcesView({
           </TabsTrigger>
           <TabsTrigger value="sites">
             <Building2 />
-            Altre sedi
+            Sedi
           </TabsTrigger>
         </TabsList>
 
@@ -373,9 +379,10 @@ export function ResourcesView({
           <Card>
             <CardHeader>
               <div>
-                <CardTitle>Altre sedi</CardTitle>
+                <CardTitle>Sedi Cash</CardTitle>
                 <CardDescription>
-                  Luoghi indipendenti, inclusa l’eventuale partenza globale.
+                  Gestione locale di tutte le Sedi. I riferimenti cliente
+                  salvati non sono dati live FIC.
                 </CardDescription>
               </div>
               <CardAction>
@@ -385,59 +392,70 @@ export function ResourcesView({
                 </Button>
               </CardAction>
             </CardHeader>
-            <CardContent>
-              {otherSites.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Indirizzo</TableHead>
-                      <TableHead>Coordinate</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {otherSites.map((site) => (
-                      <TableRow key={site.id}>
-                        <TableCell>
-                          <span className="font-medium">{site.name}</span>
-                          {doc.settings.defaultDepartureSiteId === site.id ? (
-                            <Badge className="ml-2" variant="outline">
-                              Partenza predefinita
-                            </Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>{site.address ?? 'Non indicato'}</TableCell>
-                        <TableCell>
-                          {site.location
-                            ? `${site.location.coordinates.longitude}, ${site.location.coordinates.latitude}`
-                            : 'Da localizzare'}
-                        </TableCell>
-                        <TableCell>
-                          <RowMenu
-                            label={site.name}
-                            onEdit={() =>
-                              setEditor({ kind: 'site', id: site.id })
-                            }
-                            onDelete={() =>
-                              requestDelete({
-                                kind: 'site',
-                                id: site.id,
-                                label: site.name,
-                              })
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <Empty
-                  title="Nessuna altra sede"
-                  onAction={() => setEditor({ kind: 'site' })}
-                />
-              )}
+            <CardContent className="space-y-6">
+              {siteGroups.map(({ label, sites }) => (
+                <section key={label} className="space-y-3">
+                  <h3 className="font-medium">{label}</h3>
+                  {sites.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Cliente (riferimento salvato)</TableHead>
+                          <TableHead>Indirizzo</TableHead>
+                          <TableHead>Coordinate</TableHead>
+                          <TableHead />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sites.map((site) => (
+                          <TableRow key={site.id}>
+                            <TableCell>
+                              <span className="font-medium">{site.name}</span>
+                              {doc.settings.defaultDepartureSiteId ===
+                              site.id ? (
+                                <Badge className="ml-2" variant="outline">
+                                  Partenza predefinita
+                                </Badge>
+                              ) : null}
+                            </TableCell>
+                            <TableCell>
+                              {site.client?.displayName ?? 'Nessuno'}
+                            </TableCell>
+                            <TableCell>
+                              {site.address ?? 'Non indicato'}
+                            </TableCell>
+                            <TableCell>
+                              {site.location
+                                ? `${site.location.coordinates.longitude}, ${site.location.coordinates.latitude}`
+                                : 'Da localizzare'}
+                            </TableCell>
+                            <TableCell>
+                              <RowMenu
+                                label={site.name}
+                                onEdit={() =>
+                                  setEditor({ kind: 'site', id: site.id })
+                                }
+                                onDelete={() =>
+                                  requestDelete({
+                                    kind: 'site',
+                                    id: site.id,
+                                    label: site.name,
+                                  })
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Nessuna sede in questo gruppo.
+                    </p>
+                  )}
+                </section>
+              ))}
             </CardContent>
           </Card>
         </TabsContent>

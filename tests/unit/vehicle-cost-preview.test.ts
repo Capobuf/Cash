@@ -54,6 +54,35 @@ vi.mock('@/components/ui/button', () => ({
 }));
 
 describe('verifica live del costo veicolo', () => {
+  it.each([false, true])(
+    'mostra anche le sedi associate senza chiamate FIC (attivo: %s)',
+    (enabled) => {
+      const doc = createEmptyDocument();
+      doc.settings.fic.enabled = enabled;
+      doc.sites.push({
+        ...meta(),
+        name: 'Ufficio cliente',
+        client: {
+          source: 'fatture_in_cloud',
+          companyId: '1',
+          clientId: '2',
+          displayName: 'Cliente storico',
+        },
+      });
+      harness.calls = 0;
+      const markup = renderToStaticMarkup(
+        createElement(ResourcesView, {
+          doc,
+          appState: new AppState(),
+          requestDelete: vi.fn(),
+        }),
+      );
+      expect(markup).toContain('Ufficio cliente');
+      expect(markup).toContain('Cliente storico');
+      expect(markup).toContain('riferimento salvato');
+      expect(markup).toContain('Altre sedi');
+    },
+  );
   beforeEach(() => {
     harness.previews = {};
     harness.check = undefined;

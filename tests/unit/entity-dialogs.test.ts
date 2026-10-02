@@ -6,8 +6,11 @@ import {
 } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument } from '../../src/domain/model';
-import { VehicleDialog } from '../../src/renderer/components/EntityDialogs';
+import { createEmptyDocument, meta } from '../../src/domain/model';
+import {
+  VehicleDialog,
+  SiteDialog,
+} from '../../src/renderer/components/EntityDialogs';
 import { AppState } from '../../src/renderer/state';
 
 const form = vi.hoisted(() => ({
@@ -60,6 +63,53 @@ describe('salvataggio dal dialogo veicolo', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it('modifica una sede associata offline preservando il riferimento cliente', () => {
+    const document = createEmptyDocument();
+    const site = {
+      ...meta(),
+      name: 'Sede',
+      address: 'Via Roma 1',
+      client: {
+        source: 'fatture_in_cloud' as const,
+        companyId: '1',
+        clientId: '2',
+        displayName: 'Cliente storico',
+      },
+    };
+    document.sites.push(site);
+    const state = new AppState();
+    state.acceptNativeSession({
+      path: 'Cash.json',
+      document,
+      readOnly: false,
+      token: {
+        documentId: document.documentId,
+        revision: document.revision,
+        fingerprint: 'hash',
+      },
+    });
+    const onOpenChange = vi.fn();
+    renderToStaticMarkup(
+      createElement(SiteDialog, {
+        open: true,
+        appState: state,
+        doc: document,
+        site,
+        onOpenChange,
+      }),
+    );
+    form.submit!({
+      preventDefault: vi.fn(),
+      currentTarget: {},
+    } as unknown as FormEvent<HTMLFormElement>);
+    expect(state.document?.sites[0]).toMatchObject({
+      name: 'Auto',
+      client: site.client,
+      address: site.address,
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it.each([true, false])(
