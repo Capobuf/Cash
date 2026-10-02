@@ -7,6 +7,7 @@ import {
   err,
   nowIso,
   ok,
+  touch,
   type BusinessCost,
   type EconomicProfile,
   type FoiEvidence,
@@ -72,6 +73,7 @@ export async function refreshQuote(
       );
       if (!evidence.ok) return evidence;
       item.referencePrice.foiEvidence = evidence.value;
+      touch(item);
     }
     for (const sub of item.subItems) {
       if (sub.kind !== 'travel') continue;
@@ -95,6 +97,8 @@ export async function refreshQuote(
       sub.vehicleName = vehicle.name;
       sub.vehicleCostPerKm = vehicleCost.value.costPerKm;
       sub.fuelEvidence = fuel.value;
+      touch(sub);
+      touch(item);
       if (
         sub.distanceKmPerOccurrence !== undefined ||
         sub.travelMinutesPerOccurrence !== undefined
@@ -114,5 +118,6 @@ export async function refreshQuote(
   }
   next.snapshotRevision += 1;
   next.snapshotUpdatedAt = nowIso();
+  touch(next);
   return ok(next);
 }

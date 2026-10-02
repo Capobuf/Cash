@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { cloneReusableSubItem } from '../../../domain/catalog';
 import {
   meta,
+  touch,
   type ReusableSubItem,
   type SubItemDefinition,
   type Template,
@@ -81,6 +82,7 @@ export function TemplateWorkspace({
     setDraft((current) => {
       const next = structuredClone(current);
       mutate(next);
+      touch(next);
       return next;
     });
   };
@@ -218,7 +220,7 @@ export function TemplateWorkspace({
               hasReusableItems={reusableItems.length > 0}
               onRename={(name) =>
                 updateDraft((next) => {
-                  next.items[itemIndex]!.name = name;
+                  touch(next.items[itemIndex]!).name = name;
                 })
               }
               onDelete={() =>
@@ -229,8 +231,9 @@ export function TemplateWorkspace({
               onReferenceChange={(referencePrice) =>
                 updateDraft((next) => {
                   if (referencePrice)
-                    next.items[itemIndex]!.referencePrice = referencePrice;
-                  else delete next.items[itemIndex]!.referencePrice;
+                    touch(next.items[itemIndex]!).referencePrice =
+                      referencePrice;
+                  else delete touch(next.items[itemIndex]!).referencePrice;
                 })
               }
               onEditSub={(subIndex) => setBaseEditor({ itemIndex, subIndex })}
@@ -240,7 +243,7 @@ export function TemplateWorkspace({
               onAddReusable={() => setPickerItemIndex(itemIndex)}
               onVariantsChange={(groups) =>
                 updateDraft((next) => {
-                  next.items[itemIndex]!.variantGroups = groups;
+                  touch(next.items[itemIndex]!).variantGroups = groups;
                 })
               }
               onDefinition={(
@@ -291,7 +294,9 @@ export function TemplateWorkspace({
           onClose={() => setBaseEditor(undefined)}
           onSave={(value) => {
             updateDraft((next) => {
-              const subItems = next.items[baseEditor.itemIndex]!.subItems;
+              const subItems = touch(
+                next.items[baseEditor.itemIndex]!,
+              ).subItems;
               if (baseEditor.subIndex === undefined) subItems.push(value);
               else subItems[baseEditor.subIndex] = value;
             });
@@ -302,7 +307,7 @@ export function TemplateWorkspace({
               ? undefined
               : () => {
                   updateDraft((next) => {
-                    next.items[baseEditor.itemIndex]!.subItems.splice(
+                    touch(next.items[baseEditor.itemIndex]!).subItems.splice(
                       baseEditor.subIndex!,
                       1,
                     );
@@ -322,10 +327,13 @@ export function TemplateWorkspace({
           onClose={() => setDefinitionEditor(undefined)}
           onSave={(value) => {
             updateDraft((next) => {
-              const subItems =
-                next.items[definitionEditor.itemIndex]!.variantGroups[
-                  definitionEditor.groupIndex
-                ]!.options[definitionEditor.optionIndex]!.subItems;
+              const subItems = touch(
+                touch(
+                  touch(next.items[definitionEditor.itemIndex]!).variantGroups[
+                    definitionEditor.groupIndex
+                  ]!,
+                ).options[definitionEditor.optionIndex]!,
+              ).subItems;
               if (definitionEditor.definitionIndex === undefined)
                 subItems.push(value);
               else subItems[definitionEditor.definitionIndex] = value;
@@ -337,12 +345,12 @@ export function TemplateWorkspace({
               ? undefined
               : () => {
                   updateDraft((next) => {
-                    next.items[definitionEditor.itemIndex]!.variantGroups[
-                      definitionEditor.groupIndex
-                    ]!.options[definitionEditor.optionIndex]!.subItems.splice(
-                      definitionEditor.definitionIndex!,
-                      1,
-                    );
+                    touch(
+                      touch(
+                        touch(next.items[definitionEditor.itemIndex]!)
+                          .variantGroups[definitionEditor.groupIndex]!,
+                      ).options[definitionEditor.optionIndex]!,
+                    ).subItems.splice(definitionEditor.definitionIndex!, 1);
                   });
                   setDefinitionEditor(undefined);
                 }
@@ -356,7 +364,7 @@ export function TemplateWorkspace({
           onClose={() => setPickerItemIndex(undefined)}
           onSelect={(item) => {
             updateDraft((next) => {
-              next.items[pickerItemIndex]!.subItems.push(
+              touch(next.items[pickerItemIndex]!).subItems.push(
                 cloneReusableSubItem(item),
               );
             });

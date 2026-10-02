@@ -97,6 +97,7 @@ function setup(hasToken = true) {
     subItems: [
       {
         ...travel,
+        ...meta(),
         vehicleId: vehicle.id,
         totalDistanceKm: '40.0',
         totalMinutes: 60,
@@ -211,6 +212,49 @@ function setup(hasToken = true) {
 }
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
+  it('updates item and aggregate timestamps without changing identities', () => {
+    const { state, controller, quote, item, document } = setup();
+    const time = new Date(Date.now() + 1000);
+    vi.setSystemTime(time);
+    expect(controller.updateChosenPrice(item.id, '150')).toBe(true);
+    const changed = state.document!.quotes[0]!;
+    expect(changed).toMatchObject({
+      id: quote.id,
+      createdAt: quote.createdAt,
+      updatedAt: time.toISOString(),
+    });
+    expect(changed.items[0]).toMatchObject({
+      id: item.id,
+      createdAt: item.createdAt,
+      updatedAt: time.toISOString(),
+      chosenPrice: '150.00',
+    });
+    expect(changed.items[0]!.subItems[0]!.updatedAt).toBe(
+      item.subItems[0]!.updatedAt,
+    );
+    expect(state.document!.vehicles[0]!.updatedAt).toBe(
+      document.vehicles[0]!.updatedAt,
+    );
+  });
+  it.each([
+    'saveTravel',
+    'addReusable',
+    'switchVariant',
+    'insertTemplate',
+    'performRefresh',
+    'performExport',
+  ] as const)('touches the quote after %s', async (operation) => {
+    const { state, operations, complete, quote } = setup();
+    const time = new Date(Date.now() + 1000);
+    vi.setSystemTime(time);
+    complete();
+    expect(await operations[operation]()).toBe(true);
+    expect(state.document!.quotes[0]).toMatchObject({
+      id: quote.id,
+      createdAt: quote.createdAt,
+      updatedAt: time.toISOString(),
+    });
+  });
   it('senza token locale blocca ricerca ed export ma consente modifiche locali', async () => {
     const { state, controller, operations, verifyProduct, exportQuote } =
       setup(false);

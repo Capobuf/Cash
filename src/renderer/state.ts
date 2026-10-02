@@ -1,6 +1,7 @@
 import {
   CURRENT_SCHEMA_VERSION,
   createEmptyDocument,
+  touch,
   type BankExpenseImportSummary,
   type CashDocument,
   type CashError,
@@ -387,11 +388,14 @@ export class AppState {
   markExportForVerification(quoteId: string, attemptId: string): boolean {
     if (!this.session?.document) return false;
     const document = structuredClone(this.session.document);
-    const attempt = document.quotes
-      .find((quote) => quote.id === quoteId)
-      ?.exportAttempts.find((entry) => entry.id === attemptId);
-    if (!attempt) return false;
+    const quote = document.quotes.find((quote) => quote.id === quoteId);
+    const attempt = quote?.exportAttempts.find(
+      (entry) => entry.id === attemptId,
+    );
+    if (!attempt || !quote) return false;
     attempt.outcome = 'uncertain';
+    touch(attempt);
+    touch(quote);
     this.session = { ...this.session, document };
     // Keep the unsaved response without scheduling another save after a failure.
     if (this.timer) window.clearTimeout(this.timer);

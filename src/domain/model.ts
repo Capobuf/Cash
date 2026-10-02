@@ -470,6 +470,12 @@ export const meta = (): EntityMeta => {
   return { id: newId(), createdAt: time, updatedAt: time };
 };
 
+// Call on the edited entity and its aggregate parents, never on source snapshots.
+export function touch<T extends { updatedAt: string }>(entity: T): T {
+  entity.updatedAt = nowIso();
+  return entity;
+}
+
 export const createTaxCategory = (): BankExpenseCategory => ({
   ...meta(),
   name: 'Imposte P.IVA',

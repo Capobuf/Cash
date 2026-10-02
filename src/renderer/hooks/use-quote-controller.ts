@@ -13,6 +13,7 @@ import { buildExportLines, createPendingAttempt } from '../../domain/export';
 import { snapshotSite } from '../../domain/locations';
 import {
   meta,
+  touch,
   type CashDocument,
   type FicClientSnapshot,
   type Quote,
@@ -263,7 +264,9 @@ export function useQuoteController({
         : updates.mainSiteId || undefined;
     const site = doc.sites.find((entry) => entry.id === siteId);
     const updated = appState.mutate((document) => {
-      const target = document.quotes.find((entry) => entry.id === quote.id)!;
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
       target.date = date;
       target.profileId = profile?.id;
       target.profileSnapshot = snapshot?.ok ? snapshot.value : undefined;
@@ -311,26 +314,28 @@ export function useQuoteController({
   const addItem = (name: string) => {
     if (!quote || !name.trim()) return false;
     return appState.mutate((document) =>
-      document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.push({
+      touch(document.quotes.find((entry) => entry.id === quote.id)!).items.push(
+        {
           ...meta(),
           name: name.trim(),
           subItems: [],
           variantGroups: [],
           variantSelections: [],
-        }),
+        },
+      ),
     );
   };
 
   const renameItem = (itemId: string, name: string) => {
     if (!quote || !name.trim()) return false;
     return appState.mutate((document) => {
-      const item = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.find((entry) => entry.id === itemId)!;
+      const item = touch(
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).items.find((entry) => entry.id === itemId)!,
+      );
       item.name = name.trim();
-      item.updatedAt = new Date().toISOString();
+      touch(item);
     });
   };
 
@@ -346,9 +351,11 @@ export function useQuoteController({
       return false;
     }
     return appState.mutate((document) => {
-      const item = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.find((entry) => entry.id === itemId)!;
+      const item = touch(
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).items.find((entry) => entry.id === itemId)!,
+      );
       item.chosenPrice = value ? Number(value).toFixed(2) : undefined;
     });
   };
@@ -361,9 +368,11 @@ export function useQuoteController({
     if (!quote) return false;
     if (!referenceAmount && !referencePeriod) {
       return appState.mutate((document) => {
-        delete document.quotes
-          .find((entry) => entry.id === quote.id)!
-          .items.find((entry) => entry.id === itemId)!.referencePrice;
+        delete touch(
+          touch(
+            document.quotes.find((entry) => entry.id === quote.id)!,
+          ).items.find((entry) => entry.id === itemId)!,
+        ).referencePrice;
       });
     }
     if (
@@ -383,9 +392,11 @@ export function useQuoteController({
     }
     const normalizedAmount = Number(referenceAmount).toFixed(2);
     return appState.mutate((document) => {
-      const item = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.find((entry) => entry.id === itemId)!;
+      const item = touch(
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).items.find((entry) => entry.id === itemId)!,
+      );
       if (
         item.referencePrice?.amount === normalizedAmount &&
         item.referencePrice.period === referencePeriod
@@ -427,15 +438,17 @@ export function useQuoteController({
       return false;
     }
     return appState.mutate((document) => {
-      const item = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.find((entry) => entry.id === itemId)!;
+      const item = touch(
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).items.find((entry) => entry.id === itemId)!,
+      );
       const existing = item.subItems.find((entry) => entry.id === subId);
       if (existing && input.kind === 'time' && existing.kind === 'time') {
         existing.description = input.description.trim();
         existing.minutes = input.minutes;
         if (existing.variantOwner) existing.manuallyModified = true;
-        existing.updatedAt = new Date().toISOString();
+        touch(existing);
       } else if (
         existing &&
         input.kind === 'expense' &&
@@ -444,7 +457,7 @@ export function useQuoteController({
         existing.description = input.description.trim();
         existing.amount = Number(input.amount).toFixed(2);
         if (existing.variantOwner) existing.manuallyModified = true;
-        existing.updatedAt = new Date().toISOString();
+        touch(existing);
       } else
         item.subItems.push(
           input.kind === 'time'
@@ -484,9 +497,11 @@ export function useQuoteController({
     if (!isCurrent()) return false;
     if (!built) return false;
     return appState.mutate((document) => {
-      const item = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.find((entry) => entry.id === itemId)!;
+      const item = touch(
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).items.find((entry) => entry.id === itemId)!,
+      );
       const index = item.subItems.findIndex((entry) => entry.id === subId);
       if (index >= 0) {
         const previous = item.subItems[index]!;
@@ -530,10 +545,11 @@ export function useQuoteController({
     if (!isCurrent()) return false;
     if (!sub) return false;
     return appState.mutate((document) =>
-      document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.find((entry) => entry.id === itemId)!
-        .subItems.push(sub!),
+      touch(
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).items.find((entry) => entry.id === itemId)!,
+      ).subItems.push(sub!),
     );
   };
 
@@ -590,9 +606,11 @@ export function useQuoteController({
     }
     return appState.mutate((document) =>
       Object.assign(
-        document.quotes
-          .find((entry) => entry.id === quote.id)!
-          .items.find((entry) => entry.id === itemId)!,
+        touch(
+          touch(
+            document.quotes.find((entry) => entry.id === quote.id)!,
+          ).items.find((entry) => entry.id === itemId)!,
+        ),
         result.value,
       ),
     );
@@ -696,9 +714,9 @@ export function useQuoteController({
       prepared.push(applied.value);
     }
     return appState.mutate((document) =>
-      document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .items.push(...prepared),
+      touch(document.quotes.find((entry) => entry.id === quote.id)!).items.push(
+        ...prepared,
+      ),
     );
   };
 
@@ -799,8 +817,9 @@ export function useQuoteController({
     ) {
       if (
         !appState.mutate((document) => {
-          document.quotes.find((entry) => entry.id === quote.id)!.client =
-            client;
+          touch(
+            document.quotes.find((entry) => entry.id === quote.id)!,
+          ).client = client;
         })
       )
         return false;
@@ -813,9 +832,9 @@ export function useQuoteController({
     const attempt = createPendingAttempt(fic.company.id, built.value);
     if (
       !appState.mutate((document) =>
-        document.quotes
-          .find((entry) => entry.id === quote.id)!
-          .exportAttempts.push(attempt),
+        touch(
+          document.quotes.find((entry) => entry.id === quote.id)!,
+        ).exportAttempts.push(attempt),
       )
     )
       return false;
@@ -886,10 +905,10 @@ export function useQuoteController({
     };
     if (!isCurrent()) return reportUnpersistedOutcome();
     const recorded = appState.mutate((document) => {
-      const saved = document.quotes
-        .find((entry) => entry.id === quote.id)!
-        .exportAttempts.find((entry) => entry.id === attempt.id)!;
-      saved.updatedAt = new Date().toISOString();
+      const saved = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      ).exportAttempts.find((entry) => entry.id === attempt.id)!;
+      touch(saved);
       if (sent.ok) {
         saved.outcome = sent.value.outcome;
         saved.remoteDocumentId = sent.value.remoteDocumentId;

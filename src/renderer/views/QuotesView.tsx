@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateQuote } from '../../domain/calculations';
-import type { CashDocument, QuoteItem } from '../../domain/model';
+import { touch, type CashDocument, type QuoteItem } from '../../domain/model';
 import { Analysis } from '@/components/Analysis';
 import {
   CatalogPickerDialog,
@@ -175,6 +175,7 @@ export function QuotesView({
       const target = document.quotes.find((entry) => entry.id === quote.id)!;
       if (typeof selection !== 'string') target.client = selection;
       else if (!selection) target.client = undefined;
+      touch(target);
     });
   };
 

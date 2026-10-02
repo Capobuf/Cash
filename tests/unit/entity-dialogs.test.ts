@@ -91,6 +91,7 @@ describe('salvataggio dal dialogo veicolo', () => {
       },
     });
     const onOpenChange = vi.fn();
+    vi.setSystemTime(new Date(Date.now() + 1000));
     renderToStaticMarkup(
       createElement(SiteDialog, {
         open: true,
@@ -108,6 +109,9 @@ describe('salvataggio dal dialogo veicolo', () => {
       name: 'Auto',
       client: site.client,
       address: site.address,
+      id: site.id,
+      createdAt: site.createdAt,
+      updatedAt: new Date().toISOString(),
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

@@ -2,6 +2,7 @@ import {
   err,
   meta,
   ok,
+  touch,
   type QuoteItem,
   type QuoteSubItem,
   type Result,
@@ -129,7 +130,7 @@ export function applyVariantSelections(
     ...generated,
   ];
   next.variantSelections = selections;
-  return ok(next);
+  return ok(touch(next));
 }
 
 export function variantChangeWarnings(
@@ -188,5 +189,5 @@ export function changeVariant(
     ...next.variantSelections.filter((value) => value.groupId !== groupId),
     { groupId, optionId },
   ];
-  return ok(next);
+  return ok(touch(next));
 }

@@ -7,7 +7,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
-import { type CashDocument } from '../domain/model';
+import { touch, type CashDocument } from '../domain/model';
 import { copyProfileToYear } from '../domain/profiles';
 import { createQuote as buildQuote } from '../domain/quotes';
 import { AppShell, DeleteDialog, Onboarding } from '@/components/Layout';
@@ -217,14 +217,21 @@ export function App() {
           (entry) => entry.id === activeQuoteId,
         );
         if (quote)
-          quote.items = quote.items.filter((entry) => entry.id !== target.id);
+          touch(quote).items = quote.items.filter(
+            (entry) => entry.id !== target.id,
+          );
       } else if (target.kind === 'sub') {
         const [itemId, subId] = target.id.split(':');
-        const item = document.quotes
-          .find((entry) => entry.id === activeQuoteId)
-          ?.items.find((entry) => entry.id === itemId);
-        if (item)
-          item.subItems = item.subItems.filter((entry) => entry.id !== subId);
+        const quote = document.quotes.find(
+          (entry) => entry.id === activeQuoteId,
+        );
+        const item = quote?.items.find((entry) => entry.id === itemId);
+        if (item && quote) {
+          touch(item).subItems = item.subItems.filter(
+            (entry) => entry.id !== subId,
+          );
+          touch(quote);
+        }
       } else {
         const unsupportedKind: never = target.kind;
         throw new Error(`Unsupported deletion target: ${unsupportedKind}`);

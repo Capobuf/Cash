@@ -1,7 +1,6 @@
 import {
   err,
   meta,
-  nowIso,
   ok,
   type QuoteItem,
   type QuoteSubItem,
@@ -178,8 +177,4 @@ export function templateFromQuote(
       };
     }),
   });
-}
-
-export function touch<T extends { updatedAt: string }>(entity: T): T {
-  return { ...entity, updatedAt: nowIso() };
 }

@@ -12,6 +12,7 @@ import {
 import { useState } from 'react';
 import {
   meta,
+  touch,
   type SubItemDefinition,
   type TemplateItem,
   type VariantGroup,
@@ -308,7 +309,7 @@ function TemplateVariants({
                 value={group.name}
                 onChange={(event) =>
                   update((groups) => {
-                    groups[groupIndex]!.name = event.target.value;
+                    touch(groups[groupIndex]!).name = event.target.value;
                   })
                 }
                 placeholder="es. Gestione cliente"
@@ -351,7 +352,7 @@ function TemplateVariants({
               value={group.defaultOptionId ?? ''}
               onChange={(event) =>
                 update((groups) => {
-                  const current = groups[groupIndex]!;
+                  const current = touch(groups[groupIndex]!);
                   current.defaultOptionId = event.target.value || undefined;
                 })
               }
@@ -392,8 +393,9 @@ function TemplateVariants({
                         value={option.name}
                         onChange={(event) =>
                           update((groups) => {
-                            groups[groupIndex]!.options[optionIndex]!.name =
-                              event.target.value;
+                            touch(
+                              touch(groups[groupIndex]!).options[optionIndex]!,
+                            ).name = event.target.value;
                           })
                         }
                         aria-label={`Nome opzione ${optionIndex + 1}`}
@@ -431,7 +433,7 @@ function TemplateVariants({
                           disabled={group.options.length === 1}
                           onClick={() =>
                             update((groups) => {
-                              const current = groups[groupIndex]!;
+                              const current = touch(groups[groupIndex]!);
                               current.options.splice(optionIndex, 1);
                               if (current.defaultOptionId === option.id)
                                 current.defaultOptionId = undefined;
@@ -499,7 +501,7 @@ function TemplateVariants({
                 subItems: [],
               };
               update((groups) => {
-                groups[groupIndex]!.options.push(option);
+                touch(groups[groupIndex]!).options.push(option);
               });
               setExpandedOptionId(option.id);
             }}
