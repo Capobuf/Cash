@@ -139,6 +139,20 @@ function migrateV3(raw: Record<string, unknown>): Record<string, unknown> {
     settings:{...(raw.settings as Record<string,unknown>),defaultDepartureSiteId:undefined,defaultVehicleId:undefined} };
 }
 
+function migrateLegacyDocument(raw: Record<string, unknown>, fromVersion: number): Result<CashDocument> {
+  const v3 = fromVersion === 1 ? migrateV2Record(migrateV1(raw)) : fromVersion === 2 ? migrateV2Record(raw) : raw;
+  const blockers = fromVersion >= 4 ? [] : findV3Blockers(v3);
+  if (blockers.length) return err({ code: 'MIGRATION_REQUIRED', source: 'archive',
+    message: 'La migrazione automatica è bloccata per evitare una conversione arbitraria dei dati storici.',
+    action: 'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.', details: blockers });
+  const v4 = fromVersion >= 4 ? raw : migrateV3(v3);
+  const categories = (v4.bankExpenseCategories ?? []) as Array<Record<string, unknown>>;
+  const { financialProvisions: _discardedProvisions, ...withoutProvisions } = v4;
+  const migrated = cashDocumentSchema.safeParse({ ...withoutProvisions, schemaVersion: CURRENT_SCHEMA_VERSION,
+    bankExpenseCategories: categories.some(category => category.systemRole === 'vat_taxes') ? categories : [...categories, createTaxCategory()] });
+  return migrated.success ? ok(migrated.data) : err(validationErrorFromIssues(migrated.error.issues));
+}
+
 export async function migrateArchive(path: string): Promise<Result<ArchiveSession>> {
   let temp: string | undefined;
   try {
@@ -146,16 +160,11 @@ export async function migrateArchive(path: string): Promise<Result<ArchiveSessio
     const parsed = parseJson(before); if (!parsed.ok) return parsed;
     const preview = await previewMigration(path); if (!preview.ok) return preview;
     const raw = parsed.value as Record<string, unknown>;
-    if(preview.value.blockers.length)return err({code:'MIGRATION_REQUIRED',source:'archive',message:'La migrazione automatica è bloccata per evitare una conversione arbitraria dei dati storici.',action:'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.',details:preview.value.blockers});
-    const v3=preview.value.fromVersion===1?migrateV2Record(migrateV1(raw)):preview.value.fromVersion===2?migrateV2Record(raw):raw;
-    const v4 = preview.value.fromVersion >= 4 ? raw : migrateV3(v3);
-    const categories = (v4.bankExpenseCategories ?? []) as Array<Record<string, unknown>>;
-    const { financialProvisions: _discardedProvisions, ...withoutProvisions } = v4;
-    const migrated = parseDocument({ ...withoutProvisions, schemaVersion: CURRENT_SCHEMA_VERSION,
-      bankExpenseCategories: categories.some(category => category.systemRole === 'vat_taxes') ? categories : [...categories, createTaxCategory()] });
+    const migrated = migrateLegacyDocument(raw, preview.value.fromVersion);
+    if (!migrated.ok) return migrated;
     await copyFile(path, preview.value.backupPath);
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
-    const bytes = encode(migrated);
+    const bytes = encode(migrated.value);
     const handle = await open(temp, 'wx');
     try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
     parseDocument(JSON.parse((await readFile(temp)).toString('utf8')));
@@ -243,11 +252,22 @@ export async function restoreBackup(path: string, token: ConcurrencyToken): Prom
     const mainBytes=await readFile(path);const header=documentHeaderSchema.safeParse(JSON.parse(mainBytes.toString('utf8')));
     if(!header.success||header.data.documentId!==token.documentId||header.data.revision!==token.revision||sha256(mainBytes)!==token.fingerprint)
       return err({code:'CONFLICT',source:'archive',message:'Il file principale è cambiato: ripristino bloccato.'});
-    const backupPath=backupPathFor(path);const backupBytes=await readFile(backupPath);const backup=parseDocument(JSON.parse(backupBytes.toString('utf8')));
+    const backupPath = backupPathFor(path);
+    const backupBytes = await readFile(backupPath);
+    const raw = parseJson(backupBytes); if (!raw.ok) return raw;
+    const backupHeader = documentHeaderSchema.safeParse(raw.value);
+    if (!backupHeader.success) return err(validationErrorFromIssues(backupHeader.error.issues));
+    if (backupHeader.data.schemaVersion > CURRENT_SCHEMA_VERSION)
+      return err({ code: 'SCHEMA_NEWER', source: 'archive', message: 'Il backup usa uno schema più recente: aggiorna Cash prima di ripristinarlo.' });
+    const migrated = backupHeader.data.schemaVersion < CURRENT_SCHEMA_VERSION
+      ? migrateLegacyDocument(raw.value as Record<string, unknown>, backupHeader.data.schemaVersion) : ok(raw.value);
+    if (!migrated.ok) return migrated;
+    const backup = cashDocumentSchema.safeParse(migrated.value);
+    if (!backup.success) return err(validationErrorFromIssues(backup.error.issues));
     const now=new Date();const iso=now.toISOString();const stamp=iso.replace(/[:.]/g,'-');const extension=extname(path);const base=basename(path,extension);
     await copyFile(path,join(dirname(path),`${base}.prima-ripristino.${stamp}.json`));
     await copyFile(backupPath,join(dirname(path),`${base}.backup-conservato.${stamp}.json`));
-    const restored=parseDocument({...structuredClone(backup),documentId:randomUUID(),revision:1,createdAt:iso,updatedAt:iso});
+    const restored=parseDocument({...structuredClone(backup.data),documentId:randomUUID(),revision:1,createdAt:iso,updatedAt:iso});
     temp=join(dirname(path),`.${basename(path)}.${randomUUID()}.restore.tmp`);const handle=await open(temp,'wx');
     try{await handle.writeFile(encode(restored));await handle.sync();}finally{await handle.close();}
     parseDocument(JSON.parse((await readFile(temp)).toString('utf8')));await rename(temp,path);temp=undefined;return openArchive(path);

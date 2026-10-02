@@ -6,6 +6,54 @@ import { createEmptyDocument, createFiscalPreset2026, meta } from '../../src/dom
 import { backupPathFor, createArchive, migrateArchive, openArchive, previewMigration, restoreBackup, saveArchive } from '../../src/native/persistence';
 
 describe('persistenza atomica',()=>{
+  it.each([2, 9])('ripristina il backup legacy v%s dopo la migrazione conservando le copie originali', async schemaVersion => {
+    const dir = await mkdtemp(join(tmpdir(), 'cash-legacy-restore-'));
+    const path = join(dir, 'Cash.json');
+    const document = createEmptyDocument();
+    document.profiles.push(createFiscalPreset2026());
+    document.settings.fuelTerritory = 'Lazio';
+    const vehicle = { ...meta(), name: 'Auto', fuel: 'Benzina', consumption: '5.00',
+      consumptionUnit: schemaVersion === 2 ? 'l/100km' : 'km/l', annualKm: '10000',
+      annualInsurance: '500.00', annualTax: '200.00', annualMaintenance: '300.00' };
+    const legacyBytes = JSON.stringify({ ...document, schemaVersion, vehicles: [vehicle] });
+    await writeFile(path, legacyBytes);
+    const migrated = await migrateArchive(path);
+    if (!migrated.ok) throw new Error(migrated.error.message);
+    const migratedBytes = await readFile(path, 'utf8');
+    expect(await readFile(backupPathFor(path), 'utf8')).toBe(legacyBytes);
+    const restored = await restoreBackup(path, migrated.value.token);
+    if (!restored.ok) throw new Error(restored.error.message);
+    expect(restored.value.document).toMatchObject({ schemaVersion: 10, revision: 1,
+      profiles: document.profiles, settings: { fuelTerritory: 'Lazio' },
+      vehicles: [{ ...vehicle, consumption: schemaVersion === 2 ? '20.00' : '5.00', consumptionUnit: 'km/l' }],
+    });
+    expect(restored.value.document?.documentId).not.toBe(document.documentId);
+    expect(await openArchive(path)).toEqual(restored);
+    const files = await readdir(dir);
+    const mainCopy = files.find(name => name.includes('.prima-ripristino.'));
+    const backupCopy = files.find(name => name.includes('.backup-conservato.'));
+    if (!mainCopy || !backupCopy) throw new Error('Copie datate mancanti');
+    expect(await readFile(join(dir, mainCopy), 'utf8')).toBe(migratedBytes);
+    expect(await readFile(join(dir, backupCopy), 'utf8')).toBe(legacyBytes);
+    expect(await readFile(backupPathFor(path), 'utf8')).toBe(legacyBytes);
+  });
+  it.each([
+    { schemaVersion: 3, sites: [{ ...meta(), name: 'Sede legacy', oneWayKm: '20' }], code: 'MIGRATION_REQUIRED' },
+    { schemaVersion: 99, sites: [], code: 'SCHEMA_NEWER' },
+    { schemaVersion: 9, sites: [{ ...meta(), name: '' }], code: 'VALIDATION' },
+  ])('rifiuta il backup non ripristinabile con $code senza scrivere file', async ({ schemaVersion, sites, code }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'cash-restore-error-'));
+    const path = join(dir, 'Cash.json');
+    const created = await createArchive(path, createEmptyDocument());
+    if (!created.ok) throw new Error(created.error.message);
+    const mainBytes = await readFile(path, 'utf8');
+    const backupBytes = JSON.stringify({ ...createEmptyDocument(), schemaVersion, sites });
+    await writeFile(backupPathFor(path), backupBytes);
+    expect(await restoreBackup(path, created.value.token)).toMatchObject({ ok: false, error: { code } });
+    expect(await readFile(path, 'utf8')).toBe(mainBytes);
+    expect(await readFile(backupPathFor(path), 'utf8')).toBe(backupBytes);
+    expect((await readdir(dir)).sort()).toEqual(['Cash.backup.json', 'Cash.json']);
+  });
   it('crea, incrementa, mantiene backup e blocca conflitto hash',async()=>{const dir=await mkdtemp(join(tmpdir(),'cash-'));const path=join(dir,'Cash.data.json');const created=await createArchive(path,createEmptyDocument('2026-09-08T00:00:00.000Z'));expect(created.ok).toBe(true);if(!created.ok)return;expect(created.value.token.revision).toBe(1);const doc=structuredClone(created.value.document!);doc.settings.fuelTerritory='Lazio';const saved=await saveArchive(path,doc,created.value.token);expect(saved.ok).toBe(true);expect(JSON.parse(await readFile(backupPathFor(path),'utf8')).revision).toBe(1);if(!saved.ok)return;const bytes=await readFile(path,'utf8');await writeFile(path,bytes.replace('"Lazio"','"Lazio "'));const conflict=await saveArchive(path,saved.value.document!,saved.value.token);expect(conflict.ok).toBe(false);if(!conflict.ok)expect(conflict.error.code).toBe('CONFLICT');});
   it('apre uno schema più nuovo in sola lettura',async()=>{const dir=await mkdtemp(join(tmpdir(),'cash-'));const path=join(dir,'future.json');const doc=createEmptyDocument();await writeFile(path,JSON.stringify({...doc,schemaVersion:99}));const opened=await openArchive(path);expect(opened.ok&&opened.value.readOnly).toBe(true);});
   it('migra schema 1 esplicitamente con backup e FIC disattivato',async()=>{const dir=await mkdtemp(join(tmpdir(),'cash-'));const path=join(dir,'legacy.json');const current=createEmptyDocument('2026-09-08T00:00:00.000Z');const profile=createFiscalPreset2026();profile.confirmed=true;const fiscal={...profile.fiscal} as Record<string,unknown>;fiscal.substituteTaxRate=fiscal.ordinarySubstituteTaxRate;for(const key of ['activityPhase','reducedEligibilityConfirmed','ordinaryApplicabilityConfirmed','reducedSubstituteTaxRate','ordinarySubstituteTaxRate'])delete fiscal[key];const legacy={...current,schemaVersion:1,settings:{fuelTerritory:'Lazio',ficCompanyId:'10',ficConsultingProductId:'20'},profiles:[{...profile,fiscal}],sites:[],quotes:[]} as Record<string,unknown>;delete legacy.localClients;await writeFile(path,JSON.stringify(legacy));const opened=await openArchive(path);expect(!opened.ok&&opened.error.code).toBe('MIGRATION_REQUIRED');expect((await previewMigration(path)).ok).toBe(true);const migrated=await migrateArchive(path);expect(migrated.ok).toBe(true);if(!migrated.ok)return;expect(migrated.value.document?.schemaVersion).toBe(10);expect(migrated.value.document?.settings.fic).toEqual({enabled:false,legacyReferences:{companyId:'10',productId:'20'}});expect(migrated.value.document?.profiles[0]?.confirmed).toBe(false);expect(JSON.parse(await readFile(backupPathFor(path),'utf8')).schemaVersion).toBe(1);});
