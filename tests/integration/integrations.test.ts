@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+  createPendingAttempt,
+  needsRepeatWarning,
+} from '../../src/domain/export';
+import { meta } from '../../src/domain/model';
 import { parseMimitCsv } from '../../src/native/integrations/mimit';
 import {
   parseFoiSdmxCsv,
@@ -438,6 +443,58 @@ describe('fonti ufficiali', () => {
     ]);
     expect(payload.data.items).toBeUndefined();
   });
+  it.each([
+    [400, 'rejected'],
+    [401, 'rejected'],
+    [403, 'rejected'],
+    [404, 'rejected'],
+    [405, 'rejected'],
+    [409, 'rejected'],
+    [422, 'rejected'],
+    [429, 'rejected'],
+    [408, 'uncertain'],
+    [425, 'uncertain'],
+    [500, 'uncertain'],
+    [502, 'uncertain'],
+    [503, 'uncertain'],
+    [504, 'uncertain'],
+  ] as const)(
+    'classifica HTTP %s come %s e protegge il reinvio',
+    async (status, outcome) => {
+      const fetcher = vi.fn<typeof fetch>(
+        async () => new Response('', { status }),
+      );
+      const result = await exportQuote(
+        {
+          companyId: '1',
+          clientId: '9',
+          productId: '2',
+          product: { id: '2', name: 'Consulenza', vat: { id: '3' } },
+          lines: [],
+          attemptId: 'tentativo-1',
+        },
+        'token',
+        fetcher,
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        value: { outcome, diagnostic: `HTTP ${status}` },
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      if (!result.ok) throw new Error(result.error.message);
+      expect(
+        needsRepeatWarning({
+          ...meta(),
+          date: '2026-10-02',
+          items: [],
+          snapshotRevision: 0,
+          exportAttempts: [
+            { ...createPendingAttempt('1', []), ...result.value },
+          ],
+        }),
+      ).toBe(outcome === 'uncertain');
+    },
+  );
   it('usa Authorization ORS, conserva più risultati e longitude/latitude', async () => {
     const fetcher = vi.fn(
       async () =>

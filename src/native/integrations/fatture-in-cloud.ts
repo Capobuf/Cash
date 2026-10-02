@@ -1114,7 +1114,13 @@ export async function exportQuote(
     return ok({ outcome: 'uncertain', diagnostic: response.error.message });
   if (!response.value.ok)
     return ok({
-      outcome: 'rejected',
+      // Only documented request rejections establish that creation failed.
+      // Server errors and unknown statuses can follow a committed operation.
+      outcome: [400, 401, 403, 404, 405, 409, 422, 429].includes(
+        response.value.status,
+      )
+        ? 'rejected'
+        : 'uncertain',
       diagnostic: `HTTP ${response.value.status}`,
     });
   try {
