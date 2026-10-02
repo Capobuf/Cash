@@ -39,6 +39,41 @@ const quote: Quote = {
   ],
 };
 describe('esportazione deliberata', () => {
+  it('esporta solo le voci scelte anche se le altre sono prive di prezzo', () => {
+    const partial = structuredClone(quote);
+    delete partial.items[1]!.chosenPrice;
+    expect(
+      buildExportLines(partial, [
+        { itemIds: [partial.items[0]!.id], description: 'Solo A' },
+      ]),
+    ).toMatchObject({
+      ok: true,
+      value: [{ description: 'Solo A', amount: '100.00' }],
+    });
+    expect(
+      buildExportLines(partial, [
+        { itemIds: [partial.items[1]!.id], description: 'Solo B' },
+      ]),
+    ).toMatchObject({ ok: false, error: { field: 'chosenPrice' } });
+  });
+  it('richiede almeno una voce e rifiuta duplicati e ID sconosciuti', () => {
+    expect(buildExportLines(quote, []).ok).toBe(false);
+    expect(buildExportLines({ ...quote, items: [] }).ok).toBe(false);
+    expect(
+      buildExportLines(quote, [{ itemIds: [], description: 'Vuoto' }]).ok,
+    ).toBe(false);
+    expect(
+      buildExportLines(quote, [
+        { itemIds: [meta().id], description: 'Assente' },
+      ]).ok,
+    ).toBe(false);
+    expect(
+      buildExportLines(quote, [
+        { itemIds: [quote.items[0]!.id], description: 'A' },
+        { itemIds: [quote.items[0]!.id], description: 'Duplicata' },
+      ]).ok,
+    ).toBe(false);
+  });
   it('crea righe commerciali senza dettagli interni e raggruppa integralmente', () => {
     const lines = buildExportLines(quote, [
       { itemIds: quote.items.map((x) => x.id), description: 'Consulenza' },

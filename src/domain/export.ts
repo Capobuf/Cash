@@ -26,25 +26,19 @@ export function buildExportLines(
       field: 'client',
       message: 'Il cliente appartiene a un’altra azienda Fatture in Cloud.',
     });
-  if (quote.items.some((item) => item.chosenPrice === undefined))
-    return err({
-      code: 'MISSING_DATA',
-      field: 'chosenPrice',
-      message: 'Ogni voce esportata richiede un prezzo scelto.',
-    });
   const byId = new Map(quote.items.map((item) => [item.id, item]));
-  if (!groups)
-    return ok(
-      quote.items.map((item) => ({
-        itemIds: [item.id],
-        description: item.name,
-        amount: item.chosenPrice!,
-        quantity: 1,
-      })),
-    );
+  const selectedGroups =
+    groups ??
+    quote.items.map((item) => ({ itemIds: [item.id], description: item.name }));
+  if (selectedGroups.length === 0)
+    return err({
+      code: 'VALIDATION',
+      field: 'export.groups',
+      message: 'Seleziona almeno una voce da esportare.',
+    });
   const used = new Set<string>();
   const lines: ExportLine[] = [];
-  for (const group of groups) {
+  for (const group of selectedGroups) {
     if (!group.description.trim() || group.itemIds.length === 0)
       return err({
         code: 'VALIDATION',
@@ -60,8 +54,14 @@ export function buildExportLines(
           field: 'export.groups',
           message: 'Voce mancante o presente in più gruppi.',
         });
+      if (item.chosenPrice === undefined)
+        return err({
+          code: 'MISSING_DATA',
+          field: 'chosenPrice',
+          message: 'Ogni voce esportata richiede un prezzo scelto.',
+        });
       used.add(id);
-      amount = amount.plus(item.chosenPrice!);
+      amount = amount.plus(item.chosenPrice);
     }
     lines.push({
       itemIds: [...group.itemIds],
@@ -70,12 +70,6 @@ export function buildExportLines(
       quantity: 1,
     });
   }
-  if (used.size !== quote.items.length)
-    return err({
-      code: 'VALIDATION',
-      field: 'export.groups',
-      message: 'Ogni voce deve comparire una volta nell’anteprima.',
-    });
   return ok(lines);
 }
 

@@ -8,6 +8,7 @@ import {
 } from '../../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -66,27 +67,34 @@ export function ExportDialog({
   );
   const [searching, setSearching] = useState(false);
   const [groupAll, setGroupAll] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() =>
+    quote.items.map((item) => item.id),
+  );
+  const selectedItems = useMemo(
+    () => quote.items.filter((item) => selectedIds.includes(item.id)),
+    [quote.items, selectedIds],
+  );
   const [descriptions, setDescriptions] = useState<Record<string, string>>(() =>
     Object.fromEntries(quote.items.map((item) => [item.id, item.name])),
   );
-  const [allDescription, setAllDescription] = useState(
-    quote.items.map((item) => item.name).join(' + '),
-  );
+  const [allDescription, setAllDescription] = useState<string>();
+  const groupDescription =
+    allDescription ?? selectedItems.map((item) => item.name).join(' + ');
   const [busy, setBusy] = useState(false);
   const groups = useMemo(
     () =>
       groupAll
         ? [
             {
-              itemIds: quote.items.map((item) => item.id),
-              description: allDescription,
+              itemIds: selectedItems.map((item) => item.id),
+              description: groupDescription,
             },
           ]
-        : quote.items.map((item) => ({
+        : selectedItems.map((item) => ({
             itemIds: [item.id],
             description: descriptions[item.id] ?? item.name,
           })),
-    [allDescription, descriptions, groupAll, quote.items],
+    [groupDescription, descriptions, groupAll, selectedItems],
   );
   const preview = client
     ? buildExportLines({ ...quote, client }, groups, companyId)
@@ -168,9 +176,30 @@ export function ExportDialog({
         ) : null}
         {step === 2 ? (
           <div className="space-y-4">
+            <div className="space-y-3 rounded-lg border p-4">
+              <p className="font-medium">Voci da esportare</p>
+              {quote.items.map((item) => (
+                <Field key={item.id} orientation="horizontal">
+                  <Checkbox
+                    id={`export-select-${item.id}`}
+                    checked={selectedIds.includes(item.id)}
+                    onCheckedChange={(checked) =>
+                      setSelectedIds((current) =>
+                        checked
+                          ? [...current, item.id]
+                          : current.filter((id) => id !== item.id),
+                      )
+                    }
+                  />
+                  <FieldLabel htmlFor={`export-select-${item.id}`}>
+                    {item.name} · {eur(item.chosenPrice)}
+                  </FieldLabel>
+                </Field>
+              ))}
+            </div>
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div>
-                <p className="font-medium">Raggruppa tutte le voci</p>
+                <p className="font-medium">Raggruppa le voci selezionate</p>
                 <p className="text-sm text-muted-foreground">
                   Influisce soltanto sulle righe esportate, non sul preventivo.
                 </p>
@@ -184,13 +213,13 @@ export function ExportDialog({
                 </FieldLabel>
                 <Input
                   id="export-all-description"
-                  value={allDescription}
+                  value={groupDescription}
                   onChange={(event) => setAllDescription(event.target.value)}
                 />
               </Field>
             ) : (
               <div className="space-y-3">
-                {quote.items.map((item) => (
+                {selectedItems.map((item) => (
                   <Field key={item.id}>
                     <FieldLabel htmlFor={`export-${item.id}`}>
                       {item.name} · {eur(item.chosenPrice)}
@@ -278,7 +307,8 @@ export function ExportDialog({
               disabled={
                 (step === 1 && !client) ||
                 (step === 2 &&
-                  groups.some((group) => !group.description.trim()))
+                  (selectedItems.length === 0 ||
+                    groups.some((group) => !group.description.trim())))
               }
               onClick={() => setStep((current) => current + 1)}
             >
