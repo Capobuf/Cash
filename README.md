@@ -258,15 +258,34 @@ TypeScript 5.9. `globals` 16.3.0 resta compatibile. Le tre nuove regole recommen
 ESLint 10 sono disattivate esplicitamente per conservare il perimetro del lint precedente.
 La serie ESLint 9 è [fuori supporto](https://eslint.org/version-support/).
 
-Restano warning upstream della toolchain electron-builder 26.15.3:
+Verifica del registro npm del 2 ottobre 2026: ExcelJS 4.4.0 ed electron-builder
+26.15.3 sono le versioni indicate da `latest`. Il tag `v26` di electron-builder
+punta a 26.17.0, che conserva le stesse catene deprecate; il tag `next` è una
+versione alpha. ExcelJS espone anche 4.4.1-prerelease.0, ancora con archiver 5 e
+fast-csv 4. Non emerge un aggiornamento stabile delle dipendenze dirette che
+rimuova i warning, quindi le versioni applicative restano invariate.
+
+Il lockfile contiene sei pacchetti deprecati, tutti transitivi. Catene ExcelJS 4.4.0:
+
+- `exceljs → archiver@5.3.2 → archiver-utils@2.1.0 → glob@7.2.3 → inflight@1.0.6`
+  (anche tramite `zip-stream → archiver-utils@3.0.4`);
+- `exceljs → unzipper@0.10.14 → fstream@1.0.12 → rimraf@2.6.3 → glob@7.2.3`;
+- `exceljs → fast-csv@4.3.6 → @fast-csv/format@4.3.5 → lodash.isequal@4.5.0`.
+
+Catene della toolchain electron-builder 26.15.3:
 
 - `app-builder-lib → @electron/asar@3.4.1 → glob@7.2.3 → inflight@1.0.6`;
 - `app-builder-lib → @electron/get@3.1.0 → global-agent@3.0.0 → boolean@3.2.0`
   (anche tramite `roarr`);
 - `app-builder-lib → electron-builder-squirrel-windows → electron-winstaller → temp → rimraf@2.6.3`.
 
-Queste catene restano anche nella linea 26.17.0 esaminata; non vengono forzate tramite
-`overrides` o dipendenze dirette. Il target di Cash rimane portable, non Squirrel.
+Queste deprecazioni richiedono aggiornamenti upstream: non vengono forzate tramite
+nuovi `overrides` o dipendenze dirette. L'override ExcelJS/uuid già presente non
+riguarda questi sei pacchetti. Il target di Cash rimane portable, non Squirrel.
+Per ripetere la verifica usare `npm view exceljs dist-tags`,
+`npm view electron-builder dist-tags` e
+`npm ls boolean fstream glob inflight lodash.isequal rimraf --all`.
 Per controllare la sicurezza usare sia `npm audit` sia `npm audit --omit=dev`:
 quest'ultimo esclude anche le librerie JavaScript incorporate nel bundle, quindi da solo
-non rappresenta tutta la superficie runtime dell'app.
+non rappresenta tutta la superficie runtime dell'app. Entrambi gli audit del
+2 ottobre 2026 riportano zero vulnerabilità; questo risultato non elimina le deprecazioni.
