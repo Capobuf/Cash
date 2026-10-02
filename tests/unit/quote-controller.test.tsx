@@ -46,9 +46,10 @@ function setup() {
     cash: { setDirty: vi.fn(), archive: { save }, mimit: { latestFuelPrice: vi.fn(async () => { await pending; return ok(fuel); }) },
       fic: { verifyProduct, exportQuote } } });
   const state = new AppState(); state.acceptNativeSession(session(document));
+  const setActiveQuoteId = vi.fn();
   let controller!: ReturnType<typeof useQuoteController>;
   function Harness() {
-    controller = useQuoteController({ doc: document, appState: state, activeQuoteId: quote.id, setActiveQuoteId: vi.fn(), requestDelete: vi.fn() });
+    controller = useQuoteController({ doc: document, appState: state, activeQuoteId: quote.id, setActiveQuoteId, requestDelete: vi.fn() });
     return null;
   }
   renderToStaticMarkup(<Harness />);
@@ -60,7 +61,7 @@ function setup() {
     performRefresh: () => controller.performRefresh(),
     performExport: () => controller.performExport(client, [{ itemIds: [item.id], description: item.name }]),
   };
-  return { state, document, quote, complete, operations, save, verifyProduct, exportQuote };
+  return { state, document, quote, complete, operations, save, verifyProduct, exportQuote, controller, setActiveQuoteId, item };
 }
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
@@ -212,5 +213,59 @@ describe('persistenza dell’esito export', () => {
     expect(test.state.document?.quotes[0]?.exportAttempts[0]).toMatchObject({ outcome: 'uncertain', remoteDocumentId: 'remote-1' });
     expect(test.state.error?.code).toBe('EXPORT_UNCERTAIN');
     expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('esito delle modifiche ai preventivi', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('non segnala aggiornamento o seleziona un nuovo preventivo in sola lettura', () => {
+    const test = setup();
+    test.state.acceptNativeSession({ ...session(test.document), readOnly: true });
+    expect(test.controller.updateQuote({ commission: '10' })).toBe('invalid');
+    expect(test.controller.newQuote()).toBe(false);
+    expect(test.setActiveQuoteId).not.toHaveBeenCalled();
+    expect(test.state.document).toEqual(test.document);
+  });
+
+  it('propaga il rifiuto dello schema senza alterare il preventivo', () => {
+    const test = setup();
+    expect(test.controller.updateQuote({ date: '2026-99-99' })).toBe('invalid');
+    expect(test.state.error?.code).toBe('VALIDATION');
+    expect(test.state.document).toEqual(test.document);
+  });
+
+  it('seleziona il nuovo preventivo solo dopo averlo inserito', () => {
+    const test = setup();
+    expect(test.controller.newQuote()).toBe(true);
+    const selected = test.setActiveQuoteId.mock.calls[0]?.[0];
+    expect(test.state.document?.quotes.some(quote => quote.id === selected)).toBe(true);
+  });
+
+  it('propaga false da tutti i comandi che salvano o chiudono un editor', async () => {
+    const test = setup();
+    const mutate = vi.spyOn(test.state, 'mutate').mockReturnValue(false);
+    const { controller, item } = test;
+    const commands = [
+      () => controller.addItem('Nuova voce'),
+      () => controller.renameItem(item.id, 'Nome aggiornato'),
+      () => controller.updateChosenPrice(item.id, '200'),
+      () => controller.updateReferencePrice(item.id),
+      () => controller.updateReferencePrice(item.id, '100', '2026-01'),
+      () => controller.saveSimpleSub(item.id, { kind: 'time', description: 'Lavoro', minutes: 60 }),
+      () => controller.saveSubToCatalog(item.id, item.subItems[0]!.id),
+      () => controller.saveTemplate('Modello', [item.id]),
+      ...Object.values(test.operations),
+    ];
+    test.complete();
+    for (const command of commands) {
+      mutate.mockClear();
+      expect(await command()).toBe(false);
+      expect(mutate).toHaveBeenCalledOnce();
+    }
+    expect(test.state.document).toEqual(test.document);
+    expect(test.exportQuote).not.toHaveBeenCalled();
   });
 });

@@ -20,12 +20,12 @@ export function BankRuleDialog({ doc, appState, rule, description, onClose }: {
   const canSave = validText && doc.bankExpenseCategories.some(category => category.id === categoryId) && !readOnly;
   const save = () => {
     if (!canSave) return;
-    appState.mutate(document => {
+    if (!appState.mutate(document => {
       if (rule) {
         const existing = document.bankExpenseRules.find(item => item.id === rule.id);
         if (existing) { existing.matchText = matchText.trim(); existing.categoryId = categoryId; existing.updatedAt = nowIso(); }
       } else document.bankExpenseRules.push({ ...meta(), matchText: matchText.trim(), categoryId });
-    });
+    })) return;
     onClose();
   };
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">

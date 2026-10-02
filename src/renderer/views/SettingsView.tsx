@@ -57,7 +57,7 @@ export function SettingsView({ doc, appState, ficUi, activeProfileId, onEditProf
       return
     }
     const created = createBlankProfile(year)
-    appState.mutate((document) => document.profiles.unshift(created))
+    if (!appState.mutate((document) => document.profiles.unshift(created))) return
     setNewProfileOpen(false)
     onEditProfile(created.id)
   }

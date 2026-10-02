@@ -103,8 +103,9 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     const profile = [...doc.profiles].sort((a, b) => b.year - a.year).find((entry) => entry.confirmed)
     const snapshot = profile ? snapshotProfile(profile, doc.businessCosts) : undefined
     const created: Quote = { ...meta(), date: new Date().toISOString().slice(0, 10), ...(profile ? { profileId: profile.id } : {}), ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}), items: [], snapshotRevision: 0, exportAttempts: [] }
-    appState.mutate((document) => document.quotes.push(created))
+    if (!appState.mutate((document) => document.quotes.push(created))) return false
     setActiveQuoteId(created.id)
+    return true
   }
 
   const updateQuote = (updates: { date?: string; profileId?: string; mainSiteId?: string; commission?: string }, allowYearMismatch = false): "updated" | "year-mismatch" | "invalid" => {
@@ -117,13 +118,13 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     if (profile && !snapshot?.ok) { appState.setError(snapshot?.error ?? { code: "MISSING_DATA", message: "Il profilo selezionato non è calcolabile." }); return "invalid" }
     const siteId = updates.mainSiteId === undefined ? quote.mainSite?.sourceId : updates.mainSiteId || undefined
     const site = doc.sites.find((entry) => entry.id === siteId)
-    appState.mutate((document) => {
+    const updated = appState.mutate((document) => {
       const target = document.quotes.find((entry) => entry.id === quote.id)!
       target.date = date; target.profileId = profile?.id; target.profileSnapshot = snapshot?.ok ? snapshot.value : undefined
       target.mainSite = site ? snapshotSite(site) : undefined
       if (updates.commission !== undefined) target.commission = updates.commission ? Number(updates.commission).toFixed(2) : undefined
     })
-    return "updated"
+    return updated ? "updated" : "invalid"
   }
 
   const searchRemoteClients = async (query: string) => {
@@ -138,13 +139,13 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
   }
 
   const addItem = (name: string) => {
-    if (!quote || !name.trim()) return
-    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.push({ ...meta(), name: name.trim(), subItems: [], variantGroups: [], variantSelections: [] }))
+    if (!quote || !name.trim()) return false
+    return appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.push({ ...meta(), name: name.trim(), subItems: [], variantGroups: [], variantSelections: [] }))
   }
 
   const renameItem = (itemId: string, name: string) => {
-    if (!quote || !name.trim()) return
-    appState.mutate((document) => { const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!; item.name = name.trim(); item.updatedAt = new Date().toISOString() })
+    if (!quote || !name.trim()) return false
+    return appState.mutate((document) => { const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!; item.name = name.trim(); item.updatedAt = new Date().toISOString() })
   }
 
   const updateChosenPrice = (itemId: string, chosenPrice: string) => {
@@ -154,30 +155,27 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
       appState.setError({ code: "VALIDATION", field: "chosenPrice", message: "Il Prezzo scelto deve essere un importo non negativo." })
       return false
     }
-    appState.mutate((document) => {
+    return appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
       item.chosenPrice = value ? Number(value).toFixed(2) : undefined
     })
-    return true
   }
 
   const updateReferencePrice = (itemId: string, referenceAmount?: string, referencePeriod?: string) => {
     if (!quote) return false
     if (!referenceAmount && !referencePeriod) {
-      appState.mutate((document) => { delete document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.referencePrice })
-      return true
+      return appState.mutate((document) => { delete document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.referencePrice })
     }
     if (!referenceAmount || !referencePeriod || !Number.isFinite(Number(referenceAmount)) || Number(referenceAmount) < 0 || !isYearMonth(referencePeriod)) {
       appState.setError({ code: "VALIDATION", field: "referencePrice", message: "Completa importo e mese/anno del Prezzo di riferimento, oppure rimuovilo." })
       return false
     }
     const normalizedAmount = Number(referenceAmount).toFixed(2)
-    appState.mutate((document) => {
+    return appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
       if (item.referencePrice?.amount === normalizedAmount && item.referencePrice.period === referencePeriod) return
       item.referencePrice = { amount: normalizedAmount, period: referencePeriod }
     })
-    return true
   }
 
   const saveSimpleSub = (itemId: string, input: SimpleSubInput, subId?: string) => {
@@ -190,7 +188,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
       appState.setError({ code: "VALIDATION", field: "amount", message: "L’importo della spesa non è valido." })
       return false
     }
-    appState.mutate((document) => {
+    return appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
       const existing = item.subItems.find((entry) => entry.id === subId)
       if (existing && input.kind === "time" && existing.kind === "time") {
@@ -203,7 +201,6 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
         existing.updatedAt = new Date().toISOString()
       } else item.subItems.push(input.kind === "time" ? { ...meta(), kind: "time", description: input.description.trim(), minutes: input.minutes } : { ...meta(), kind: "expense", description: input.description.trim(), amount: Number(input.amount).toFixed(2) })
     })
-    return true
   }
 
   const saveTravel = async (itemId: string, input: TravelInput, subId?: string) => {
@@ -214,7 +211,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     const built = await materializeTravel(input, quote, undefined, previous?.kind === "travel" ? previous : undefined)
     if (!isCurrent()) return false
     if (!built) return false
-    appState.mutate((document) => {
+    return appState.mutate((document) => {
       const item = document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!
       const index = item.subItems.findIndex((entry) => entry.id === subId)
       if (index >= 0) {
@@ -222,7 +219,6 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
         item.subItems[index] = { ...built, id: previous.id, createdAt: previous.createdAt, updatedAt: new Date().toISOString(), ...(previous.variantOwner ? { variantOwner: previous.variantOwner, manuallyModified: true } : {}) }
       } else item.subItems.push(built)
     })
-    return true
   }
 
   const addReusable = async (itemId: string, reusable: ReusableSubItem, context?: TravelContext) => {
@@ -235,13 +231,12 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     else sub = await materializeTravel(reusable, quote, context)
     if (!isCurrent()) return false
     if (!sub) return false
-    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.subItems.push(sub!))
-    return true
+    return appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!.subItems.push(sub!))
   }
 
   const saveSubToCatalog = (itemId: string, subId: string) => {
     const sub = quote?.items.find((item) => item.id === itemId)?.subItems.find((entry) => entry.id === subId)
-    if (sub) appState.mutate((document) => document.catalog.subItems.push(reusableFromQuoteSubItem(sub)))
+    return sub ? appState.mutate((document) => document.catalog.subItems.push(reusableFromQuoteSubItem(sub))) : false
   }
 
   const switchVariant = async (itemId: string, groupId: string, optionId: string, context: TravelContext, force: boolean) => {
@@ -255,8 +250,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     for (const definition of option.subItems) if (definition.kind === "travel") { const travel = await materializeTravel(definition, quote, context); if (!isCurrent() || !travel) return false; queue.push(travel) }
     const result = changeVariant(item, groupId, optionId, force, { materializeTravel: () => { const travel = queue.shift(); return travel ? { ok: true, value: travel } : { ok: false, error: { code: "MISSING_DATA", message: "Dati della trasferta non disponibili." } } } })
     if (!result.ok) { appState.setError(result.error); return false }
-    appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
-    return true
+    return appState.mutate((document) => Object.assign(document.quotes.find((entry) => entry.id === quote.id)!.items.find((entry) => entry.id === itemId)!, result.value))
   }
 
   const insertTemplate = async (templateId: string, choices: Record<string, string>, context: TravelContext) => {
@@ -294,8 +288,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
       if (!applied.ok) { appState.setError(applied.error); return false }
       prepared.push(applied.value)
     }
-    appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.push(...prepared))
-    return true
+    return appState.mutate((document) => document.quotes.find((entry) => entry.id === quote.id)!.items.push(...prepared))
   }
 
   const saveTemplate = (name: string, itemIds: string[]) => {
@@ -303,8 +296,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     const items = quote.items.filter((item) => itemIds.includes(item.id))
     const built = templateFromQuote(name, items)
     if (!built.ok) { appState.setError(built.error); return false }
-    appState.mutate((document) => document.catalog.templates.push(built.value))
-    return true
+    return appState.mutate((document) => document.catalog.templates.push(built.value))
   }
 
   const performRefresh = async () => {
@@ -319,8 +311,7 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     })
     if (!isCurrent()) return false
     if (!result.ok) { appState.setError(result.error); return false }
-    appState.mutate((document) => { document.quotes[document.quotes.findIndex((entry) => entry.id === quote.id)] = result.value })
-    return true
+    return appState.mutate((document) => { document.quotes[document.quotes.findIndex((entry) => entry.id === quote.id)] = result.value })
   }
 
   const performExport = async (client: FicClientSnapshot, groups: Array<{ itemIds: string[]; description: string }>) => {

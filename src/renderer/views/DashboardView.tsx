@@ -35,7 +35,7 @@ export function DashboardView({ doc, appState, onEditProfile, onOpenQuote, onNew
         </CardContent>
       </Card>
 
-      {!profile ? <Alert><AlertTriangle /><AlertTitle>Configurazione iniziale incompleta</AlertTitle><AlertDescription className="flex items-center justify-between gap-4"><span>Crea il profilo annuale per ottenere valore medio, capacità e proiezioni.</span><Button size="sm" onClick={() => { const created = createFiscalPreset2026(); appState.mutate((document) => document.profiles.push(created)); onEditProfile(created.id) }}>Crea profilo 2026</Button></AlertDescription></Alert> : null}
+      {!profile ? <Alert><AlertTriangle /><AlertTitle>Configurazione iniziale incompleta</AlertTitle><AlertDescription className="flex items-center justify-between gap-4"><span>Crea il profilo annuale per ottenere valore medio, capacità e proiezioni.</span><Button size="sm" onClick={() => { const created = createFiscalPreset2026(); if (!appState.mutate((document) => document.profiles.push(created))) return; onEditProfile(created.id) }}>Crea profilo 2026</Button></AlertDescription></Alert> : null}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Metric icon={WalletCards} label="Valore medio da generare" value={values ? `${eur(values.hourlyTarget)}/h` : "—"} note="Riferimento, non tariffa obbligatoria" primary />

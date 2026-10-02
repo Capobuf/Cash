@@ -29,12 +29,12 @@ export function BankCategoriesView({ doc, appState }: { doc: CashDocument; appSt
     if (doc.bankExpenseCategories.some(category => category.id !== editing.id && category.parentId === editing.parentId && category.name.trim().toLocaleLowerCase('it') === name.toLocaleLowerCase('it'))) {
       setError('Esiste già una categoria con questo nome nello stesso livello.'); return;
     }
-    appState.mutate(document => {
+    if (!appState.mutate(document => {
       if (editing.id) {
         const category = document.bankExpenseCategories.find(item => item.id === editing.id);
         if (category) { category.name = name; category.updatedAt = nowIso(); }
       } else document.bankExpenseCategories.push({ ...meta(), name, ...(editing.parentId ? { parentId: editing.parentId } : {}) });
-    });
+    })) return;
     setEditing(undefined);
   };
   const actions = (category: BankExpenseCategory) => {
@@ -66,7 +66,7 @@ export function BankCategoriesView({ doc, appState }: { doc: CashDocument; appSt
     {ruleEditor ? <BankRuleDialog doc={doc} appState={appState} rule={ruleEditor.rule} onClose={() => setRuleEditor(undefined)} /> : null}
     <AlertDialog open={Boolean(deletingRule)} onOpenChange={open => { if (!open) setDeletingRule(undefined); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Eliminare la regola «{deletingRule?.matchText}»?</AlertDialogTitle><AlertDialogDescription>La regola smetterà di applicare la categoria a tutte le spese. Le categorie manuali resteranno intatte.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={readOnly} onClick={() => {
       if (!deletingRule || readOnly) return;
-      appState.mutate(document => { document.bankExpenseRules = document.bankExpenseRules.filter(rule => rule.id !== deletingRule.id); });
+      if (!appState.mutate(document => { document.bankExpenseRules = document.bankExpenseRules.filter(rule => rule.id !== deletingRule.id); })) return;
       setDeletingRule(undefined);
     }}>Elimina regola</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <Dialog open={Boolean(editing)} onOpenChange={open => { if (!open) setEditing(undefined); }}><DialogContent><form className="contents" onSubmit={event => { event.preventDefault(); save(); }}>
@@ -78,8 +78,8 @@ export function BankCategoriesView({ doc, appState }: { doc: CashDocument; appSt
     <AlertDialog open={Boolean(deleting)} onOpenChange={open => { if (!open) setDeleting(undefined); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Eliminare {deleting?.name}?</AlertDialogTitle><AlertDialogDescription>La categoria verrà rimossa dall’archivio.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annulla</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={readOnly} onClick={() => {
       if (!deleting) return;
       const blocker = bankCategoryDeletionBlocker(doc.bankExpenseCategories, doc.bankExpenses, deleting.id, doc.bankExpenseRules);
-      if (blocker) appState.setError({ code: 'VALIDATION', message: blocker });
-      else appState.mutate(document => { document.bankExpenseCategories = document.bankExpenseCategories.filter(category => category.id !== deleting.id); });
+      if (blocker) { appState.setError({ code: 'VALIDATION', message: blocker }); return; }
+      if (!appState.mutate(document => { document.bankExpenseCategories = document.bankExpenseCategories.filter(category => category.id !== deleting.id); })) return;
       setDeleting(undefined);
     }}>Elimina</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>;

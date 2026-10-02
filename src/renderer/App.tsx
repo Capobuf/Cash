@@ -66,7 +66,7 @@ export function App() {
     const profile = [...doc.profiles].sort((a, b) => b.year - a.year).find((entry) => entry.confirmed)
     const snapshot = profile ? snapshotProfile(profile, doc.businessCosts) : undefined
     const created: Quote = { ...meta(), date: new Date().toISOString().slice(0, 10), ...(profile ? { profileId: profile.id } : {}), ...(snapshot?.ok ? { profileSnapshot: snapshot.value } : {}), items: [], snapshotRevision: 0, exportAttempts: [] }
-    appState.mutate((document) => document.quotes.push(created))
+    if (!appState.mutate((document) => document.quotes.push(created))) return
     setActiveQuoteId(created.id)
     setView("quotes")
   }
@@ -81,31 +81,35 @@ export function App() {
     }
     const copied = copyProfileToYear(source, year)
     if (!copied.ok) { appState.setError(copied.error); return }
-    appState.mutate((document) => document.profiles.unshift(copied.value))
+    if (!appState.mutate((document) => document.profiles.unshift(copied.value))) return
     setCopyProfileId(undefined)
     setActiveProfileId(copied.value.id)
     setView("settings")
   }
 
   const deleteEntity = (doc: CashDocument, target: DeleteTarget) => {
-    if (target.kind === "local-client") return
+    if (target.kind === "local-client") return false
     if (target.kind === "profile") {
       const references = doc.quotes.filter((quote) => quote.profileId === target.id).map((quote) => `${quote.date} · ${quote.items.map((item) => item.name).join(", ") || "preventivo incompleto"}`)
-      if (references.length) { appState.setError({ code: "CONFLICT", field: "profile", message: "Il profilo è ancora il riferimento corrente di uno o più preventivi.", details: references }); return }
+      if (references.length) { appState.setError({ code: "CONFLICT", field: "profile", message: "Il profilo è ancora il riferimento corrente di uno o più preventivi.", details: references }); return false }
     }
-    if (target.kind === "site" && doc.settings.defaultDepartureSiteId === target.id) { appState.setError({ code: "CONFLICT", message: "La Sede è la partenza predefinita.", action: "Scegli o rimuovi prima la partenza predefinita." }); return }
-    if (target.kind === "vehicle" && doc.settings.defaultVehicleId === target.id) { appState.setError({ code: "CONFLICT", message: "Il Veicolo è quello predefinito.", action: "Scegli o rimuovi prima il Veicolo predefinito." }); return }
-    appState.mutate((document) => {
+    if (target.kind === "site" && doc.settings.defaultDepartureSiteId === target.id) { appState.setError({ code: "CONFLICT", message: "La Sede è la partenza predefinita.", action: "Scegli o rimuovi prima la partenza predefinita." }); return false }
+    if (target.kind === "vehicle" && doc.settings.defaultVehicleId === target.id) { appState.setError({ code: "CONFLICT", message: "Il Veicolo è quello predefinito.", action: "Scegli o rimuovi prima il Veicolo predefinito." }); return false }
+    const deleted = appState.mutate((document) => {
       if (target.kind === "cost") document.businessCosts = document.businessCosts.filter((entry) => entry.id !== target.id)
       else if (target.kind === "vehicle") document.vehicles = document.vehicles.filter((entry) => entry.id !== target.id)
       else if (target.kind === "site") document.sites = document.sites.filter((entry) => entry.id !== target.id)
       else if (target.kind === "catalog") document.catalog.subItems = document.catalog.subItems.filter((entry) => entry.id !== target.id)
       else if (target.kind === "template") document.catalog.templates = document.catalog.templates.filter((entry) => entry.id !== target.id)
-      else if (target.kind === "profile") { document.profiles = document.profiles.filter((entry) => entry.id !== target.id); if (activeProfileId === target.id) setActiveProfileId(undefined) }
-      else if (target.kind === "quote") { document.quotes = document.quotes.filter((entry) => entry.id !== target.id); if (activeQuoteId === target.id) setActiveQuoteId(undefined) }
+      else if (target.kind === "profile") { document.profiles = document.profiles.filter((entry) => entry.id !== target.id) }
+      else if (target.kind === "quote") { document.quotes = document.quotes.filter((entry) => entry.id !== target.id) }
       else if (target.kind === "item") { const quote = document.quotes.find((entry) => entry.id === activeQuoteId); if (quote) quote.items = quote.items.filter((entry) => entry.id !== target.id) }
       else if (target.kind === "sub") { const [itemId, subId] = target.id.split(":"); const item = document.quotes.find((entry) => entry.id === activeQuoteId)?.items.find((entry) => entry.id === itemId); if (item) item.subItems = item.subItems.filter((entry) => entry.id !== subId) }
     })
+    if (!deleted) return false
+    if (target.kind === "profile" && activeProfileId === target.id) setActiveProfileId(undefined)
+    if (target.kind === "quote" && activeQuoteId === target.id) setActiveQuoteId(undefined)
+    return true
   }
 
   if (!appState.document) return <Onboarding appState={appState} />
@@ -136,7 +140,7 @@ export function App() {
         </NativeSelect></div>
       </div> : null}{content}
     </AppShell>
-    <DeleteDialog target={deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }} onConfirm={() => { if (deleteTarget) deleteEntity(doc, deleteTarget); setDeleteTarget(null) }} />
+    <DeleteDialog target={deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }} onConfirm={() => { if (deleteTarget && deleteEntity(doc, deleteTarget)) setDeleteTarget(null) }} />
     <Dialog open={Boolean(copySource)} onOpenChange={(open) => { if (!open) setCopyProfileId(undefined) }}><DialogContent><form onSubmit={(event) => { event.preventDefault(); copyProfile(Number(new FormData(event.currentTarget).get("year"))) }} className="contents"><DialogHeader><DialogTitle>Copia profilo {copySource?.year}</DialogTitle><DialogDescription>La copia avrà una nuova identità e sarà Da verificare.</DialogDescription></DialogHeader><Field><FieldLabel htmlFor="copy-profile-year">Nuovo anno</FieldLabel><Input id="copy-profile-year" name="year" type="number" defaultValue={(copySource?.year ?? 2025) + 1} min={2000} max={2200} autoFocus required /></Field><DialogFooter><Button type="button" variant="outline" onClick={() => setCopyProfileId(undefined)}>Annulla</Button><Button type="submit">Crea copia</Button></DialogFooter></form></DialogContent></Dialog>
     <AlertDialog open={Boolean(decisionResolver)} onOpenChange={(open) => { if (!open && decisionResolver) { decisionResolver("cancel"); setDecisionResolver(null) } }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Ci sono modifiche non ancora salvate</AlertDialogTitle><AlertDialogDescription>Prima di aprire un altro archivio o chiudere Cash puoi attendere il salvataggio, creare una copia di recupero oppure scartare le modifiche locali.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter className="flex-wrap"><Button variant="outline" onClick={() => { decisionResolver?.("cancel"); setDecisionResolver(null) }}>Annulla</Button><Button variant="outline" onClick={() => { decisionResolver?.("recovery"); setDecisionResolver(null) }}>Copia di recupero</Button><Button variant="destructive" onClick={() => { decisionResolver?.("discard"); setDecisionResolver(null) }}>Scarta modifiche</Button><Button onClick={() => { decisionResolver?.("save"); setDecisionResolver(null) }}>Salva e continua</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </>

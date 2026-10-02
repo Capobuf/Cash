@@ -161,7 +161,7 @@ export function CatalogView({
     candidate.catalog.templates.push(...templates)
     const validation = cashDocumentSchema.safeParse(candidate)
     if (!validation.success) { appState.setError(validationErrorFromIssues(validation.error.issues)); return }
-    appState.mutate((document) => { document.catalog.templates.push(...templates) })
+    if (!appState.mutate((document) => { document.catalog.templates.push(...templates) })) return
     setImportPreview(undefined)
   }
 
@@ -174,14 +174,14 @@ export function CatalogView({
         appState={appState}
         onClose={() => setEditingTemplateId(undefined)}
         onSave={(value) => {
-          appState.mutate((document) => {
+          if (!appState.mutate((document) => {
             if (template) {
               const index = document.catalog.templates.findIndex((entry) => entry.id === template.id)
               document.catalog.templates[index] = value
             } else {
               document.catalog.templates.push(value)
             }
-          })
+          })) return
           setEditingTemplateId(undefined)
         }}
       />
@@ -360,14 +360,14 @@ export function CatalogView({
           value={reusable}
           onClose={() => setEditingReusableId(undefined)}
           onSave={(value) => {
-            appState.mutate((document) => {
+            if (!appState.mutate((document) => {
               if (reusable) {
                 const index = document.catalog.subItems.findIndex((entry) => entry.id === reusable.id)
                 document.catalog.subItems[index] = value
               } else {
                 document.catalog.subItems.push(value)
               }
-            })
+            })) return
             setEditingReusableId(undefined)
           }}
         />

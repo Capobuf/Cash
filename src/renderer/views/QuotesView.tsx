@@ -54,7 +54,7 @@ export function QuotesView({ doc, appState, activeQuoteId, setActiveQuoteId, req
     if (result === "year-mismatch") setPendingUpdate(updates)
   }
   const selectCustomer = (selection: string | import("../../domain/model").FicClientSnapshot) => {
-    appState.mutate((document) => {
+    return appState.mutate((document) => {
       const target = document.quotes.find((entry) => entry.id === quote.id)!
       if (typeof selection !== "string") target.client = selection
       else if (!selection) target.client = undefined
@@ -104,10 +104,10 @@ export function QuotesView({ doc, appState, activeQuoteId, setActiveQuoteId, req
       </div>
 
       {overlay?.kind === "customer" ? <CustomerDialog open onOpenChange={(open) => { if (!open) setOverlay(undefined) }} quote={quote} doc={doc} results={controller.clientResults} onSearch={controller.searchRemoteClients} onSelect={selectCustomer} /> : null}
-      {overlay?.kind === "item" ? <ItemNameDialog open initial={overlay.item?.name} title={overlay.item ? "Rinomina voce" : "Nuova voce commerciale"} onOpenChange={(open) => { if (!open) setOverlay(undefined) }} onSave={(name) => { if (overlay.item) controller.renameItem(overlay.item.id, name); else controller.addItem(name); setOverlay(undefined) }} /> : null}
+      {overlay?.kind === "item" ? <ItemNameDialog open initial={overlay.item?.name} title={overlay.item ? "Rinomina voce" : "Nuova voce commerciale"} onOpenChange={(open) => { if (!open) setOverlay(undefined) }} onSave={(name) => { const saved = overlay.item ? controller.renameItem(overlay.item.id, name) : controller.addItem(name); if (saved) setOverlay(undefined) }} /> : null}
       {overlay?.kind === "sub" && overlayItem ? <SubItemDialog key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}`} sub={overlaySub} initialKind={overlay.initialKind} doc={doc} appState={appState} quoteClient={quote.client} defaultDestinationSiteId={quote.mainSite?.sourceId} onClose={() => setOverlay(undefined)} onSaveSimple={(input) => controller.saveSimpleSub(overlay.itemId, input, overlay.subId)} onSaveTravel={(input) => controller.saveTravel(overlay.itemId, input, overlay.subId)} /> : null}
       {overlay?.kind === "catalog" ? <CatalogPickerDialog itemId={overlay.itemId} doc={doc} quote={quote} onClose={() => setOverlay(undefined)} onAdd={(item, context) => controller.addReusable(overlay.itemId, item, context)} /> : null}
-      {overlay?.kind === "save-sub" && overlaySub ? <SaveSubDialog description={overlaySub.description} onClose={() => setOverlay(undefined)} onConfirm={() => { controller.saveSubToCatalog(overlay.itemId, overlay.subId); setOverlay(undefined) }} /> : null}
+      {overlay?.kind === "save-sub" && overlaySub ? <SaveSubDialog description={overlaySub.description} onClose={() => setOverlay(undefined)} onConfirm={() => { if (controller.saveSubToCatalog(overlay.itemId, overlay.subId)) setOverlay(undefined) }} /> : null}
       {overlay?.kind === "variant-change" && overlayItem && overlayGroup ? <VariantChangeDialog group={overlayGroup} optionId={overlay.optionId} doc={doc} quote={quote} hasManualChanges={overlayItem.subItems.some((sub) => sub.variantOwner?.groupId === overlay.groupId && sub.manuallyModified)} onClose={() => setOverlay(undefined)} onChange={(context, force) => controller.switchVariant(overlay.itemId, overlay.groupId, overlay.optionId, context, force)} /> : null}
       {overlay?.kind === "insert-template" ? <InsertTemplateDialog doc={doc} quote={quote} onClose={() => setOverlay(undefined)} onInsert={controller.insertTemplate} /> : null}
       {overlay?.kind === "save-template" ? <SaveTemplateDialog quote={quote} onClose={() => setOverlay(undefined)} onSave={controller.saveTemplate} /> : null}
