@@ -637,7 +637,7 @@ export function SettingsView({
   );
 }
 
-function FicWizard({
+export function FicWizard({
   open,
   onOpenChange,
   appState,
@@ -708,7 +708,7 @@ function FicWizard({
         return;
       }
       setCompanies(result.value);
-      setCompanyId(result.value[0]?.id ?? '');
+      setCompanyId('');
       setStep(4);
       return;
     }
@@ -726,7 +726,7 @@ function FicWizard({
         return;
       }
       setProducts(result.value);
-      setProductId(result.value[0]?.id ?? '');
+      setProductId(result.value.length === 1 ? result.value[0]!.id : '');
       setStep(5);
       return;
     }
