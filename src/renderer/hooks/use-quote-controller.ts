@@ -346,13 +346,46 @@ export function useQuoteController({ doc, appState, activeQuoteId, setActiveQuot
     isCurrent = guardQuoteContext(appState.document?.quotes.find((entry) => entry.id === quote.id))
     await appState.save()
     if (!isCurrent() || appState.status !== "Salvato") return false
-    const sent = await window.cash.fic.exportQuote({ companyId: fic.company.id, clientId: client.clientId, productId: fic.product.id, lines: built.value, attemptId: attempt.id })
-    if (!isCurrent()) return false
-    appState.mutate((document) => {
+    let sent: Awaited<ReturnType<typeof window.cash.fic.exportQuote>>
+    try {
+      sent = await window.cash.fic.exportQuote({ companyId: fic.company.id, clientId: client.clientId, productId: fic.product.id, lines: built.value, attemptId: attempt.id })
+    } catch (cause) {
+      sent = { ok: false, error: { code: "EXPORT_UNCERTAIN", source: "FattureInCloud", message: "Risposta all’invio non disponibile.", details: [String(cause)] } }
+    }
+    const reportUnpersistedOutcome = () => {
+      const rejected = sent.ok && sent.value.outcome === "rejected"
+      const persistenceError = appState.error
+      const sameArchive = appState.archiveContext === archiveContext && appState.session?.path === archivePath && appState.document?.documentId === doc.documentId
+      const retained = !rejected && sameArchive && appState.markExportForVerification(quote.id, attempt.id)
+      appState.setError({ code: rejected ? "IO" : "EXPORT_UNCERTAIN", source: "FattureInCloud",
+        message: rejected ? "Invio rifiutato da Fatture in Cloud, ma esito non salvato localmente." : "Esito esportazione da verificare: il documento remoto potrebbe essere stato creato, ma l’esito non è stato salvato localmente.",
+        action: "Controlla Fatture in Cloud prima di avviare una nuova esportazione. Non è stato eseguito alcun reinvio automatico.",
+        details: [`Tentativo: ${attempt.id}`, ...(sent.ok && sent.value.remoteDocumentId ? [`Documento FIC: ${sent.value.remoteDocumentId}`] : []),
+          ...(sent.ok && sent.value.diagnostic ? [sent.value.diagnostic] : []), ...(!sent.ok ? [sent.error.message, ...(sent.error.details ?? [])] : []),
+          ...(persistenceError ? [persistenceError.message, ...(persistenceError.details ?? [])] : []), ...(!retained && !rejected ? ["Il tentativo non è stato modificato nell’archivio corrente; verifica l’archivio di origine."] : [])] })
+      return false
+    }
+    if (!isCurrent()) return reportUnpersistedOutcome()
+    const recorded = appState.mutate((document) => {
       const saved = document.quotes.find((entry) => entry.id === quote.id)!.exportAttempts.find((entry) => entry.id === attempt.id)!
+      saved.updatedAt = new Date().toISOString()
       if (sent.ok) { saved.outcome = sent.value.outcome; saved.remoteDocumentId = sent.value.remoteDocumentId; saved.diagnostic = sent.value.diagnostic }
       else { saved.outcome = "uncertain"; saved.diagnostic = sent.error.message }
     })
+    if (!recorded) return reportUnpersistedOutcome()
+    isCurrent = guardQuoteContext(appState.document?.quotes.find((entry) => entry.id === quote.id))
+    try { await appState.save() }
+    catch (cause) {
+      appState.setError({ code: "IO", source: "archive", message: "Salvataggio dell’esito export interrotto.", details: [String(cause)] })
+      return reportUnpersistedOutcome()
+    }
+    if (appState.status !== "Salvato" || !isCurrent()) return reportUnpersistedOutcome()
+    if (!sent.ok || sent.value.outcome === "uncertain") {
+      appState.setError({ code: "EXPORT_UNCERTAIN", source: "FattureInCloud", message: "Esito esportazione da verificare: il documento remoto potrebbe essere stato creato.",
+        action: "Controlla Fatture in Cloud prima di inviare nuovamente.", details: [sent.ok ? sent.value.diagnostic ?? "Risposta remota incerta." : sent.error.message] })
+    } else if (sent.value.outcome === "rejected") {
+      appState.setError({ code: "VALIDATION", source: "FattureInCloud", message: "Fatture in Cloud ha rifiutato l’invio.", details: sent.value.diagnostic ? [sent.value.diagnostic] : [] })
+    }
     return sent.ok && sent.value.outcome === "success"
   }
 

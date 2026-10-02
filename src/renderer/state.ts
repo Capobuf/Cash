@@ -179,6 +179,21 @@ export class AppState {
     return result.ok;
   }
 
+  markExportForVerification(quoteId: string, attemptId: string): boolean {
+    if (!this.session?.document) return false;
+    const document = structuredClone(this.session.document);
+    const attempt = document.quotes.find(quote => quote.id === quoteId)?.exportAttempts.find(entry => entry.id === attemptId);
+    if (!attempt) return false;
+    attempt.outcome = 'uncertain';
+    this.session = { ...this.session, document };
+    // Keep the unsaved response without scheduling another save after a failure.
+    if (this.timer) window.clearTimeout(this.timer);
+    if (this.status !== 'Conflitto esterno') this.status = 'Errore di salvataggio';
+    window.cash.setDirty(true);
+    this.emit();
+    return true;
+  }
+
   async restoreBackup():Promise<void>{if(!this.session)return;const result=await window.cash.archive.restoreBackup(this.session.path,this.session.token);if(result.ok)this.accept(result.value);else if(result.error.code!=='CANCELLED'){this.error=result.error;this.emit();}}
 
   private async mayReplaceSession(): Promise<boolean> {

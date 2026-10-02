@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument, createFiscalPreset2026, meta, ok, type CashDocument, type FuelEvidence, type Quote, type ReusableSubItem } from '../../src/domain/model';
+import { createEmptyDocument, createFiscalPreset2026, err, meta, ok, type CashDocument, type FuelEvidence, type Quote, type ReusableSubItem } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
 import type { ArchiveSession } from '../../src/native/persistence';
 import { AppState } from '../../src/renderer/state';
@@ -39,9 +39,9 @@ function setup() {
   const pending = new Promise<void>(resolve => { complete = resolve; });
   const fuel: FuelEvidence = { fuel: 'Benzina', mode: 'SELF', territory: 'Lazio', network: 'NON_AUTOSTRADALE',
     price: '1.900', priceUnit: 'EUR/l', referenceDate: '2026-10-01', acquiredAt: '2026-10-02T10:00:00Z' };
-  const save = vi.fn(async (path: string, saved: CashDocument) => ok(session({ ...saved, revision: saved.revision + 1 }, path)));
+  const save = vi.fn<Window['cash']['archive']['save']>(async (path, saved) => ok(session({ ...saved, revision: saved.revision + 1 }, path)));
   const verifyProduct = vi.fn(async () => { await pending; return ok({ id: '2', name: 'Consulenza' }); });
-  const exportQuote = vi.fn(async () => ok({ outcome: 'success' as const, remoteDocumentId: 'remote-1' }));
+  const exportQuote = vi.fn<Window['cash']['fic']['exportQuote']>(async () => ok({ outcome: 'success', remoteDocumentId: 'remote-1' }));
   vi.stubGlobal('window', { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout,
     cash: { setDirty: vi.fn(), archive: { save }, mimit: { latestFuelPrice: vi.fn(async () => { await pending; return ok(fuel); }) },
       fic: { verifyProduct, exportQuote } } });
@@ -142,7 +142,75 @@ describe('contesto delle operazioni asincrone sui preventivi', () => {
     finish();
     await expect(result).resolves.toBe(false);
     expect(test.state.document).toEqual(before);
-    expect(test.state.error?.code).toBe('CONFLICT');
+    expect(test.state.error?.code).toBe('EXPORT_UNCERTAIN');
+    expect(test.state.error?.details).toContain('Documento FIC: remote-1');
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+});
+
+describe('persistenza dell’esito export', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-02T10:00:00Z')); });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('restituisce successo solo dopo il salvataggio finale e registra la data della risposta', async () => {
+    const test = setup();
+    let started!: () => void;
+    const saving = new Promise<void>(resolve => { started = resolve; });
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    test.save.mockImplementationOnce(async (path, document) => ok(session(document, path)))
+      .mockImplementationOnce(async (path, document) => { started(); await pending; return ok(session(document, path)); });
+    test.exportQuote.mockImplementationOnce(async () => {
+      vi.setSystemTime(new Date('2026-10-02T10:01:00Z'));
+      return ok({ outcome: 'success', remoteDocumentId: 'remote-1' });
+    });
+    let completed = false;
+    const result = test.operations.performExport().then(value => { completed = true; return value; });
+    test.complete(); await saving;
+    expect(completed).toBe(false);
+    expect(test.save.mock.calls[0]?.[1].quotes[0]?.exportAttempts[0]?.outcome).toBe('pending');
+    expect(test.save.mock.calls[1]?.[1].quotes[0]?.exportAttempts[0]).toMatchObject({ outcome: 'success',
+      remoteDocumentId: 'remote-1', createdAt: '2026-10-02T10:00:00.000Z', updatedAt: '2026-10-02T10:01:00.000Z' });
+    finish();
+    await expect(result).resolves.toBe(true);
+    expect(test.state.status).toBe('Salvato');
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+
+  it.each(['IO', 'CONFLICT'] as const)('conserva la risposta da verificare se il salvataggio finale fallisce con %s', async code => {
+    const test = setup();
+    test.save.mockImplementationOnce(async (path, document) => ok(session(document, path)))
+      .mockResolvedValueOnce(err({ code, message: 'Salvataggio non riuscito' }));
+    const result = test.operations.performExport(); test.complete();
+    await expect(result).resolves.toBe(false);
+    expect(test.state.document?.quotes[0]?.exportAttempts[0]).toMatchObject({ outcome: 'uncertain', remoteDocumentId: 'remote-1' });
+    expect(test.state.error?.code).toBe('EXPORT_UNCERTAIN');
+    expect(test.state.error?.action).toContain('Controlla Fatture in Cloud');
+    expect(test.state.error?.details).toContain('Salvataggio non riuscito');
+    await vi.runAllTimersAsync();
+    expect(test.save).toHaveBeenCalledTimes(2);
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+
+  it('persiste un esito remoto incerto e lo mostra senza reinviare', async () => {
+    const test = setup();
+    test.exportQuote.mockResolvedValueOnce(ok({ outcome: 'uncertain', diagnostic: 'Timeout dopo invio' }));
+    const result = test.operations.performExport(); test.complete();
+    await expect(result).resolves.toBe(false);
+    expect(test.save.mock.calls[1]?.[1].quotes[0]?.exportAttempts[0]).toMatchObject({ outcome: 'uncertain', diagnostic: 'Timeout dopo invio' });
+    expect(test.state.status).toBe('Salvato');
+    expect(test.state.error?.code).toBe('EXPORT_UNCERTAIN');
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+
+  it('rende esplicita un’eccezione durante il salvataggio della risposta', async () => {
+    const test = setup();
+    test.save.mockImplementationOnce(async (path, document) => ok(session(document, path)))
+      .mockRejectedValueOnce(new Error('IPC interrotto'));
+    const result = test.operations.performExport(); test.complete();
+    await expect(result).resolves.toBe(false);
+    expect(test.state.document?.quotes[0]?.exportAttempts[0]).toMatchObject({ outcome: 'uncertain', remoteDocumentId: 'remote-1' });
+    expect(test.state.error?.code).toBe('EXPORT_UNCERTAIN');
     expect(test.exportQuote).toHaveBeenCalledOnce();
   });
 });
