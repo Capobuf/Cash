@@ -25,7 +25,8 @@ export function effectiveCategoryIds(expense: BankExpense, rules: BankExpenseRul
 export function bankCategoryLabel(categories: BankExpenseCategory[], id: string): string {
   const category = categories.find(item => item.id === id);
   const parent = categories.find(item => item.id === category?.parentId);
-  return parent ? `${parent.name} → ${category!.name}` : category?.name ?? '';
+  const label = parent ? `${parent.name} → ${category!.name}` : category?.name ?? '';
+  return category?.systemRole === 'vat_taxes' ? `${label} (sistema · Imposte P.IVA)` : label;
 }
 // A tuple avoids collisions when bank descriptions contain separators.
 export const bankExpenseIdentity = (row: BankExpenseRow): string => JSON.stringify([row.date, normalizeBankDescription(row.description), row.amount]);
@@ -51,6 +52,7 @@ export function bankCategoryTree(categories: BankExpenseCategory[]) {
 }
 
 export function bankCategoryDeletionBlocker(categories: BankExpenseCategory[], expenses: BankExpense[], id: string, rules: BankExpenseRule[] = []): string | undefined {
+  if (categories.some(category => category.id === id && category.systemRole === 'vat_taxes')) return 'La categoria di sistema non può essere eliminata.';
   if (categories.some(category => category.parentId === id)) return 'La categoria contiene sottocategorie.';
   if (expenses.some(expense => expense.categoryIds.includes(id))) return 'La categoria è assegnata manualmente ad almeno un movimento.';
   if (rules.some(rule => rule.categoryId === id)) return 'La categoria è utilizzata da almeno una regola automatica.';

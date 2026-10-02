@@ -50,7 +50,7 @@ export function BankCategoriesView({ doc, appState }: { doc: CashDocument; appSt
     <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Categorie e sottocategorie condivise tra tutti gli anni.</p>
       <Button disabled={readOnly} onClick={() => openEditor({ name: '' })}><Plus />Nuova categoria</Button></div>
     {!tree.length ? <Card><CardContent className="py-12 text-center text-muted-foreground">Crea la prima categoria per organizzare le spese bancarie.</CardContent></Card> : null}
-    {tree.map(category => <Card key={category.id}><CardHeader className="flex flex-wrap items-center justify-between gap-3"><CardTitle>{category.name}</CardTitle>{actions(category)}</CardHeader>
+    {tree.map(category => <Card key={category.id}><CardHeader className="flex flex-wrap items-center justify-between gap-3"><CardTitle>{category.name} {category.systemRole ? <Badge variant="secondary">Sistema · Imposte P.IVA</Badge> : null}</CardTitle>{actions(category)}</CardHeader>
       {category.children.length ? <CardContent className="space-y-2">{category.children.map(child => <div key={child.id} className="ml-4 flex flex-wrap items-center justify-between gap-3 border-l-2 py-2 pl-4"><div className="flex items-center gap-2"><span>{child.name}</span><Badge variant="outline">Sottocategoria</Badge></div>{actions(child)}</div>)}</CardContent> : null}
     </Card>)}
     <Card><CardHeader className="flex flex-wrap items-center justify-between gap-3"><CardTitle>Regole automatiche</CardTitle><Button disabled={readOnly} onClick={() => setRuleEditor({})}><Plus />Nuova regola</Button></CardHeader><CardContent>

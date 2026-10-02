@@ -95,6 +95,6 @@ describe('import atomico e autosalvataggio spese', () => {
     const pending = state.importBankExpenses();
     state.mutate(document => { document.bankExpenseCategories.push({ ...meta(), name: 'Durante import' }); });
     await vi.runAllTimersAsync(); complete(ok(imported)); await pending;
-    expect(state.document?.bankExpenseCategories[0]?.name).toBe('Durante import'); expect(state.document?.bankExpenses).toHaveLength(1);
+    expect(state.document?.bankExpenseCategories.find(category => category.name === 'Durante import')?.name).toBe('Durante import'); expect(state.document?.bankExpenses).toHaveLength(1);
   });
 });

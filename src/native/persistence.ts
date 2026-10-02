@@ -3,7 +3,7 @@ import { access, copyFile, open, readFile, rename, rm, stat } from 'node:fs/prom
 import { basename, dirname, extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import Decimal from 'decimal.js';
-import { CURRENT_SCHEMA_VERSION, err, ok, type CashDocument, type Result } from '../domain/model';
+import { CURRENT_SCHEMA_VERSION, createTaxCategory, err, ok, type CashDocument, type Result } from '../domain/model';
 import { cashDocumentSchema, documentHeaderSchema, parseDocument, validationErrorFromIssues } from '../domain/schema';
 
 export interface ConcurrencyToken { documentId: string; revision: number; fingerprint: string }
@@ -60,7 +60,7 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
   if (!inspection.ok) return inspection;
   const fromVersion = inspection.value.header.schemaVersion;
   if (fromVersion < 1 || fromVersion >= CURRENT_SCHEMA_VERSION)
-    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 6.' });
+    return err({ code: 'VALIDATION', source: 'archive', message: 'La migrazione supporta soltanto gli schemi da 1 a 7.' });
   const changes = fromVersion === 1 ? [
     'Aggiunge l’anagrafica Clienti locali vuota.',
     'Imposta Fatture in Cloud su Disattivata conservando i riferimenti non segreti.',
@@ -71,7 +71,7 @@ export async function previewMigration(path: string): Promise<Result<MigrationPr
   if (fromVersion <= 3) changes.push('Rimuove velocità media e anagrafica clienti locale non previste dalla v0.6.', 'Introduce coordinate delle Sedi, default globali e Trasferte con Partenza/Destinazione.');
   if (fromVersion < 5) changes.push('Aggiorna allo schema 5 senza modificare i dati esistenti.');
   if (fromVersion < 6) changes.push('Aggiunge categorie, movimenti bancari e regole automatiche vuoti, conservando lo snapshot finanziario esistente.');
-  changes.push('Aggiorna allo schema 7: nessuna copertura fiscale o integrazione iniziale; conserva movimenti, categorie, regole e snapshot.');
+  changes.push('Aggiorna allo schema 8: crea la categoria di sistema Imposte P.IVA; conserva movimenti, categorie utente, regole, snapshot e saldo bancario. Rimuove copertura e integrazioni fiscali manuali senza creare movimenti.');
   const bytes=await readFile(path);const raw=JSON.parse(bytes.toString('utf8')) as Record<string,unknown>;
   const blockers=fromVersion >= 4 ? [] : findV3Blockers(fromVersion===1?migrateV2Record(migrateV1(raw)):fromVersion===2?migrateV2Record(raw):raw);
   return ok({ fromVersion, toVersion: CURRENT_SCHEMA_VERSION, backupPath: backupPathFor(path), changes, blockers });
@@ -147,9 +147,10 @@ export async function migrateArchive(path: string): Promise<Result<ArchiveSessio
     if(preview.value.blockers.length)return err({code:'MIGRATION_REQUIRED',source:'archive',message:'La migrazione automatica è bloccata per evitare una conversione arbitraria dei dati storici.',action:'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.',details:preview.value.blockers});
     const v3=preview.value.fromVersion===1?migrateV2Record(migrateV1(raw)):preview.value.fromVersion===2?migrateV2Record(raw):raw;
     const v4 = preview.value.fromVersion >= 4 ? raw : migrateV3(v3);
+    const categories = (v4.bankExpenseCategories ?? []) as Array<Record<string, unknown>>;
     const migrated = parseDocument({ ...v4, schemaVersion: CURRENT_SCHEMA_VERSION,
-      ...(preview.value.fromVersion < 6 ? { bankExpenseCategories: [], bankExpenses: [], bankExpenseRules: [] } : {}),
-      financialProvisions: [] });
+      bankExpenseCategories: categories.some(category => category.systemRole === 'vat_taxes') ? categories : [...categories, createTaxCategory()],
+      financialProvisions: v4.financialProvisions ?? [] });
     await copyFile(path, preview.value.backupPath);
     temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.migration.tmp`);
     const bytes = encode(migrated);

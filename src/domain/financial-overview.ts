@@ -1,28 +1,29 @@
-import { summarizeBankExpenses } from './bank-expenses';
+import { effectiveCategoryIds, summarizeBankExpenses } from './bank-expenses';
 import { aggregateCollectionsByClient, annualPlannedBusinessCosts, calculateFinancialAnalysis } from './financial-analysis';
 import { d, money, percentOut, sumMoney } from './decimal';
-import type { CashDocument, FinancialProvision } from './model';
+import type { CashDocument } from './model';
 
-export function calculateFiscalReserve(automaticEstimate: string | undefined, provision?: FinancialProvision) {
-  const additions = sumMoney(provision?.additions.map(row => row.amount) ?? []);
-  const covered = provision?.covered ?? '0.00';
-  const total = automaticEstimate === undefined ? undefined : money(d(automaticEstimate).plus(additions));
-  const remaining = total === undefined ? undefined : money(d(total).minus(covered).clamp(0, Infinity));
-  return { automaticEstimate, additions, total, covered, remaining };
+export function calculateFiscalReserve(total: string | undefined, paid = '0.00') {
+  const remaining = total === undefined ? undefined : money(d(total).minus(paid).clamp(0, Infinity));
+  const excess = total === undefined ? undefined : money(d(paid).minus(total).clamp(0, Infinity));
+  return { total, paid, remaining, excess };
 }
 
 export function calculateFinancialOverview(doc: CashDocument, year: number, today: string) {
   const analysis = doc.financialSnapshot
-    ? calculateFinancialAnalysis(doc.financialSnapshot, year, doc.profiles.find(profile => profile.year === year), doc.businessCosts, today)
+    ? calculateFinancialAnalysis(doc.financialSnapshot, year, doc.profiles.find(profile => profile.year === year), doc.businessCosts, today,
+      doc.profiles.find(profile => profile.year === year + 1), doc.settings.fic.taxProfile)
     : undefined;
   const bankSummary = summarizeBankExpenses(doc.bankExpenses, doc.bankExpenseCategories, year, doc.bankExpenseRules);
   const collectedRevenue = analysis?.collectedRevenue;
   const cashMarginBeforeTax = collectedRevenue === undefined ? undefined : money(d(collectedRevenue).minus(bankSummary.total));
   const fiscal = analysis?.fiscalProjection;
   const provision = doc.financialProvisions.find(entry => entry.year === year);
-  const fiscalSituation = calculateFiscalReserve(fiscal?.totalToReserve, provision);
-  // The manually supplied balance already includes all real payments. Never
-  // subtract imported expenses from it, or infer coverage from their categories.
+  const taxCategoryId = doc.bankExpenseCategories.find(category => category.systemRole === 'vat_taxes')?.id;
+  const paidTaxes = sumMoney(doc.bankExpenses.filter(expense => expense.date.slice(0, 4) === String(year)
+    && taxCategoryId !== undefined && effectiveCategoryIds(expense, doc.bankExpenseRules).includes(taxCategoryId)).map(expense => expense.amount));
+  const fiscalSituation = calculateFiscalReserve(fiscal?.totalToReserve, paidTaxes);
+  // All bank expenses include taxes already paid; subtract only the fiscal remainder.
   const bankBalance = provision?.bankBalance;
   const effectiveAvailability = bankBalance === undefined || fiscalSituation.remaining === undefined
     ? undefined : money(d(bankBalance.amount).minus(fiscalSituation.remaining));
@@ -35,7 +36,7 @@ export function calculateFinancialOverview(doc: CashDocument, year: number, toda
     issuedRevenue: analysis?.issuedRevenue, collectedRevenue,
     outstandingRevenue: analysis?.outstandingRevenue, overdueRevenue: analysis?.overdueRevenue,
     bankExpenses: bankSummary.total, cashMarginBeforeTax,
-    fiscalSituation, fiscalReserve: fiscalSituation.remaining, fiscalContributions: fiscal?.contributions, fiscalSubstituteTax: fiscal?.substituteTax,
+    fiscalSituation, fiscalReserve: fiscalSituation.remaining,
     fiscalUnavailableReason: analysis?.fiscalUnavailableReason ?? (!analysis ? 'Nessuno snapshot Fatture in Cloud disponibile.' : undefined),
     availableAfterTaxAndExpenses,
     bankExpenseShareOfCollections: share(bankSummary.total), availableShareOfCollections: share(availableAfterTaxAndExpenses),
@@ -79,10 +80,10 @@ export function buildFinancialOverviewFlow(overview: FinancialOverview): Overvie
   }
   if (d(bankExpenses).gt(0)) link(collectedNode, node('bank', 'Spese bancarie', bankExpenses), bankExpenses);
   if (d(margin).gt(0)) {
-    const marginNode = node('margin', 'Margine prima della fiscalità', margin);
+    const marginNode = node('margin', 'Margine prima della fiscalità residua', margin);
     link(collectedNode, marginNode, margin);
     if (reserve !== undefined && available !== undefined && d(available).gte(0)) {
-      if (d(reserve).gt(0)) link(marginNode, node('fiscal', 'Da accantonare', reserve), reserve);
+      if (d(reserve).gt(0)) link(marginNode, node('fiscal', 'Fiscalità residua', reserve), reserve);
       if (d(available).gt(0)) link(marginNode, node('available', 'Margine dopo accantonamento', available), available);
     }
   }

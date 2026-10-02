@@ -1,19 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
 import { aggregateCollectionsByClient } from '../../src/domain/financial-analysis';
 import { buildFinancialOverviewFlow, calculateFinancialOverview, calculateFiscalReserve } from '../../src/domain/financial-overview';
 import { d, money, sumMoney } from '../../src/domain/decimal';
 import { createEmptyDocument, createFiscalPreset2026, meta, type FicIssuedDocument } from '../../src/domain/model';
 
 const invoice = (amount: string, overrides: Partial<FicIssuedDocument> = {}): FicIssuedDocument => ({
-  id: meta().id, type: 'invoice', date: '2026-01-01', amountGross: amount, entityId: 'client', entityName: 'Cliente',
+  id: meta().id, type: 'invoice', date: '2026-01-01', amountGross: amount, stampDuty: '0.00', entityId: 'client', entityName: 'Cliente',
   payments: [{ amount, status: 'paid', paidDate: '2026-02-01' }], ...overrides,
 });
 function fixture(collected = '40000.00', spent = '10000.00') {
   const doc = createEmptyDocument();
   const profile = createFiscalPreset2026();
   profile.confirmed = true;
-  // Deliberate fixture parameters: 6,000 contributions + 3,000 substitute tax.
-  Object.assign(profile.fiscal, { profitabilityCoefficient: '75', contributionRate: '20', ordinarySubstituteTaxRate: '12.5' });
+  // Deliberate fixture: 4,000 INPS + 2,400 tax + 5,600 advances at 40,000 receipts.
+  Object.assign(profile.fiscal, { profitabilityCoefficient: '50', contributionRate: '20' });
   doc.profiles = [profile];
   doc.financialSnapshot = { source: 'fatture_in_cloud', company: { id: '1', name: 'Studio' }, acquiredAt: '2026-10-01T10:00:00Z',
     issuedDocuments: [invoice(collected)], receivedDocuments: [] };
@@ -23,56 +26,62 @@ function fixture(collected = '40000.00', spent = '10000.00') {
 const overview = (doc = fixture(), year = 2026) => calculateFinancialOverview(doc, year, '2026-10-01');
 
 describe('panoramica finanziaria unificata', () => {
+  it('presenta anno, acconti ed eccedenza senza i controlli fiscali manuali', () => {
+    const doc = fixture(); doc.bankExpenses[0]!.amount = '14000.00';
+    doc.bankExpenses[0]!.categoryIds = [doc.bankExpenseCategories[0]!.id];
+    const html = renderToStaticMarkup(createElement(FinancialOverviewDashboard, { overview: overview(doc), readOnly: false, onEdit: () => undefined }));
+    for (const label of ['Previsione fiscale gestionale', 'Pagato tramite banca', 'Ancora da coprire',
+      'Pagato oltre la previsione', 'Anno corrente', 'Acconti anno successivo', 'Contributi INPS stimati',
+      'Base sostitutiva stimata', 'Bollo', 'Modifica saldo bancario', '62.20.10']) expect(html).toContain(label);
+    expect(html).not.toMatch(/Già coperto|Integrazioni manuali|Aggiungi integrazione|Modifica situazione/);
+  });
   it.each([
-    ['0.00', '10000.00'], ['4000.00', '6000.00'], ['10000.00', '0.00'], ['12000.00', '0.00'],
-  ])('stima 10000, copertura %s: residuo %s', (covered, remaining) => {
-    expect(calculateFiscalReserve('10000.00', { year: 2026, covered, additions: [] }))
-      .toEqual({ automaticEstimate: '10000.00', additions: '0.00', total: '10000.00', covered, remaining });
+    ['0.00', '10000.00', '0.00'], ['4000.00', '6000.00', '0.00'],
+    ['10000.00', '0.00', '0.00'], ['12000.00', '0.00', '2000.00'],
+  ])('stima 10000, pagato %s: residuo %s, eccedenza %s', (paid, remaining, excess) => {
+    expect(calculateFiscalReserve('10000.00', paid)).toEqual({ total: '10000.00', paid, remaining, excess });
   });
 
-  it('nessuna copertura e integrazioni multiple, senza crediti impliciti', () => {
-    expect(calculateFiscalReserve('10000.00')).toMatchObject({ covered: '0.00', additions: '0.00', remaining: '10000.00' });
-    expect(calculateFiscalReserve('10000.00', { year: 2026, covered: '4000.00', additions: [
-      { description: 'Acconto futuro', amount: '2500.00' }, { description: 'Bollo previsto', amount: '180.00' },
-    ] })).toMatchObject({ total: '12680.00', additions: '2680.00', remaining: '8680.00' });
-    expect(calculateFiscalReserve('5000.00', { year: 2026, covered: '7000.00', additions: [] }).remaining).toBe('0.00');
-    expect(calculateFiscalReserve(undefined, { year: 2026, covered: '4000.00', additions: [{ description: 'Bollo', amount: '180.00' }] }))
-      .toMatchObject({ additions: '180.00', total: undefined, remaining: undefined });
+  it('mantiene il pagato senza inventare il totale quando la previsione è indisponibile', () => {
+    expect(calculateFiscalReserve(undefined, '7000.00')).toEqual({ total: undefined, paid: '7000.00', remaining: undefined, excess: undefined });
   });
 
-  it('un versamento fiscale resta nei flussi ma non viene sottratto di nuovo dal saldo né coperto automaticamente', () => {
-    const doc = fixture('40000.00', '6000.00');
-    const category = { ...meta(), name: 'Versamenti fiscali' };
-    doc.bankExpenseCategories = [category];
-    doc.bankExpenseRules = [{ ...meta(), matchText: 'F24', categoryId: category.id }];
-    doc.bankExpenses[0]!.description = 'Versamento F24';
-    // 40000 on the bank account minus the already paid 6000 = 34000.
-    doc.financialProvisions = [{ year: 2026, covered: '0.00', additions: [], bankBalance: { amount: '34000.00', date: '2026-10-01' } }];
-    expect(overview(doc)).toMatchObject({ fiscalReserve: '9000.00', effectiveAvailability: '25000.00' });
-    doc.financialProvisions[0]!.covered = '4000.00';
+  it.each(['manual', 'rule', 'both'])('correla la categoria di sistema rinominata via %s senza doppio conteggio', mode => {
+    const doc = fixture('50000.00', '10000.00');
+    doc.profiles[0]!.fiscal.profitabilityCoefficient = '40';
+    const category = doc.bankExpenseCategories[0]!;
+    category.name = 'Versamenti rinominati';
+    doc.bankExpenses.push({ ...meta(), date: '2026-06-01', description: 'F24', amount: '7000.00',
+      categoryIds: mode === 'rule' ? [] : [category.id] });
+    if (mode !== 'manual') doc.bankExpenseRules = [{ ...meta(), matchText: 'F24', categoryId: category.id }];
+    doc.bankExpenses.push({ ...meta(), date: '2025-06-01', description: 'F24 precedente', amount: '900.00', categoryIds: [category.id] });
+    doc.financialProvisions = [{ year: 2026, bankBalance: { amount: '33000.00', date: '2026-10-01' } }];
     const result = overview(doc);
-    expect(result).toMatchObject({ bankExpenses: '6000.00', cashMarginBeforeTax: '34000.00', fiscalReserve: '5000.00',
-      fiscalSituation: { automaticEstimate: '9000.00', covered: '4000.00' }, effectiveAvailability: '29000.00', availableAfterTaxAndExpenses: '29000.00' });
-    expect(result.monthly[1]!.bankExpenses).toBe('6000.00');
-    expect(result.bankSummary.categories[0]!.amount).toBe('6000.00');
-    expect(buildFinancialOverviewFlow(result).nodes.find(node => node.key === 'fiscal')?.amount).toBe('5000.00');
-    doc.bankExpenses = [];
-    expect(overview(doc).effectiveAvailability).toBe('29000.00');
-    expect(overview(doc).fiscalSituation.covered).toBe('4000.00');
+    expect(result).toMatchObject({ collectedRevenue: '50000.00', bankExpenses: '17000.00', cashMarginBeforeTax: '33000.00',
+      fiscalSituation: { total: '12000.00', paid: '7000.00', remaining: '5000.00', excess: '0.00' },
+      availableAfterTaxAndExpenses: '28000.00', effectiveAvailability: '28000.00' });
+    expect(result.bankSummary.total).toBe('17000.00');
+    const flow = buildFinancialOverviewFlow(result);
+    expect(flow.nodes.find(node => node.key === 'fiscal')?.amount).toBe('5000.00');
+    expect(flow.nodes.find(node => node.key === 'bank')?.amount).toBe('17000.00');
+    expect(result.availableAfterTaxAndExpenses).not.toBe('21000.00');
   });
 
-  it('separa saldo e margine, preserva saldo negativo e non riporta la copertura tra anni', () => {
+  it('separa saldo e margine, preserva saldo negativo ed eccedenza senza riporti', () => {
     const doc = fixture();
     expect(overview(doc).effectiveAvailability).toBeUndefined();
-    doc.financialProvisions = [{ year: 2026, covered: '9000.00', additions: [], bankBalance: { amount: '-100.00', date: '2026-10-01' } }];
-    expect(overview(doc)).toMatchObject({ effectiveAvailability: '-100.00', fiscalReserve: '0.00', availableAfterTaxAndExpenses: '30000.00' });
-    expect(overview(doc, 2027)).toMatchObject({ effectiveAvailability: undefined, fiscalSituation: { covered: '0.00', additions: '0.00' } });
+    doc.bankExpenses[0]!.amount = '14000.00';
+    doc.bankExpenses[0]!.categoryIds = [doc.bankExpenseCategories[0]!.id];
+    doc.financialProvisions = [{ year: 2026, bankBalance: { amount: '-100.00', date: '2026-10-01' } }];
+    expect(overview(doc)).toMatchObject({ effectiveAvailability: '-100.00', fiscalReserve: '0.00',
+      fiscalSituation: { paid: '14000.00', excess: '2000.00' }, availableAfterTaxAndExpenses: '26000.00' });
+    expect(overview(doc, 2027)).toMatchObject({ effectiveAvailability: undefined, fiscalSituation: { paid: '0.00' } });
   });
 
-  it('calcola margine e disponibile con la sola stima fiscale esistente', () => {
+  it('include anno corrente e acconti automatici nel disponibile', () => {
     const result = overview();
     expect(result).toMatchObject({ collectedRevenue: '40000.00', bankExpenses: '10000.00', cashMarginBeforeTax: '30000.00',
-      fiscalReserve: '9000.00', availableAfterTaxAndExpenses: '21000.00', bankExpenseShareOfCollections: '25.00', availableShareOfCollections: '52.50' });
+      fiscalReserve: '12000.00', availableAfterTaxAndExpenses: '18000.00', bankExpenseShareOfCollections: '25.00', availableShareOfCollections: '45.00' });
     expect(result.fiscalReserve).toBe(result.analysis?.fiscalProjection?.totalToReserve);
   });
 
@@ -89,7 +98,7 @@ describe('panoramica finanziaria unificata', () => {
   it('preserva il disavanzo e non crea un flusso incoerente', () => {
     const result = overview(fixture('10000.00', '12000.00'));
     expect(result.cashMarginBeforeTax).toBe('-2000.00');
-    expect(result.availableAfterTaxAndExpenses).toBe('-4250.00');
+    expect(result.availableAfterTaxAndExpenses).toBe('-5000.00');
     expect(buildFinancialOverviewFlow(result)).toMatchObject({ nodes: [], links: [], message: expect.stringContaining('superano') });
   });
 

@@ -3,9 +3,18 @@ import { createBlankProfile, createEmptyDocument, createFiscalPreset2026, meta }
 import { cashDocumentSchema } from '../../src/domain/schema';
 
 describe('schema archivio v6',()=>{
+  it('richiede una sola categoria di sistema e conserva il significato dopo rename', () => {
+    const doc = createEmptyDocument();
+    expect(doc.bankExpenseCategories).toHaveLength(1);
+    expect(doc.bankExpenseCategories[0]).toMatchObject({ name: 'Imposte P.IVA', systemRole: 'vat_taxes' });
+    doc.bankExpenseCategories[0]!.name = 'Versamenti';
+    expect(cashDocumentSchema.parse(doc).bankExpenseCategories[0]!.systemRole).toBe('vat_taxes');
+    expect(cashDocumentSchema.safeParse({ ...doc, bankExpenseCategories: [] }).success).toBe(false);
+    expect(cashDocumentSchema.safeParse({ ...doc, bankExpenseCategories: [...doc.bankExpenseCategories, { ...doc.bankExpenseCategories[0], ...meta(), name: 'Duplicato' }] }).success).toBe(false);
+  });
   it('inizializza solo raccolte bancarie assenti, senza mascherare valori corrotti', () => {
     const document = createEmptyDocument();
-    expect(cashDocumentSchema.parse({ ...document, bankExpenses: undefined, bankExpenseCategories: undefined, bankExpenseRules: undefined })).toEqual(document);
+    expect(cashDocumentSchema.parse({ ...document, bankExpenses: undefined, bankExpenseRules: undefined })).toEqual(document);
     for (const field of ['bankExpenses', 'bankExpenseCategories', 'bankExpenseRules']) {
       for (const value of [null, {}, 'invalid']) expect(cashDocumentSchema.safeParse({ ...document, [field]: value }).success).toBe(false);
     }
@@ -13,7 +22,7 @@ describe('schema archivio v6',()=>{
   it('conserva categorie manuali vecchie e nuove e rifiuta riferimenti legacy invalidi', () => {
     const document = createEmptyDocument();
     const first = { ...meta(), name: 'Uno' }; const second = { ...meta(), name: 'Due' };
-    document.bankExpenseCategories = [first, second];
+    document.bankExpenseCategories = [first, second, ...document.bankExpenseCategories];
     const row = { ...meta(), date: '2026-01-01', description: 'Test', amount: '1.00' };
     const parse = (fields: Record<string, unknown>) => cashDocumentSchema.safeParse({ ...document, bankExpenses: [{ ...row, ...fields }] });
     const merged = parse({ categoryId: first.id, categoryIds: [second.id] });

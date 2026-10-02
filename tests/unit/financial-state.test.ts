@@ -22,13 +22,13 @@ describe('applicazione atomica dello snapshot', () => {
 
   it('autosalva la previsione, la conserva al sync e rispetta validazione, sola lettura e conflitto', async () => {
     const { state, save } = setup();
-    const provisions = [{ year: 2026, covered: '4000.00', additions: [{ description: 'Bollo', amount: '180.00' }] }];
+    const provisions = [{ year: 2026, bankBalance: { amount: '4000.00', date: '2026-10-01' } }];
     expect(state.mutate(document => { document.financialProvisions = provisions; })).toBe(true);
     await vi.runAllTimersAsync(); expect(save).toHaveBeenCalledTimes(1);
     await state.syncFinancialData(); await vi.runAllTimersAsync();
     expect(state.document?.financialProvisions).toEqual(provisions);
     const before = structuredClone(state.document);
-    expect(state.mutate(document => { document.financialProvisions[0]!.covered = '-1.00'; })).toBe(false);
+    expect(state.mutate(document => { document.financialProvisions[0]!.bankBalance!.amount = '1.001'; })).toBe(false);
     state.session!.readOnly = true;
     expect(state.mutate(document => { document.financialProvisions = []; })).toBe(false);
     state.session!.readOnly = false; state.status = 'Conflitto esterno';

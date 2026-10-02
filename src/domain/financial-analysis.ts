@@ -1,6 +1,6 @@
-import { calculateFiscalProjection, type FiscalProjection } from './calculations';
+import { calculateFiscalAdvances, calculateFiscalProjection, type FiscalProjection } from './calculations';
 import { d, money, percentOut, sumMoney } from './decimal';
-import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, FicIssuedDocument, FicReceivedDocument, FinancialProvision } from './model';
+import type { BankExpense, BusinessCost, EconomicProfile, FicFinancialSnapshot, FicIssuedDocument, FicReceivedDocument, FicTaxProfileSnapshot, FinancialProvision } from './model';
 
 type FinancialDocument = FicIssuedDocument | FicReceivedDocument;
 const inYear = (date: string | undefined, year: number) => date?.slice(0, 4) === String(year);
@@ -155,8 +155,15 @@ export function aggregateSuppliers(expenses: FicReceivedDocument[], today: strin
 
 export type FinancialAnalysis = ReturnType<typeof calculateFinancialAnalysis>;
 
+export type ManagementFiscalProjection = Omit<FiscalProjection, 'totalToReserve'> & ReturnType<typeof calculateFiscalAdvances> & {
+  atecoCode: string; profitabilityCoefficient: string; contributionRate: string; contributionCeiling: string;
+  advanceContributionRate: string; advanceRateProjected: boolean;
+  stampDuty?: string; annualTotal?: string; totalToReserve?: string;
+};
+
 export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year: number,
-  profile: EconomicProfile | undefined, costs: BusinessCost[], today: string) {
+  profile: EconomicProfile | undefined, costs: BusinessCost[], today: string,
+  nextProfile?: EconomicProfile, taxProfile?: FicTaxProfileSnapshot) {
   const annualProfile = profile?.year === year ? profile : undefined;
   const invoices = snapshot.issuedDocuments.filter(document => document.type === 'invoice');
   const expenses = snapshot.receivedDocuments.filter(document => document.type === 'expense');
@@ -168,22 +175,45 @@ export function calculateFinancialAnalysis(snapshot: FicFinancialSnapshot, year:
   const invoiceDetails = annualInvoices.map(document => ({ document, ...financialPaymentSummary(document, today) }));
   const costDetails = annualExpenses.map(document => ({ document, ...financialPaymentSummary(document, today) }));
   const revenueTarget = annualProfile?.revenueTarget;
-  let fiscalProjection: FiscalProjection | undefined;
+  let fiscalProjection: ManagementFiscalProjection | undefined;
   let fiscalUnavailableReason: string | undefined;
   const fiscalWarnings: string[] = [];
   if (!annualProfile) fiscalUnavailableReason = `Manca il profilo fiscale per il ${year}.`;
   else if (!annualProfile.confirmed) fiscalUnavailableReason = `Il profilo fiscale ${year} non è confermato.`;
   else {
     const fiscal = annualProfile.fiscal;
-    if (fiscal.activityPhase === 'reduced_eligible' && !fiscal.reducedEligibilityConfirmed)
-      fiscalUnavailableReason = 'Confermare i requisiti per l’aliquota agevolata.';
+    if (taxProfile?.hasProfessionalFund || (taxProfile?.companyType && taxProfile.companyType !== 'individual')
+      || (taxProfile?.regime && !['forfettario', 'forfettario_5', 'forfettario_15'].includes(taxProfile.regime.trim().toLowerCase()))
+      || (taxProfile?.companySubtype && taxProfile.companySubtype !== 'professionista'))
+      fiscalUnavailableReason = 'Profilo Fatture in Cloud fuori dal perimetro forfettario professionista in Gestione Separata.';
     else if (d(collectedRevenue).gt(fiscal.cessationThreshold))
       fiscalUnavailableReason = 'Incassato oltre la soglia di cessazione: proiezione forfettaria non disponibile.';
     else if (d(collectedRevenue).gt(fiscal.ordinaryThreshold) && !fiscal.ordinaryApplicabilityConfirmed)
       fiscalUnavailableReason = 'Confermare l’applicabilità del regime oltre la soglia ordinaria.';
     else {
       const result = calculateFiscalProjection(collectedRevenue, fiscal);
-      if (result.ok) fiscalProjection = result.value; else fiscalUnavailableReason = result.error.message;
+      if (result.ok) {
+        const confirmedNext = nextProfile?.year === year + 1 && nextProfile.confirmed ? nextProfile : undefined;
+        const nextResult = confirmedNext ? calculateFiscalProjection('0.00', confirmedNext.fiscal) : undefined;
+        if (nextResult && !nextResult.ok) {
+          fiscalUnavailableReason = `Profilo ${year + 1} non supportato: ${nextResult.error.message}`;
+        } else {
+          const advanceContributionRate = confirmedNext?.fiscal.contributionRate ?? fiscal.contributionRate;
+          const advances = calculateFiscalAdvances(result.value, advanceContributionRate);
+          const missingStamp = annualInvoices.filter(document => document.stampDuty === undefined);
+          const stampDuty = missingStamp.length ? undefined : sumMoney(annualInvoices.map(document => document.stampDuty!));
+          const annualTotal = stampDuty === undefined ? undefined : money(d(result.value.totalToReserve).plus(stampDuty));
+          fiscalProjection = { ...result.value, ...advances, atecoCode: fiscal.atecoCode,
+            profitabilityCoefficient: fiscal.profitabilityCoefficient, contributionRate: fiscal.contributionRate,
+            contributionCeiling: fiscal.contributionCeiling, advanceContributionRate, advanceRateProjected: !confirmedNext,
+            stampDuty, annualTotal, totalToReserve: annualTotal === undefined ? undefined : money(d(annualTotal).plus(advances.totalAdvances)) };
+          if (!confirmedNext) fiscalWarnings.push(`Aliquota INPS dell’anno successivo non disponibile: proiezione effettuata con l’aliquota ${year}.`);
+          if (missingStamp.length) {
+            fiscalUnavailableReason = `Bollo non disponibile per ${missingStamp.length} fatture del ${year}: aggiorna i dati Fatture in Cloud. Il totale fiscale non è determinabile senza questo dato.`;
+            fiscalWarnings.push(fiscalUnavailableReason);
+          }
+        }
+      } else fiscalUnavailableReason = result.error.message;
     }
     if (d(collectedRevenue).gt(fiscal.ordinaryThreshold)) fiscalWarnings.push('Incassato oltre la soglia ordinaria del regime forfettario.');
   }

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { calculateFinancialAnalysis, financialPaymentSummary, financialYears } from '../../src/domain/financial-analysis';
-import { calculateProfile } from '../../src/domain/calculations';
+import { calculateFiscalAdvances, calculateFiscalProjection, calculateProfile } from '../../src/domain/calculations';
+import { d, money } from '../../src/domain/decimal';
 import { createFiscalPreset2026, meta, type FicFinancialSnapshot, type FicIssuedDocument } from '../../src/domain/model';
 
-const invoice = (values: Partial<FicIssuedDocument>): FicIssuedDocument => ({ id: '1', type: 'invoice', date: '2026-02-01', amountGross: '100.00', payments: [], ...values });
+const invoice = (values: Partial<FicIssuedDocument>): FicIssuedDocument => ({ id: '1', type: 'invoice', date: '2026-02-01', amountGross: '100.00', stampDuty: '0.00', payments: [], ...values });
 const snapshot = (): FicFinancialSnapshot => ({ source: 'fatture_in_cloud', company: { id: '1', name: 'Studio' }, acquiredAt: '2026-09-30T10:00:00Z',
   issuedDocuments: [
     invoice({ id: '1', date: '2025-12-20', amountGross: '200.00', payments: [{ amount: '200.00', status: 'paid', paidDate: '2026-01-15' }] }),
@@ -21,6 +22,80 @@ const snapshot = (): FicFinancialSnapshot => ({ source: 'fatture_in_cloud', comp
   ] });
 
 describe('analisi finanziaria', () => {
+  it.each([
+    ['ordinary', false, '15', '3714.98', '12450.43', '10701.74', '23152.17'],
+    ['reduced_eligible', true, '5', '1238.33', '9973.78', '8225.09', '18198.87'],
+    ['reduced_eligible', false, '15', '3714.98', '12450.43', '10701.74', '23152.17'],
+  ] as const)('previsione completa %s confermata %s: %s%% con bollo e acconti', (phase, confirmed, rate, tax, annual, advances, total) => {
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    profile.fiscal.activityPhase = phase; profile.fiscal.reducedEligibilityConfirmed = confirmed;
+    const data = snapshot();
+    data.issuedDocuments = [invoice({ stampDuty: '2.00', amountGross: '50000.00', payments: [{ amount: '50000.00', status: 'paid', paidDate: '2026-05-01' }] })];
+    const result = calculateFinancialAnalysis(data, 2026, profile, [], '2026-10-01');
+    expect(result.collectedRevenue).toBe('50000.00');
+    expect(result.fiscalProjection).toMatchObject({ atecoCode: '62.20.10', profitabilityCoefficient: '67',
+      forfaitIncome: '33500.00', contributionBase: '33500.00', contributions: '8733.45', taxBase: '24766.55',
+      effectiveTaxRate: rate, substituteTax: tax, stampDuty: '2.00', annualTotal: annual,
+      contributionAdvance: '6986.76', contributionAdvanceFirst: '3493.38', contributionAdvanceSecond: '3493.38',
+      totalAdvances: advances, totalToReserve: total, advanceRateProjected: true });
+    expect(result.fiscalWarnings).toContain('Aliquota INPS dell’anno successivo non disponibile: proiezione effettuata con l’aliquota 2026.');
+  });
+
+  it('usa il principio di cassa e mantiene rivalsa e bollo riaddebitato nel pagamento', () => {
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    const data = snapshot(); data.issuedDocuments = [
+      invoice({ id: 'old', date: '2025-12-01', stampDuty: '2.00', amountGross: '1040.00', payments: [{ amount: '1040.00', status: 'paid', paidDate: '2026-01-01' }] }),
+      invoice({ id: 'unpaid', stampDuty: '2.00', payments: [{ amount: '100.00', status: 'not_paid' }] }),
+      invoice({ id: 'future', stampDuty: '0.00', payments: [{ amount: '100.00', status: 'paid', paidDate: '2027-01-01' }] }),
+      invoice({ id: 'charged-stamp', stampDuty: '2.00', amountGross: '1042.00', payments: [{ amount: '1042.00', status: 'paid', paidDate: '2026-02-01' }] }),
+    ];
+    const result = calculateFinancialAnalysis(data, 2026, profile, [], '2026-10-01');
+    expect(result.collectedRevenue).toBe('2082.00');
+    expect(result.fiscalProjection).toMatchObject({ forfaitIncome: '1394.94', stampDuty: '4.00' });
+    delete data.issuedDocuments[1]!.stampDuty;
+    const incomplete = calculateFinancialAnalysis(data, 2026, profile, [], '2026-10-01');
+    expect(incomplete.collectedRevenue).toBe('2082.00');
+    expect(incomplete.fiscalProjection?.contributions).toBeDefined();
+    expect(incomplete.fiscalProjection?.stampDuty).toBeUndefined();
+    expect(incomplete.fiscalProjection?.totalToReserve).toBeUndefined();
+    expect(incomplete.fiscalWarnings.join(' ')).toContain('Bollo non disponibile');
+  });
+
+  it.each([
+    ['0.00', '0.00', '0.00', '0.00'], ['51.65', '0.00', '0.00', '0.00'],
+    ['51.66', '51.66', '0.00', '51.66'], ['257.51', '257.51', '0.00', '257.51'],
+    ['257.52', '257.52', '103.01', '154.51'], ['1000.01', '1000.01', '400.00', '600.01'],
+  ])('acconto sostitutiva con imposta %s', (tax, total, first, second) => {
+    const result = calculateFiscalProjection('1000.00', createFiscalPreset2026().fiscal);
+    if (!result.ok) throw new Error(result.error.message);
+    const advance = calculateFiscalAdvances({ ...result.value, substituteTax: tax }, '26.07');
+    expect(advance).toMatchObject({ substituteTaxAdvance: total, substituteTaxAdvanceFirst: first, substituteTaxAdvanceSecond: second });
+    expect(money(d(first).plus(second))).toBe(total);
+    expect(money(d(advance.contributionAdvanceFirst).plus(advance.contributionAdvanceSecond))).toBe(advance.contributionAdvance);
+  });
+
+  it('usa soltanto l’aliquota INPS del profilo successivo confermato e non genera profili', () => {
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    const next = { ...structuredClone(profile), year: 2027 }; next.fiscal.contributionRate = '27';
+    const run = () => calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-10-01', next);
+    expect(run().fiscalProjection).toMatchObject({ contributionAdvance: '43.42', contributionAdvanceFirst: '21.71', contributionAdvanceSecond: '21.71', advanceContributionRate: '27', advanceRateProjected: false });
+    expect(run().fiscalWarnings).toEqual([]);
+    next.confirmed = false;
+    expect(run().fiscalProjection).toMatchObject({ advanceContributionRate: '26.07', advanceRateProjected: true });
+    next.confirmed = true; next.year = 2028;
+    expect(run().fiscalProjection?.advanceRateProjected).toBe(true);
+  });
+
+  it('applica il massimale e blocca profili fuori perimetro senza bloccare incassi', () => {
+    const profile = createFiscalPreset2026(); profile.confirmed = true; profile.fiscal.contributionCeiling = '100.00';
+    expect(calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-10-01').fiscalProjection).toMatchObject({ contributionBase: '100.00', contributions: '26.07' });
+    profile.fiscal.atecoCode = '69.10.10';
+    const result = calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-10-01');
+    expect(result.collectedRevenue).toBe('300.00'); expect(result.fiscalProjection).toBeUndefined();
+    profile.fiscal.atecoCode = '62.20.10';
+    expect(calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-10-01', undefined,
+      { acquiredAt: '2026-01-01T00:00:00Z', regime: 'ordinario' }).fiscalProjection).toBeUndefined();
+  });
   it('separa emesso, incassato per anno pagamento, note di credito e costi', () => {
     const profile = createFiscalPreset2026(); profile.revenueTarget = '1000.00'; profile.confirmed = true;
     const result = calculateFinancialAnalysis(snapshot(), 2026, profile, [{ ...meta(), category: 'Software', description: 'Suite', monthlyAmount: '10.00' }], '2026-09-30');
@@ -41,7 +116,7 @@ describe('analisi finanziaria', () => {
       expect(result.fiscalProjection?.contributions).toBe(planning.value.contributions);
       expect(result.fiscalProjection?.substituteTax).toBe(planning.value.substituteTax);
     }
-    expect(result.fiscalProjection?.totalToReserve).toBe('74.69');
+    expect(result.fiscalProjection?.totalToReserve).toBe('116.61');
   });
 
   it('deriva residui e scadenze senza inventare date, ignorando reversed nell’incassato', () => {

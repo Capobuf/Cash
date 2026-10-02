@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FIC_SCOPES } from '../../src/domain/integration';
-import { syncFinancialData } from '../../src/native/integrations/fatture-in-cloud';
+import { getTaxProfile, syncFinancialData } from '../../src/native/integrations/fatture-in-cloud';
+import { calculateFinancialAnalysis } from '../../src/domain/financial-analysis';
+import { createEmptyDocument, createFiscalPreset2026 } from '../../src/domain/model';
+import { parseDocument } from '../../src/domain/schema';
 
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 const company = { data: { id: 1, name: 'Studio', access_info: { permissions: {
@@ -13,6 +16,57 @@ const remote = (type: string, id = 1) => ({ id, type, date: '2026-01-01', amount
 });
 
 describe('snapshot finanziario FIC completo', () => {
+  it.each([
+    [{ cassa_name: '', cassa2_name: '', default_cassa: 0, default_cassa2: 0 }, false],
+    [{ cassa_name: 'Cassa professionale', default_cassa: 4 }, true],
+    [{ default_cassa2: 4 }, true], [{}, undefined],
+  ] as const)('conserva solo l’indicazione di Cassa necessaria a bloccare profili non supportati: %j', async (fund, expected) => {
+    const result = await getTaxProfile('1', 'token', vi.fn(async () => response({ data: {
+      company_type: 'individual', company_subtype: 'professionista', regime: 'forfettario_15', ...fund,
+    } })) as typeof fetch);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.hasProfessionalFund).toBe(expected);
+    const document = createEmptyDocument(); document.settings.fic.taxProfile = result.value;
+    expect(parseDocument(document).settings.fic.taxProfile).toEqual(result.value);
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    const analysis = calculateFinancialAnalysis({ source: 'fatture_in_cloud', company: { id: '1', name: 'Studio' },
+      acquiredAt: '2026-10-01T00:00:00Z', issuedDocuments: [], receivedDocuments: [] }, 2026, profile, [], '2026-10-01', undefined, result.value);
+    expect(analysis.collectedRevenue).toBe('0.00');
+    if (expected) expect(analysis.fiscalProjection).toBeUndefined();
+    else expect(analysis.fiscalProjection?.totalToReserve).toBe('0.00');
+  });
+  // Contract-shaped fixture: stamp_duty is an amount, while payment.amount is
+  // the amount actually collected, including rivalsa and any charged stamp duty.
+  it.each([2, 0, null, undefined, 'invalid', -2])('importa bollo esplicito %s senza euristiche o duplicazioni dei ricavi', async stamp => {
+    const collected = stamp === 0 ? 1040 : 1042;
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/company/info')) return response(company);
+      const data = url.searchParams.get('type') === 'invoice' ? [{
+        id: 1, type: 'invoice', date: '2026-01-01', amount_net: 1000, amount_gross: collected,
+        rivalsa: 4, amount_rivalsa: 40, stamp_duty: stamp,
+        items_list: [{ name: 'Consulenza', net_price: 1000, qty: 1, vat: { id: 66, value: 0 } }],
+        payments_list: [{ amount: collected, status: 'paid', paid_date: '2026-02-01' }],
+      }] : [];
+      return response({ current_page: 1, last_page: 1, data });
+    });
+    const result = await syncFinancialData('1', 'token', fetcher as typeof fetch);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    const profile = createFiscalPreset2026(); profile.confirmed = true;
+    const analysis = calculateFinancialAnalysis(result.value, 2026, profile, [], '2026-10-01');
+    expect(analysis.collectedRevenue).toBe(stamp === 0 ? '1040.00' : '1042.00');
+    expect(analysis.fiscalProjection?.forfaitIncome).toBe(stamp === 0 ? '696.80' : '698.14');
+    expect(result.value.issuedDocuments[0]).not.toHaveProperty('items_list');
+    expect(result.value.issuedDocuments[0]).not.toHaveProperty('rivalsa');
+    if (stamp === 0 || stamp === 2) {
+      expect(analysis.fiscalProjection?.stampDuty).toBe(stamp === 0 ? '0.00' : '2.00');
+      expect(analysis.fiscalProjection?.totalToReserve).toBeDefined();
+    } else {
+      expect(analysis.fiscalProjection?.stampDuty).toBeUndefined();
+      expect(analysis.fiscalProjection?.totalToReserve).toBeUndefined();
+      expect(analysis.fiscalUnavailableReason).toContain('Bollo non disponibile');
+    }
+  });
   it.each([{ id: 42, name: 'Controparte' }, { id: '42' }, { name: 'Controparte' }, { id: null, name: null }, null])('conserva entity.id e name opzionali per emessi e ricevuti: %j', async entity => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
@@ -36,7 +90,7 @@ describe('snapshot finanziario FIC completo', () => {
       if (url.pathname.endsWith('/pending')) return response({ current_page: 1, last_page: 1, data: [] });
       const type = url.searchParams.get('type')!; const page = Number(url.searchParams.get('page'));
       expect(url.searchParams.get('per_page')).toBe('100'); expect(url.searchParams.get('fieldset')).toBe('detailed');
-      expect(url.searchParams.get('fields')).toBe(`id,type,date,entity,amount_gross,payments_list,${type === 'invoice' || type === 'credit_note' ? 'number,numeration,subject' : 'invoice_number,description,category'}`);
+      expect(url.searchParams.get('fields')).toBe(`id,type,date,entity,amount_gross,payments_list,${type === 'invoice' || type === 'credit_note' ? 'number,numeration,subject,stamp_duty' : 'invoice_number,description,category'}`);
       expect(url.searchParams.has('q')).toBe(false);
       expect(url.pathname).toBe(`/c/1/${type === 'invoice' || type === 'credit_note' ? 'issued_documents' : 'received_documents'}`);
       return response({ current_page: page, last_page: type === 'invoice' ? 2 : 1, data: [remote(type, type === 'invoice' || type === 'expense' ? page : 3)] });

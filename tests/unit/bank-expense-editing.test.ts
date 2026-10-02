@@ -7,7 +7,7 @@ import { cashDocumentSchema } from '../../src/domain/schema';
 function fixture() {
   const doc = createEmptyDocument();
   const a = { ...meta(), name: 'Software' }; const b = { ...meta(), name: 'Online' };
-  doc.bankExpenseCategories = [a, b];
+  doc.bankExpenseCategories = [a, b, ...doc.bankExpenseCategories];
   doc.bankExpenseRules = [{ ...meta(), matchText: 'paypal', categoryId: b.id }];
   doc.bankExpenses = [
     { ...meta(), updatedAt: '2020-01-01T00:00:00.000Z', date: '2026-01-01', description: 'PAYPAL', amount: '10.00', categoryIds: [a.id] },

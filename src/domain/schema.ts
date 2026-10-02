@@ -5,7 +5,7 @@ import { bankExpenseIdentity, normalizeBankDescription, normalizeBankRuleText } 
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
-  financialProvisions: 'Previsioni fiscali', covered: 'già coperto', additions: 'integrazioni',
+  financialProvisions: 'Saldi bancari',
   bankExpenses: 'Movimenti bancari', bankExpenseCategories: 'Categorie spese', bankExpenseRules: 'Regole automatiche', categoryIds: 'categorie manuali', matchText: 'testo da riconoscere', categoryId: 'categoria', parentId: 'categoria principale',
   vehicles: 'Veicoli', businessCosts: 'Costi aziendali', sites: 'Sedi', profiles: 'Profili', quotes: 'Preventivi',
   catalog: 'Catalogo', settings: 'Impostazioni', name: 'nome', displayName: 'denominazione', category: 'categoria',
@@ -118,7 +118,7 @@ export const financialSnapshotSchema = z.object({
     amountGross: moneyInput.optional(), category: z.string().optional(),
   })).optional(),
   source: z.literal('fatture_in_cloud'), company: z.object({ id: z.string().min(1), name: z.string().min(1) }), acquiredAt: iso,
-  issuedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['invoice', 'credit_note']), number: z.string().optional(), numeration: z.string().optional(), description: z.string().optional() })),
+  issuedDocuments: z.array(z.object({ ...financialDocumentFields, stampDuty: moneyInput.optional(), type: z.enum(['invoice', 'credit_note']), number: z.string().optional(), numeration: z.string().optional(), description: z.string().optional() })),
   receivedDocuments: z.array(z.object({ ...financialDocumentFields, type: z.enum(['expense', 'passive_credit_note']), invoiceNumber: z.string().optional(), description: z.string().optional(), category: z.string().optional() })),
 }).superRefine((snapshot, ctx) => {
   const pendingIds = new Set<string>();
@@ -162,25 +162,25 @@ const bankExpenseSchema = z.preprocess(input => {
 
 export const financialProvisionSchema = z.object({
   year: z.number().int().min(1900).max(9999),
-  covered: moneyInput.default('0.00'),
-  additions: z.array(z.object({ description: z.string().trim().min(1), amount: moneyInput })).default([]),
   bankBalance: z.object({ amount: boundedDecimal(2), date: z.string().date() }).optional(),
 });
 
 export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
   financialProvisions: z.array(financialProvisionSchema).default([]),
   bankExpenses: z.array(bankExpenseSchema).default([]),
-  bankExpenseCategories: z.array(z.object({ ...entity, name: z.string().trim().min(1), parentId: uuid.optional() })).default([]),
+  bankExpenseCategories: z.array(z.object({ ...entity, name: z.string().trim().min(1), parentId: uuid.optional(), systemRole: z.literal('vat_taxes').optional() })),
   bankExpenseRules: z.array(bankExpenseRuleSchema).default([]),
   financialSnapshot: financialSnapshotSchema.optional(),
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION), documentId: uuid, revision: z.number().int().positive(), createdAt: iso, updatedAt: iso,
-  settings: z.object({ fuelTerritory: z.string().min(1).optional(), defaultDepartureSiteId: uuid.optional(), defaultVehicleId: uuid.optional(), fic: z.object({ enabled: z.boolean(), company: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), product: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), taxProfile: z.object({ acquiredAt: iso, companyType: z.string().optional(), companySubtype: z.string().optional(), profession: z.string().optional(), regime: z.string().optional(), profitCoefficient: decimal.optional(), contributionsPercentage: decimal.optional(), defaultVat: z.object({ id: z.string().min(1), value: z.number().optional(), description: z.string().optional() }).optional() }).optional(), legacyReferences: z.object({ companyId: z.string().min(1).optional(), productId: z.string().min(1).optional() }).optional(), lastVerification: z.object({ at: iso, result: z.enum(['success', 'error']), diagnostic: z.string().optional() }).optional() }) }),
+  settings: z.object({ fuelTerritory: z.string().min(1).optional(), defaultDepartureSiteId: uuid.optional(), defaultVehicleId: uuid.optional(), fic: z.object({ enabled: z.boolean(), company: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), product: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(), taxProfile: z.object({ acquiredAt: iso, hasProfessionalFund: z.boolean().optional(), companyType: z.string().optional(), companySubtype: z.string().optional(), profession: z.string().optional(), regime: z.string().optional(), profitCoefficient: decimal.optional(), contributionsPercentage: decimal.optional(), defaultVat: z.object({ id: z.string().min(1), value: z.number().optional(), description: z.string().optional() }).optional() }).optional(), legacyReferences: z.object({ companyId: z.string().min(1).optional(), productId: z.string().min(1).optional() }).optional(), lastVerification: z.object({ at: iso, result: z.enum(['success', 'error']), diagnostic: z.string().optional() }).optional() }) }),
   profiles: z.array(profileSchema), businessCosts: z.array(z.object({ ...entity, category: z.string().min(1), description: z.string().min(1), monthlyAmount: moneyInput })),
   vehicles: z.array(z.object({ ...entity, name: z.string().min(1), fuel, consumption: positiveConsumption, consumptionUnit: z.enum(['km/l', 'kg/100km']), annualKm: boundedDecimal(1, '0', undefined, true), annualInsurance: moneyInput, annualTax: moneyInput, annualMaintenance: moneyInput })),
   sites: z.array(z.object({ ...entity, name: z.string().min(1), address: z.string().min(1).optional(), client: ficClientRefSchema.optional(), location: resolvedLocationSchema.optional() })),
   catalog: z.object({ subItems: z.array(reusableSubItemSchema), templates: z.array(templateSchema) }),
   quotes: z.array(z.object({ ...entity, date: z.string().date(), profileId: uuid.optional(), profileSnapshot: profileSnapshotSchema.optional(), client: clientSnapshotSchema.optional(), mainSite: siteSnapshotSchema.optional(), items: z.array(quoteItemSchema), commission: moneyInput.optional(), snapshotRevision: z.number().int().nonnegative(), snapshotUpdatedAt: iso.optional(), exportAttempts: z.array(exportAttemptSchema) })),
 }).superRefine((document, ctx) => {
+  if (document.bankExpenseCategories.filter(category => category.systemRole === 'vat_taxes').length !== 1)
+    ctx.addIssue({ code: 'custom', path: ['bankExpenseCategories'], message: 'È richiesta esattamente una categoria di sistema Imposte P.IVA.' });
   const provisionYears = new Set<number>();
   document.financialProvisions.forEach((provision, index) => {
     if (provisionYears.has(provision.year)) ctx.addIssue({ code: 'custom', path: ['financialProvisions', index, 'year'], message: 'esiste già una previsione per questo anno' });
@@ -193,7 +193,8 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z.object({
     const path = ['bankExpenseCategories', index];
     if (ids.has(category.id)) ctx.addIssue({ code: 'custom', path, message: 'ID categoria duplicato' });
     ids.add(category.id);
-    const key = JSON.stringify([category.parentId ?? '', category.name.trim().toLocaleLowerCase('it')]);
+    // A migrated user category may share the system category's display name.
+    const key = JSON.stringify([category.systemRole ?? '', category.parentId ?? '', category.name.trim().toLocaleLowerCase('it')]);
     if (names.has(key)) ctx.addIssue({ code: 'custom', path, message: 'Nome categoria già presente nello stesso livello' });
     names.add(key);
     if (category.parentId && (category.parentId === category.id || !categories.has(category.parentId) || categories.get(category.parentId)?.parentId))

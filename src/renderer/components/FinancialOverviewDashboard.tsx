@@ -18,7 +18,7 @@ const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', '
 const monthlyConfig = {
   collected: { label: 'Incassato FIC', color: 'var(--chart-1)' },
   bank: { label: 'Spese bancarie', color: 'var(--chart-2)' },
-  margin: { label: 'Margine prima della fiscalità', color: 'var(--chart-3)' },
+  margin: { label: 'Margine prima della fiscalità residua', color: 'var(--chart-3)' },
 } satisfies ChartConfig;
 
 function Kpi({ title, value, children }: { title: string; value?: string; children: ReactNode }) {
@@ -49,10 +49,10 @@ function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
         <CardDescription>Saldo bancario di riferimento − Residuo fiscale da accantonare</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        {o.bankBalance ? <p>Saldo inserito manualmente al {dateIt(o.bankBalance.date)}: {eur(o.bankBalance.amount)}. Aggiornalo quando cambia.</p> : <p>Inserisci il saldo reale e la sua data in “Modifica situazione”.</p>}
+        {o.bankBalance ? <p>Saldo inserito manualmente al {dateIt(o.bankBalance.date)}: {eur(o.bankBalance.amount)}. Aggiornalo quando cambia.</p> : <p>Inserisci il saldo reale e la sua data in “Modifica saldo bancario”.</p>}
         {o.fiscalReserve === undefined ? <p>{o.fiscalUnavailableReason}</p> : null}
         {deficit ? <p>Il saldo non copre il residuo da accantonare.</p> : null}
-        <p className="text-xs text-muted-foreground">Indicazione prudenziale sul saldo indicato e sulla previsione {o.year}. I versamenti già effettuati sono inclusi nel saldo; “Già coperto” è sotto il tuo controllo.</p>
+        <p className="text-xs text-muted-foreground">Indicazione prudenziale sul saldo indicato e sulla previsione {o.year}. I versamenti già effettuati sono inclusi nel saldo; il residuo tiene conto delle imposte pagate tramite banca.</p>
       </CardContent>
     </Card>
     <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -74,12 +74,12 @@ function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
         <p>{o.bankSummary.count} uscite importate o inserite nel {o.year}</p>
         {o.bankExpenseShareOfCollections !== undefined ? <p>Spese / Incassato: {percentage(o.bankExpenseShareOfCollections)}</p> : null}
       </Kpi>
-      <Kpi title="Margine prima della fiscalità" value={o.cashMarginBeforeTax}>
+      <Kpi title="Margine prima della fiscalità residua" value={o.cashMarginBeforeTax}>
         <p>Incassato − Spese bancarie</p>
         {o.cashMarginBeforeTax !== undefined && d(o.cashMarginBeforeTax).lt(0) ? <Badge variant="destructive">Uscite superiori agli incassi</Badge> : null}
       </Kpi>
-      <Kpi title="Da accantonare" value={o.fiscalReserve}>
-        {o.fiscalReserve !== undefined ? <><p>Previsione totale: {eur(o.fiscalSituation.total)}</p><p>Già coperto: {eur(o.fiscalSituation.covered)}</p></> : <p>{o.fiscalUnavailableReason}</p>}
+      <Kpi title="Ancora da coprire" value={o.fiscalReserve}>
+        {o.fiscalReserve !== undefined ? <><p>Previsione totale: {eur(o.fiscalSituation.total)}</p><p>Pagato tramite banca: {eur(o.fiscalSituation.paid)}</p></> : <p>{o.fiscalUnavailableReason}</p>}
       </Kpi>
     </div>
     {a?.fiscalWarnings.map(warning => <Alert key={warning}><AlertTitle>Stima fiscale</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
@@ -93,7 +93,7 @@ function CashFormation({ overview: o }: { overview: FinancialOverview }) {
     <AmountRow label="Incassato" value={o.collectedRevenue} />
     <AmountRow label="− Spese bancarie" value={o.bankExpenses} />
     <Separator />
-    <AmountRow label="Margine prima della fiscalità" value={o.cashMarginBeforeTax} strong />
+    <AmountRow label="Margine prima della fiscalità residua" value={o.cashMarginBeforeTax} strong />
     <AmountRow label="− Da accantonare" value={o.fiscalReserve} />
     <Separator />
     <AmountRow label="Margine dopo accantonamento" value={o.availableAfterTaxAndExpenses} strong />
@@ -101,22 +101,50 @@ function CashFormation({ overview: o }: { overview: FinancialOverview }) {
 }
 
 function FiscalSituation({ overview: o, onEdit, readOnly }: { overview: FinancialOverview; onEdit(): void; readOnly: boolean }) {
-  return <Card><CardHeader><CardTitle>Situazione fiscale · {o.year}</CardTitle>
-    <CardDescription>Stima finanziaria prudenziale, non una posizione fiscale definitiva. Può non comprendere elementi di anni precedenti.</CardDescription>
-    <Button variant="outline" className="w-fit" disabled={readOnly} onClick={onEdit}>Modifica situazione</Button>
-  </CardHeader><CardContent className="space-y-4"><dl className="max-w-3xl space-y-3 text-sm">
-    <AmountRow label="Stima automatica" value={o.fiscalSituation.automaticEstimate} />
-    <AmountRow label="+ Integrazioni" value={o.fiscalSituation.additions} />
-    <AmountRow label="Previsione fiscale totale" value={o.fiscalSituation.total} strong />
+  const f = o.analysis?.fiscalProjection;
+  return <Card><CardHeader><CardTitle>Previsione fiscale gestionale · {o.year}</CardTitle>
+    <CardDescription>Stima per pianificare la liquidità, basata sugli incassi e comprensiva degli acconti {o.year + 1}.</CardDescription>
+  </CardHeader><CardContent className="space-y-5">
+    <dl className="max-w-3xl space-y-3 text-sm">
+      <AmountRow label="Previsione fiscale totale" value={o.fiscalSituation.total} strong />
+      <AmountRow label="Pagato tramite banca" value={o.fiscalSituation.paid} />
+      <AmountRow label="Ancora da coprire" value={o.fiscalReserve} strong />
+      {o.fiscalSituation.excess && d(o.fiscalSituation.excess).gt(0) ? <AmountRow label="Pagato oltre la previsione" value={o.fiscalSituation.excess} /> : null}
+    </dl>
+    {o.fiscalUnavailableReason ? <p className="text-sm text-muted-foreground">{o.fiscalUnavailableReason}</p> : null}
+    {f ? <>
+      <Separator />
+      <p className="text-sm">ATECO {f.atecoCode} · Redditività {percentage(f.profitabilityCoefficient)} · Gestione Separata {percentage(f.contributionRate)} · Massimale {eur(f.contributionCeiling)}</p>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="space-y-3"><h3 className="text-sm font-semibold">Anno corrente · {o.year}</h3><dl className="space-y-3 text-sm">
+          <AmountRow label="Compensi percepiti" value={o.collectedRevenue} />
+          <AmountRow label="Reddito forfettario" value={f.forfaitIncome} />
+          <AmountRow label="Base INPS" value={f.contributionBase} />
+          <AmountRow label="Contributi INPS stimati" value={f.contributions} />
+          <AmountRow label="Base sostitutiva stimata" value={f.taxBase} />
+          <AmountRow label={'Imposta sostitutiva stimata · ' + percentage(f.effectiveTaxRate)} value={f.substituteTax} />
+          <AmountRow label="Bollo" value={f.stampDuty} />
+          <AmountRow label="Totale anno" value={f.annualTotal} strong />
+        </dl></section>
+        <section className="space-y-3"><h3 className="text-sm font-semibold">Acconti anno successivo · {o.year + 1}</h3><dl className="space-y-3 text-sm">
+          <AmountRow label="Acconto imposta anno successivo" value={f.substituteTaxAdvance} />
+          <AmountRow label="Prima rata imposta · 40% se dovuta" value={f.substituteTaxAdvanceFirst} />
+          <AmountRow label="Seconda o unica rata imposta" value={f.substituteTaxAdvanceSecond} />
+          <AmountRow label={'Acconto INPS anno successivo · 80% (aliquota ' + percentage(f.advanceContributionRate) + ')'} value={f.contributionAdvance} />
+          <AmountRow label="Primo acconto INPS · 40%" value={f.contributionAdvanceFirst} />
+          <AmountRow label="Secondo acconto INPS · 40%" value={f.contributionAdvanceSecond} />
+          <AmountRow label="Totale acconti" value={f.totalAdvances} strong />
+        </dl></section>
+      </div>
+      <p className="text-xs text-muted-foreground">La base sostitutiva stimata usa i contributi INPS stimati dell’anno. La dichiarazione deduce invece i contributi effettivamente versati nel periodo. Le rate sono informative, senza gestione delle scadenze.</p>
+    </> : null}
     <Separator />
-    <AmountRow label="− Già coperto" value={o.fiscalSituation.covered} />
-    <AmountRow label="Da accantonare" value={o.fiscalReserve} strong />
-    <Separator />
-    <AmountRow label="Saldo bancario di riferimento" value={o.bankBalance?.amount} />
-    <AmountRow label="Disponibilità effettiva (saldo − da accantonare)" value={o.effectiveAvailability} strong />
-  </dl>
-    <p className="text-xs text-muted-foreground">La stima automatica comprende contributi ({amount(o.fiscalContributions)}) e imposta sostitutiva ({amount(o.fiscalSubstituteTax)}). I pagamenti fiscali restano nelle uscite bancarie e nelle categorie assegnate; non determinano automaticamente la copertura.</p>
-    {d(o.fiscalSituation.covered).gt(o.fiscalSituation.total ?? Infinity) ? <p className="text-sm text-muted-foreground">La copertura supera la previsione: da accantonare è zero. Non viene calcolato alcun credito o riporto.</p> : null}
+    <dl className="max-w-3xl space-y-3 text-sm">
+      <AmountRow label="Saldo bancario di riferimento" value={o.bankBalance?.amount} />
+      <AmountRow label="Disponibilità effettiva (saldo − residuo fiscale)" value={o.effectiveAvailability} strong />
+    </dl>
+    <Button variant="outline" disabled={readOnly} onClick={onEdit}>Modifica saldo bancario</Button>
+    <p className="text-xs text-muted-foreground">La previsione è gestionale e usa i dati disponibili in Cash e Fatture in Cloud. I versamenti bancari classificati come Imposte P.IVA indicano quanto è già uscito dal conto e non identificano il singolo tributo o anno fiscale.</p>
   </CardContent></Card>;
 }
 

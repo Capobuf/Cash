@@ -17,7 +17,7 @@ const dirs: string[] = [];
 async function directory() { const dir = await mkdtemp(join(tmpdir(), 'cash-bank-')); dirs.push(dir); return dir; }
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 
-describe('XLSX bancario nativo e archivio v7', () => {
+describe('XLSX bancario nativo e archivio v8', () => {
   it('legge un vero XLSX con preambolo, date Excel/testo, descrizioni complete/fallback, stati diversi e primo foglio', async () => {
     const { book, sheet } = workbook();
     sheet.addRow(['01/01/2027', '31/12/2026', '', '-1.234,50', 'Breve', '  Testo  completo\n banca  ', 'Autorizzato']);
@@ -77,9 +77,10 @@ describe('XLSX bancario nativo e archivio v7', () => {
     const legacy: Record<string, unknown> = { ...document, schemaVersion: 5 }; delete legacy.bankExpenses; delete legacy.bankExpenseCategories; delete legacy.bankExpenseRules;
     const path = join(await directory(), 'cash.json'); const bytes = JSON.stringify(legacy, null, 2); await writeFile(path, bytes);
     expect(await openArchive(path)).toMatchObject({ ok: false, error: { code: 'MIGRATION_REQUIRED' } });
-    expect(await previewMigration(path)).toMatchObject({ ok: true, value: { fromVersion: 5, toVersion: 7, blockers: [] } });
+    expect(await previewMigration(path)).toMatchObject({ ok: true, value: { fromVersion: 5, toVersion: 8, blockers: [] } });
     const migrated = await migrateArchive(path); if (!migrated.ok) throw new Error(migrated.error.message);
-    expect(migrated.value.document).toEqual(document); expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
+    expect(migrated.value.document).toEqual({ ...document, bankExpenseCategories: migrated.value.document!.bankExpenseCategories });
+    expect(migrated.value.document!.bankExpenseCategories).toMatchObject([{ name: 'Imposte P.IVA', systemRole: 'vat_taxes' }]); expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
     const updated = structuredClone(migrated.value.document!); const category = { ...meta(), name: 'Software' };
     updated.bankExpenseCategories.push(category); updated.bankExpenses.push({ ...meta(), date: '2026-01-01', description: 'Licenza', amount: '25.00', categoryIds: [category.id] });
     updated.bankExpenseRules.push({ ...meta(), matchText: 'licenza', categoryId: category.id });
