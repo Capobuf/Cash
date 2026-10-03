@@ -9,7 +9,11 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { calculateProfile } from '../../domain/calculations';
-import { createFiscalPreset2026, type CashDocument } from '../../domain/model';
+import {
+  createBlankProfile,
+  createFiscalPreset2026,
+  type CashDocument,
+} from '../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,18 +38,20 @@ import type { AppState } from '../state';
 
 export function DashboardView({
   doc,
+  year,
   appState,
   onEditProfile,
   onOpenQuote,
   onNewQuote,
 }: {
   doc: CashDocument;
+  year: number;
   appState: AppState;
   onEditProfile: (id: string) => void;
   onOpenQuote: (id: string) => void;
   onNewQuote: () => void;
 }) {
-  const profile = [...doc.profiles].sort((a, b) => b.year - a.year)[0];
+  const profile = doc.profiles.find((entry) => entry.year === year);
   const calculated = profile?.confirmed
     ? calculateProfile(profile, doc.businessCosts)
     : undefined;
@@ -87,7 +93,7 @@ export function DashboardView({
       {!profile ? (
         <Alert>
           <AlertTriangle />
-          <AlertTitle>Configurazione iniziale incompleta</AlertTitle>
+          <AlertTitle>Profilo {year} mancante</AlertTitle>
           <AlertDescription className="flex items-center justify-between gap-4">
             <span>
               Crea il profilo annuale per ottenere valore medio, capacità e
@@ -96,7 +102,10 @@ export function DashboardView({
             <Button
               size="sm"
               onClick={() => {
-                const created = createFiscalPreset2026();
+                const created =
+                  year === 2026
+                    ? createFiscalPreset2026()
+                    : createBlankProfile(year);
                 if (
                   !appState.mutate((document) =>
                     document.profiles.push(created),
@@ -106,7 +115,7 @@ export function DashboardView({
                 onEditProfile(created.id);
               }}
             >
-              Crea profilo 2026
+              Crea profilo {year}
             </Button>
           </AlertDescription>
         </Alert>

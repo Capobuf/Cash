@@ -53,6 +53,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
 import {
   Sidebar,
@@ -192,11 +196,17 @@ export function AppShell({
   appState,
   view,
   onView,
+  years,
+  selectedYear,
+  onYearChange,
   children,
 }: {
   appState: AppState;
   view: View;
   onView: (view: View) => void;
+  years: number[];
+  selectedYear: number | undefined;
+  onYearChange: (year: number) => void;
   children: ReactNode;
 }) {
   const statusCritical =
@@ -215,9 +225,30 @@ export function AppShell({
   return (
     <SidebarProvider>
       <Sidebar collapsible="none">
-        <SidebarHeader className="p-4">
+        <SidebarHeader className="gap-4 p-4">
           <div className="flex items-center">
             <BrandLogo className="size-14 shrink-0" />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="app-year"
+              className="text-xs font-medium text-sidebar-foreground/70"
+            >
+              Anno
+            </label>
+            <NativeSelect
+              id="app-year"
+              className="w-full"
+              value={selectedYear ?? ''}
+              disabled={!years.length}
+              onChange={(event) => onYearChange(Number(event.target.value))}
+            >
+              {years.map((year) => (
+                <NativeSelectOption key={year} value={year}>
+                  {year}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
           </div>
         </SidebarHeader>
         <SidebarContent>

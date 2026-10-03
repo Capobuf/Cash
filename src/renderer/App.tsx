@@ -3,10 +3,6 @@ import { financialYears } from '../domain/financial-analysis';
 import { BankSummaryView } from './views/BankSummaryView';
 import { BankMovementsView } from './views/BankMovementsView';
 import { BankCategoriesView } from './views/BankCategoriesView';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { touch, type CashDocument } from '../domain/model';
 import { copyProfileToYear } from '../domain/profiles';
 import { createQuote as buildQuote } from '../domain/quotes';
@@ -48,19 +44,24 @@ export function App() {
     year: number;
   }>();
   const financialDoc = appState.document;
-  const years = useMemo(
-    () =>
-      financialDoc
-        ? financialYears(
-            financialDoc.financialSnapshot,
-            financialDoc.profiles,
-            financialDoc.bankExpenses,
-            financialDoc.fiscalPaymentOverrides,
-          )
-        : [],
-    [financialDoc],
-  );
   const currentYear = new Date().getFullYear();
+  const years = useMemo(() => {
+    if (!financialDoc) return [];
+    const available = new Set(
+      financialYears(
+        financialDoc.financialSnapshot,
+        financialDoc.profiles,
+        financialDoc.bankExpenses,
+        financialDoc.fiscalPaymentOverrides,
+      ),
+    );
+    for (const quote of financialDoc.quotes) {
+      const year = Number(quote.date.slice(0, 4));
+      if (Number.isInteger(year)) available.add(year);
+    }
+    if (!available.size) available.add(currentYear);
+    return [...available].sort((a, b) => b - a);
+  }, [financialDoc, currentYear]);
   const selectedYear =
     financialSelection?.documentId === financialDoc?.documentId
       ? financialSelection?.year
@@ -70,7 +71,7 @@ export function App() {
       ? selectedYear
       : years.includes(currentYear)
         ? currentYear
-        : years[0];
+        : (years[0] ?? currentYear);
   const [activeQuoteId, setActiveQuoteId] = useState<string>();
   const [activeProfileId, setActiveProfileId] = useState<string>();
   const [copyProfileId, setCopyProfileId] = useState<string>();
@@ -255,6 +256,7 @@ export function App() {
     view === 'dashboard' ? (
       <DashboardView
         doc={doc}
+        year={financialYear}
         appState={appState}
         onEditProfile={openProfile}
         onOpenQuote={(id) => {
@@ -328,46 +330,16 @@ export function App() {
   );
   return (
     <>
-      <AppShell appState={appState} view={view} onView={navigate}>
-        {['financial-analysis', 'bank-summary', 'bank-movements'].includes(
-          view,
-        ) ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              {view === 'financial-analysis'
-                ? 'Incassi, uscite dal conto e fiscalità stimata'
-                : 'Uscite dal conto importate dalla banca'}
-            </p>
-            <div className="flex items-center gap-3">
-              <label htmlFor="financial-year" className="text-sm font-medium">
-                Anno
-              </label>
-              <NativeSelect
-                id="financial-year"
-                value={financialYear ?? ''}
-                disabled={!years.length}
-                onChange={(event) =>
-                  setFinancialSelection({
-                    documentId: doc.documentId,
-                    year: Number(event.target.value),
-                  })
-                }
-              >
-                {!years.length ? (
-                  <NativeSelectOption value="">
-                    Nessun anno disponibile
-                  </NativeSelectOption>
-                ) : (
-                  years.map((year) => (
-                    <NativeSelectOption key={year} value={year}>
-                      {year}
-                    </NativeSelectOption>
-                  ))
-                )}
-              </NativeSelect>
-            </div>
-          </div>
-        ) : null}
+      <AppShell
+        appState={appState}
+        view={view}
+        onView={navigate}
+        years={years}
+        selectedYear={financialYear}
+        onYearChange={(year) =>
+          setFinancialSelection({ documentId: doc.documentId, year })
+        }
+      >
         {content}
       </AppShell>
       <DeleteDialog
