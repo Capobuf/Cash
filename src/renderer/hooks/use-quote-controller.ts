@@ -167,6 +167,15 @@ export function useQuoteController({
     }
     const withTotals = { ...travel, ...totals.value };
     if (!vehicle || distance === undefined) return withTotals;
+    if (!doc.settings.fuelTerritory) {
+      appState.setError({
+        code: 'MISSING_DATA',
+        field: 'fuelTerritory',
+        message:
+          'Configura la regione o provincia autonoma MIMIT nelle Impostazioni per calcolare il costo della trasferta.',
+      });
+      return undefined;
+    }
     if (
       previous?.vehicleId === vehicle.id &&
       previous.vehicleCostPerKm &&
@@ -178,27 +187,29 @@ export function useQuoteController({
         occurrences: definition.occurrences,
         vehicleCostPerKm: previous.vehicleCostPerKm,
       });
-      if (calculated.ok)
-        return {
-          ...withTotals,
-          ...calculated.value,
-          vehicleCostPerKm: previous.vehicleCostPerKm,
-          fuelEvidence: previous.fuelEvidence,
-        };
+      if (!calculated.ok) {
+        appState.setError(calculated.error);
+        return undefined;
+      }
+      return {
+        ...withTotals,
+        ...calculated.value,
+        vehicleCostPerKm: previous.vehicleCostPerKm,
+        fuelEvidence: previous.fuelEvidence,
+      };
     }
-    if (!doc.settings.fuelTerritory) return withTotals;
     const fuel = await window.cash.mimit.latestFuelPrice({
       territory: doc.settings.fuelTerritory,
       fuel: vehicle.fuel,
     });
     if (!fuel.ok) {
       appState.setError(fuel.error);
-      return withTotals;
+      return undefined;
     }
     const vehicleCost = calculateVehicleCost(vehicle, fuel.value);
     if (!vehicleCost.ok) {
       appState.setError(vehicleCost.error);
-      return withTotals;
+      return undefined;
     }
     const calculated = calculateTravel({
       distanceKmPerOccurrence: distance,
@@ -208,7 +219,7 @@ export function useQuoteController({
     });
     if (!calculated.ok) {
       appState.setError(calculated.error);
-      return withTotals;
+      return undefined;
     }
     return {
       ...withTotals,
