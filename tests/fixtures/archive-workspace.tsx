@@ -85,7 +85,7 @@ export async function runWorkspaceChecks() {
       fic: {
         setupInfo: async () => {
           counts.setupInfo++;
-          return { ...setupInfo, ...ok(setupInfo) };
+          return ok(setupInfo);
         },
         searchClients: async ({ query }: { query: string }) => {
           clientQueries.push(query);

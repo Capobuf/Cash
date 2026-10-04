@@ -903,7 +903,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **8.** Se utile, impostare un Veicolo come predefinito nella gestione dei Veicoli; in assenza di una scelta Cash non ne assume uno.
 
-**9.** Creare le Sedi riutilizzabili associate ai Clienti e, nel gruppo Altre sedi, laboratorio, ufficio, abitazione, fornitori o altri punti operativi; usare **Cerca** su indirizzo o coordinate per acquisire coordinate utilizzabili e, se utile, impostare una Sede come Sede di partenza predefinita globale.
+**9.** Creare le Sedi riutilizzabili associate ai Clienti e, nel gruppo Altre sedi, laboratorio, ufficio, abitazione, fornitori o altri punti operativi; usare **Cerca** per risolvere un indirizzo oppure salvare direttamente coordinate esplicite valide e, se utile, impostare una Sede come Sede di partenza predefinita globale.
 
 **10.** Inserire la Basic API key di OpenRouteService nelle Impostazioni già dedicate alle integrazioni o alle API e usare **Verifica connessione** prima delle funzioni di ricerca o routing.
 
@@ -1696,7 +1696,7 @@ Contratti ufficiali: [PendingReceivedDocument](https://github.com/fattureincloud
 
 ### 31.9 Riconciliazione gestionale con la banca
 
-Ogni archivio contiene esattamente una categoria di sistema **Imposte P.IVA**, identificata dalla proprietà stabile opzionale `systemRole: 'vat_taxes'`. È rinominabile, non eliminabile e utilizzabile dalle normali regole automatiche. Il nome visualizzato non determina il significato. Non vengono create sottocategorie o registri fiscali. La UI identifica la categoria con un Badge di sistema anche dopo il rename.
+Ogni archivio contiene esattamente una categoria di sistema **Imposte P.IVA**, identificata dalla proprietà stabile opzionale `systemRole: 'vat_taxes'`. È rinominabile, non eliminabile e utilizzabile dalle normali regole automatiche. Il nome visualizzato non determina il significato. Non può avere sottocategorie: UI e schema impediscono di usarla come padre. Non vengono creati registri fiscali. La UI identifica la categoria con un Badge di sistema anche dopo il rename.
 
 Imposte pagate = somma dei movimenti dell’anno N la cui categoria effettiva, ottenuta con `effectiveCategoryIds()`, comprende la categoria di sistema. Assegnazioni manuali e regole si uniscono senza contare due volte il movimento. Non si deduce l’appartenenza fiscale da una sottocategoria o dal testo del nome.
 

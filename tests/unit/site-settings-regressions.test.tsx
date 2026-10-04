@@ -26,13 +26,24 @@ vi.mock('react', async (original) => ({
     ];
   },
 }));
+interface ControlProps {
+  id?: string;
+  children?: ReactNode;
+  onChange: (event: { target: { value: string } }) => void;
+  onClick: () => void;
+  onSubmit: (event: {
+    preventDefault: () => void;
+    currentTarget: object;
+  }) => void;
+  onBlur: (event: { currentTarget: { value: string } }) => void;
+}
 function find(
   node: ReactNode,
-  predicate: (element: ReactElement<any>) => boolean,
-): ReactElement<any> | undefined {
+  predicate: (element: ReactElement<ControlProps>) => boolean,
+): ReactElement<ControlProps> | undefined {
   if (Array.isArray(node))
     return node.map((child) => find(child, predicate)).find(Boolean);
-  if (!isValidElement<any>(node)) return;
+  if (!isValidElement<ControlProps>(node)) return;
   if (predicate(node)) return node;
   return find(node.props.children, predicate);
 }
@@ -67,7 +78,7 @@ function setup() {
             {
               id: 'roma',
               label: 'Roma',
-              coordinates: { latitude: '41.9028', longitude: '12.4964' },
+              coordinates: { latitude: '42', longitude: '13' },
             },
           ]),
         ),
