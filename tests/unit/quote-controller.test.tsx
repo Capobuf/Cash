@@ -710,3 +710,51 @@ describe('esito delle modifiche ai preventivi', () => {
     expect(test.exportQuote).not.toHaveBeenCalled();
   });
 });
+it.each(['none', 'same', 'other', 'other-company'] as const)(
+  'validates main site client ownership: %s',
+  async (kind) => {
+    const test = setup();
+    const client = test.quote.client!;
+    const site = {
+      ...meta(),
+      name: 'Office',
+      ...(kind === 'none'
+        ? {}
+        : {
+            client: {
+              ...client,
+              clientId: kind === 'other' ? 'different' : client.clientId,
+              companyId:
+                kind === 'other-company' ? 'different' : client.companyId,
+            },
+          }),
+    };
+    test.document.sites.push(site);
+    const accepted = kind === 'none' || kind === 'same';
+    expect(test.controller.updateQuote({ mainSiteId: site.id })).toBe(
+      accepted ? 'updated' : 'invalid',
+    );
+    await test.state.save();
+    expect(test.state.document?.quotes[0]?.mainSite?.sourceId).toBe(
+      accepted ? site.id : undefined,
+    );
+  },
+);
+it('only permits independent sites without a quote client and clears incompatible sites on client change', async () => {
+  const test = setup();
+  const site = { ...meta(), name: 'Office', client: test.quote.client! };
+  test.document.sites.push(site);
+  expect(test.controller.updateQuote({ mainSiteId: site.id })).toBe('updated');
+  await test.state.save();
+  expect(test.controller.updateClient(undefined)).toBe(true);
+  await test.state.save();
+  expect(test.state.document?.quotes[0]?.mainSite).toBeUndefined();
+  test.quote.client = undefined;
+  expect(test.controller.updateQuote({ mainSiteId: site.id })).toBe('invalid');
+  const independent = { ...meta(), name: 'Other site' };
+  test.document.sites.push(independent);
+  expect(test.controller.updateQuote({ mainSiteId: independent.id })).toBe(
+    'updated',
+  );
+  await test.state.save();
+});

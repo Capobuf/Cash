@@ -11,7 +11,7 @@ import {
   templateFromQuote,
 } from '../../domain/catalog';
 import { buildExportLines, createPendingAttempt } from '../../domain/export';
-import { snapshotSite } from '../../domain/locations';
+import { siteMatchesClient, snapshotSite } from '../../domain/locations';
 import {
   meta,
   touch,
@@ -272,6 +272,15 @@ export function useQuoteController({
         ? quote.mainSite?.sourceId
         : updates.mainSiteId || undefined;
     const site = doc.sites.find((entry) => entry.id === siteId);
+    if (siteId && (!site || !siteMatchesClient(site, quote.client))) {
+      appState.setError({
+        code: 'VALIDATION',
+        field: 'mainSiteId',
+        message:
+          'Scegli una Sede del Cliente del preventivo oppure una Sede senza Cliente.',
+      });
+      return 'invalid';
+    }
     const updated = appState.mutate((document) => {
       const target = touch(
         document.quotes.find((entry) => entry.id === quote.id)!,
@@ -284,6 +293,21 @@ export function useQuoteController({
         target.commission = commission?.ok ? commission.value : undefined;
     });
     return updated ? 'updated' : 'invalid';
+  };
+
+  const updateClient = (client?: FicClientSnapshot) => {
+    if (!quote) return false;
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      const site = document.sites.find(
+        (entry) => entry.id === target.mainSite?.sourceId,
+      );
+      if (target.mainSite && (!site || !siteMatchesClient(site, client)))
+        target.mainSite = undefined;
+      target.client = client;
+    });
   };
 
   const searchRemoteClients = async (query: string) => {
@@ -818,16 +842,10 @@ export function useQuoteController({
     }
     if (
       quote.client?.source !== 'fatture_in_cloud' ||
+      quote.client.companyId !== client.companyId ||
       quote.client.clientId !== client.clientId
     ) {
-      if (
-        !appState.mutate((document) => {
-          touch(
-            document.quotes.find((entry) => entry.id === quote.id)!,
-          ).client = client;
-        })
-      )
-        return false;
+      if (!updateClient(client)) return false;
       isCurrent = guardQuoteContext(
         appState.document?.quotes.find((entry) => entry.id === quote.id),
       );
@@ -981,6 +999,7 @@ export function useQuoteController({
     clientResults,
     newQuote,
     updateQuote,
+    updateClient,
     searchRemoteClients,
     setClientResults,
     addItem,

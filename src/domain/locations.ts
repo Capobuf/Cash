@@ -3,6 +3,7 @@ import {
   err,
   ok,
   type Coordinates,
+  type FicClientSnapshot,
   type Result,
   type Site,
   type SiteSnapshot,
@@ -43,6 +44,20 @@ export function parseCoordinates(input: string): Result<Coordinates> {
 
 export function coordinatesInput(coordinates: Coordinates): string {
   return `${coordinates.latitude}, ${coordinates.longitude}`;
+}
+
+export function siteMatchesClient(
+  site: Site,
+  client?: FicClientSnapshot,
+): boolean {
+  return (
+    !site.client ||
+    Boolean(
+      client &&
+      site.client.companyId === client.companyId &&
+      site.client.clientId === client.clientId,
+    )
+  );
 }
 
 function legacyCoordinatesInput(coordinates: Coordinates): string {
