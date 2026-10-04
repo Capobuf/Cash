@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { buildExportLines, needsRepeatWarning } from '../../../domain/export';
 import {
   type CashDocument,
+  type CashError,
   type FicClientSnapshot,
   type Quote,
 } from '../../../domain/model';
@@ -44,12 +45,14 @@ export function ExportDialog({
   onSearch,
   onClose,
   onExport,
+  error,
 }: {
   quote: Quote;
   doc: CashDocument;
   results: FicClientSnapshot[];
   onSearch: (query: string) => Promise<void>;
   onClose: () => void;
+  error?: CashError | null;
   onExport: (
     client: FicClientSnapshot,
     groups: Array<{ itemIds: string[]; description: string }>,
@@ -127,6 +130,17 @@ export function ExportDialog({
                 : 'Anteprima finale'}
           </DialogDescription>
         </DialogHeader>
+        {error ? (
+          <Alert variant="destructive" role="alert">
+            <AlertTitle>{error.message}</AlertTitle>
+            <AlertDescription>
+              {error.action ? <p>{error.action}</p> : null}
+              {error.details?.map((detail, index) => (
+                <p key={index}>{detail}</p>
+              ))}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {step === 1 ? (
           <div className="space-y-3">
             <Alert>

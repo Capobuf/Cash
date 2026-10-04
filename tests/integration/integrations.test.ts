@@ -691,3 +691,33 @@ describe('fonti ufficiali', () => {
     expect(result.error.details?.[0]).not.toContain('key');
   });
 });
+it.each([422, 500])(
+  'retains the useful FIC error message alongside HTTP %s',
+  async (status) => {
+    const result = await exportQuote(
+      {
+        companyId: '1',
+        clientId: '2',
+        productId: '3',
+        product: { id: '3', name: 'Consulenza', vat: { id: '0' } },
+        lines: [],
+        attemptId: 'attempt',
+      },
+      'token',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: { message: 'Invalid client data' } }),
+            { status },
+          ),
+      ),
+    );
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        outcome: status === 422 ? 'rejected' : 'uncertain',
+        diagnostic: `HTTP ${status}: Invalid client data`,
+      },
+    });
+  },
+);

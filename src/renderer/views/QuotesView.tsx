@@ -632,6 +632,7 @@ export function QuotesView({
           onSearch={controller.searchRemoteClients}
           onClose={() => setOverlay(undefined)}
           onExport={controller.performExport}
+          error={appState.error}
         />
       ) : null}
       <AlertDialog

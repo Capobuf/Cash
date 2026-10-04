@@ -758,3 +758,34 @@ it('only permits independent sites without a quote client and clears incompatibl
   );
   await test.state.save();
 });
+it.each(['success', 'rejected', 'uncertain'] as const)(
+  'persists and visibly reports export outcome %s',
+  async (outcome) => {
+    const test = setup();
+    const diagnostic =
+      outcome === 'success' ? undefined : 'HTTP 422: Invalid client data';
+    test.exportQuote.mockResolvedValue(
+      ok({
+        outcome,
+        diagnostic,
+        ...(outcome === 'success' ? { remoteDocumentId: 'remote-1' } : {}),
+      }),
+    );
+    const sending = test.operations.performExport();
+    test.complete();
+    expect(await sending).toBe(outcome === 'success');
+    expect(test.state.document?.quotes[0]?.exportAttempts[0]).toMatchObject({
+      outcome,
+      diagnostic,
+    });
+    if (outcome === 'success') expect(test.state.error).toBeNull();
+    else {
+      expect(test.state.error?.details).toContain(diagnostic);
+      if (outcome === 'uncertain')
+        expect(test.state.error?.action).toContain(
+          'Controlla Fatture in Cloud',
+        );
+    }
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  },
+);

@@ -1112,7 +1112,22 @@ export async function exportQuote(
   );
   if (!response.ok)
     return ok({ outcome: 'uncertain', diagnostic: response.error.message });
-  if (!response.value.ok)
+  if (!response.value.ok) {
+    let diagnostic = `HTTP ${response.value.status}`;
+    try {
+      const payload = z
+        .object({
+          error: z.object({ message: z.string().optional() }).optional(),
+          message: z.string().optional(),
+        })
+        .safeParse(await response.value.json());
+      const message = payload.success
+        ? (payload.data.error?.message ?? payload.data.message)
+        : undefined;
+      if (message?.trim()) diagnostic += `: ${message.trim()}`;
+    } catch {
+      // An absent or non-JSON body does not change the known HTTP outcome.
+    }
     return ok({
       // Only documented request rejections establish that creation failed.
       // Server errors and unknown statuses can follow a committed operation.
@@ -1121,8 +1136,9 @@ export async function exportQuote(
       )
         ? 'rejected'
         : 'uncertain',
-      diagnostic: `HTTP ${response.value.status}`,
+      diagnostic,
     });
+  }
   try {
     const json = (await response.value.json()) as {
       data?: { id?: string | number };
