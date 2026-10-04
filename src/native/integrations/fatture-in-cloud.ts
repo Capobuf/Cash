@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   err,
   ok,
+  type CashErrorCode,
   type ExportLine,
   type FicClientDetails,
   type FicClientSnapshot,
@@ -15,6 +16,14 @@ import type { FicFinancialSnapshot } from '../../domain/model';
 import type { FicAccessVerification } from '../../domain/integration';
 
 const BASE = 'https://api-v2.fattureincloud.it';
+const httpErrorCode = (status: number): CashErrorCode =>
+  status === 401 || status === 403
+    ? 'CREDENTIALS'
+    : status === 429
+      ? 'RATE_LIMIT'
+      : status === 422
+        ? 'SOURCE_INVALID'
+        : 'SOURCE_UNAVAILABLE';
 const queryString = (value: string): string =>
   `'${value.replaceAll("'", "''")}'`;
 const clientSchema = z.object({
@@ -159,12 +168,7 @@ export async function verifyPermissions(
   if (!response.ok) return response;
   if (!response.value.ok)
     return err({
-      code:
-        response.value.status === 401 || response.value.status === 403
-          ? 'CREDENTIALS'
-          : response.value.status === 429
-            ? 'RATE_LIMIT'
-            : 'SOURCE_UNAVAILABLE',
+      code: httpErrorCode(response.value.status),
       source: 'FattureInCloud',
       message: `Permessi azienda non verificabili (HTTP ${response.value.status}).`,
     });
@@ -228,7 +232,9 @@ export async function verifyPermissions(
         await probe.value.body?.cancel();
         if (!probe.value.ok) {
           status =
-            http === 401 || http === 403 ? 'unavailable' : 'unverifiable';
+            httpErrorCode(http) === 'CREDENTIALS'
+              ? 'unavailable'
+              : 'unverifiable';
           detail =
             http === 403
               ? `Accesso non consentito per ${label}: verifica lo scope ${scope} e i permessi dell’utente sull’azienda (HTTP 403).`
@@ -290,7 +296,7 @@ export async function getTaxProfile(
           message: `Accesso al profilo fiscale negato (HTTP ${response.value.status}); verificare lo scope settings:r e i permessi dell’utente sull’azienda.`,
         })
       : err({
-          code: 'SOURCE_UNAVAILABLE',
+          code: httpErrorCode(response.value.status),
           source: 'FattureInCloud',
           message: `Profilo fiscale aziendale non disponibile (HTTP ${response.value.status}).`,
         });
@@ -372,9 +378,12 @@ export async function listCompanies(
   if (!response.ok) return response;
   if (!response.value.ok)
     return err({
-      code: 'CREDENTIALS',
+      code: httpErrorCode(response.value.status),
       source: 'FattureInCloud',
-      message: `Token non valido o non autorizzato (HTTP ${response.value.status}).`,
+      message:
+        httpErrorCode(response.value.status) === 'CREDENTIALS'
+          ? `Token non valido o non autorizzato (HTTP ${response.value.status}).`
+          : `Elenco aziende non disponibile (HTTP ${response.value.status}).`,
     });
   try {
     const json = (await response.value.json()) as {
@@ -417,7 +426,7 @@ export async function verifyActivation(
   if (!response.ok) return response;
   if (!response.value.ok)
     return err({
-      code: 'CREDENTIALS',
+      code: httpErrorCode(response.value.status),
       source: 'FattureInCloud',
       message: `Azienda o autorizzazioni non verificabili (HTTP ${response.value.status}).`,
     });
@@ -481,10 +490,7 @@ export async function listConsultingProducts(
           message: `Accesso ai prodotti negato (HTTP ${response.value.status}); verificare lo scope products:r e i permessi dell’utente sull’azienda.`,
         })
       : err({
-          code:
-            response.value.status === 422
-              ? 'SOURCE_INVALID'
-              : 'SOURCE_UNAVAILABLE',
+          code: httpErrorCode(response.value.status),
           source: 'FattureInCloud',
           message: `Richiesta prodotti rifiutata da Fatture in Cloud (HTTP ${response.value.status}).`,
         });
@@ -535,10 +541,7 @@ export async function searchClients(
       return response.value.status === 401 || response.value.status === 403
         ? permissionsError(['entity.clients:r'])
         : err({
-            code:
-              response.value.status === 429
-                ? 'RATE_LIMIT'
-                : 'SOURCE_UNAVAILABLE',
+            code: httpErrorCode(response.value.status),
             source: 'FattureInCloud',
             message: `Ricerca clienti rifiutata alla pagina ${page} (HTTP ${response.value.status}).`,
           });
@@ -609,7 +612,7 @@ export async function getClientDetails(
           message: `Accesso al cliente negato (HTTP ${response.value.status}); verificare lo scope entity.clients:r e i permessi dell’utente sull’azienda.`,
         })
       : err({
-          code: 'SOURCE_UNAVAILABLE',
+          code: httpErrorCode(response.value.status),
           source: 'FattureInCloud',
           message: `Dettaglio cliente non disponibile (HTTP ${response.value.status}).`,
         });
@@ -656,7 +659,7 @@ export async function verifyProduct(
     return response.value.status === 401 || response.value.status === 403
       ? permissionsError(['products:r'])
       : err({
-          code: 'SOURCE_UNAVAILABLE',
+          code: httpErrorCode(response.value.status),
           source: 'FattureInCloud',
           message: `Prodotto non verificabile (HTTP ${response.value.status}).`,
         });
@@ -816,8 +819,7 @@ async function listPendingDocuments(
       if (response.value.status === 401 || response.value.status === 403)
         return permissionsError(['received_documents:r']);
       return err({
-        code:
-          response.value.status === 429 ? 'RATE_LIMIT' : 'SOURCE_UNAVAILABLE',
+        code: httpErrorCode(response.value.status),
         source: 'FattureInCloud',
         message: `Acquisizione documenti da registrare ${source}, pagina ${page} non riuscita (HTTP ${response.value.status}).`,
       });
@@ -896,8 +898,7 @@ async function listFinancialDocuments(
       if (response.value.status === 401 || response.value.status === 403)
         return permissionsError([scope]);
       return err({
-        code:
-          response.value.status === 429 ? 'RATE_LIMIT' : 'SOURCE_UNAVAILABLE',
+        code: httpErrorCode(response.value.status),
         source: 'FattureInCloud',
         message: `Sincronizzazione ${type}, pagina ${page} non riuscita (HTTP ${response.value.status}).`,
       });
@@ -948,7 +949,7 @@ export async function syncFinancialData(
         'received_documents:r',
       ]);
     return err({
-      code: response.value.status === 429 ? 'RATE_LIMIT' : 'SOURCE_UNAVAILABLE',
+      code: httpErrorCode(response.value.status),
       source: 'FattureInCloud',
       message: `Verifica azienda non disponibile (HTTP ${response.value.status}).`,
     });
