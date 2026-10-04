@@ -873,6 +873,13 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
           message: 'Nome categoria già presente nello stesso livello',
         });
       names.add(key);
+      if (category.systemRole === 'vat_taxes' && category.parentId)
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'parentId'],
+          message:
+            'La categoria di sistema Imposte P.IVA deve restare una categoria principale',
+        });
       if (
         category.parentId &&
         (category.parentId === category.id ||

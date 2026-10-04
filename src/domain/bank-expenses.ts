@@ -108,6 +108,21 @@ export function bankCategoryTree(categories: BankExpenseCategory[]) {
     }));
 }
 
+export function filterBankCategoryTree(
+  categories: BankExpenseCategory[],
+  query: string,
+) {
+  const needle = query.trim().toLocaleLowerCase('it');
+  return bankCategoryTree(categories).flatMap((category) => {
+    if (category.name.toLocaleLowerCase('it').includes(needle))
+      return [category];
+    const children = category.children.filter((child) =>
+      child.name.toLocaleLowerCase('it').includes(needle),
+    );
+    return children.length ? [{ ...category, children }] : [];
+  });
+}
+
 export function bankCategoryDeletionBlocker(
   categories: BankExpenseCategory[],
   expenses: BankExpense[],

@@ -5,10 +5,10 @@ import {
   bankCategoryLabel,
   bankCategoryTree,
   bankRuleMatches,
+  filterBankCategoryTree,
 } from '../../domain/bank-expenses';
+import { prepareBankExpenseCategory } from '../../domain/bank-expense-editing';
 import {
-  meta,
-  nowIso,
   type BankExpenseCategory,
   type BankExpenseRule,
   type CashDocument,
@@ -39,6 +39,10 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -63,53 +67,53 @@ export function BankCategoriesView({
   const [error, setError] = useState<string>();
   const [ruleEditor, setRuleEditor] = useState<{ rule?: BankExpenseRule }>();
   const [deletingRule, setDeletingRule] = useState<BankExpenseRule>();
+  const [query, setQuery] = useState('');
   const readOnly =
     appState.session?.readOnly || appState.status === 'Conflitto esterno';
-  const tree = bankCategoryTree(doc.bankExpenseCategories);
+  const tree = filterBankCategoryTree(doc.bankExpenseCategories, query);
+  const editingCategory = doc.bankExpenseCategories.find(
+    (category) => category.id === editing?.id,
+  );
+  const hasChildren = Boolean(
+    editing?.id &&
+    doc.bankExpenseCategories.some(
+      (category) => category.parentId === editing.id,
+    ),
+  );
+  const systemCategory = editingCategory?.systemRole === 'vat_taxes';
   const openEditor = (value: NonNullable<typeof editing>) => {
     setError(undefined);
     setEditing(value);
   };
   const save = () => {
     if (!editing || readOnly) return;
-    const name = editing.name.trim();
-    if (!name) {
-      setError('Inserisci un nome.');
-      return;
-    }
-    if (
-      doc.bankExpenseCategories.some(
-        (category) =>
-          category.id !== editing.id &&
-          category.parentId === editing.parentId &&
-          category.name.trim().toLocaleLowerCase('it') ===
-            name.toLocaleLowerCase('it'),
-      )
-    ) {
-      setError(
-        'Esiste già una categoria con questo nome nello stesso livello.',
-      );
+    const prepared = prepareBankExpenseCategory(
+      doc.bankExpenseCategories,
+      editing.name,
+      editing.parentId,
+      editing.id,
+    );
+    if (!prepared.ok) {
+      setError(prepared.error.message);
       return;
     }
     if (
       !appState.mutate((document) => {
         if (editing.id) {
-          const category = document.bankExpenseCategories.find(
+          const index = document.bankExpenseCategories.findIndex(
             (item) => item.id === editing.id,
           );
-          if (category) {
-            category.name = name;
-            category.updatedAt = nowIso();
-          }
-        } else
-          document.bankExpenseCategories.push({
-            ...meta(),
-            name,
-            ...(editing.parentId ? { parentId: editing.parentId } : {}),
-          });
+          if (index !== -1)
+            document.bankExpenseCategories[index] = prepared.value;
+        } else document.bankExpenseCategories.push(prepared.value);
       })
-    )
+    ) {
+      setError(
+        appState.error?.message ??
+          'La categoria non può essere salvata in questo momento.',
+      );
       return;
+    }
     setEditing(undefined);
   };
   const actions = (category: BankExpenseCategory) => {
@@ -135,12 +139,12 @@ export function BankCategoriesView({
         <Button
           variant="ghost"
           size="sm"
-          aria-label={`Rinomina ${category.name}`}
+          aria-label={`${category.systemRole ? 'Rinomina' : 'Modifica'} ${category.name}`}
           disabled={readOnly}
           onClick={() => openEditor(category)}
         >
           <Pencil />
-          Rinomina
+          {category.systemRole ? 'Rinomina' : 'Modifica'}
         </Button>
         <Button
           variant="ghost"
@@ -170,10 +174,33 @@ export function BankCategoriesView({
           Nuova categoria
         </Button>
       </div>
-      {!tree.length ? (
+      <Input
+        type="search"
+        aria-label="Cerca categorie"
+        placeholder="Cerca categorie..."
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {!doc.bankExpenseCategories.length ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             Crea la prima categoria per organizzare le uscite dal conto.
+          </CardContent>
+        </Card>
+      ) : null}
+      {doc.bankExpenseCategories.length > 0 && !tree.length ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">
+              Nessuna categoria corrisponde alla ricerca.
+            </p>
+            <Button
+              className="mt-3"
+              variant="outline"
+              onClick={() => setQuery('')}
+            >
+              Azzera ricerca
+            </Button>
           </CardContent>
         </Card>
       ) : null}
@@ -354,15 +381,17 @@ export function BankCategoriesView({
             <DialogHeader>
               <DialogTitle>
                 {editing?.id
-                  ? 'Rinomina'
+                  ? systemCategory
+                    ? 'Rinomina categoria'
+                    : 'Modifica categoria'
                   : editing?.parentId
                     ? 'Nuova sottocategoria'
                     : 'Nuova categoria'}
               </DialogTitle>
               <DialogDescription>
-                {editing?.parentId
-                  ? `Categoria principale: ${doc.bankExpenseCategories.find((item) => item.id === editing.parentId)?.name}`
-                  : 'Il nome deve essere univoco tra le categorie principali.'}
+                Il nome deve essere univoco nello stesso livello. Scegli
+                “Nessuna” per mantenere o riportare la categoria al livello
+                principale.
               </DialogDescription>
             </DialogHeader>
             <label htmlFor="bank-category-name" className="text-sm font-medium">
@@ -372,12 +401,59 @@ export function BankCategoriesView({
               id="bank-category-name"
               autoFocus
               required
+              disabled={readOnly}
               value={editing?.name ?? ''}
               onChange={(event) => {
                 if (editing)
                   setEditing({ ...editing, name: event.target.value });
               }}
             />
+            <div className="space-y-2">
+              <label
+                htmlFor="bank-category-parent"
+                className="text-sm font-medium"
+              >
+                Categoria principale
+              </label>
+              <NativeSelect
+                id="bank-category-parent"
+                className="w-full"
+                value={editing?.parentId ?? ''}
+                disabled={readOnly || hasChildren || systemCategory}
+                aria-describedby="bank-category-parent-help"
+                onChange={(event) => {
+                  if (editing)
+                    setEditing({
+                      ...editing,
+                      parentId: event.target.value || undefined,
+                    });
+                  setError(undefined);
+                }}
+              >
+                <NativeSelectOption value="">Nessuna</NativeSelectOption>
+                {bankCategoryTree(doc.bankExpenseCategories)
+                  .filter(
+                    (category) =>
+                      category.id !== editing?.id &&
+                      category.systemRole !== 'vat_taxes',
+                  )
+                  .map((category) => (
+                    <NativeSelectOption key={category.id} value={category.id}>
+                      {category.name}
+                    </NativeSelectOption>
+                  ))}
+              </NativeSelect>
+              <p
+                id="bank-category-parent-help"
+                className="text-xs text-muted-foreground"
+              >
+                {systemCategory
+                  ? 'La categoria di sistema deve restare una categoria principale.'
+                  : hasChildren
+                    ? 'La categoria contiene sottocategorie: spostale prima di cambiare il padre.'
+                    : 'Scegli una categoria principale per creare o spostare una sottocategoria.'}
+              </p>
+            </div>
             {error ? (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>

@@ -24,14 +24,35 @@ export function prepareBankExpenseCategory(
   categories: BankExpenseCategory[],
   nameInput: string,
   parentId?: string,
+  id?: string,
 ): Result<BankExpenseCategory> {
+  const existing = id
+    ? categories.find((category) => category.id === id)
+    : undefined;
+  if (id && !existing)
+    return err({
+      code: 'VALIDATION',
+      message: 'La categoria non è più presente nell’archivio.',
+    });
   const name = nameInput.trim();
   if (!name) return err({ code: 'VALIDATION', message: 'Inserisci un nome.' });
+  if (parentId && existing?.systemRole === 'vat_taxes')
+    return err({
+      code: 'VALIDATION',
+      message: 'La categoria di sistema deve restare una categoria principale.',
+    });
+  if (parentId && id && categories.some((category) => category.parentId === id))
+    return err({
+      code: 'VALIDATION',
+      message:
+        'La categoria contiene sottocategorie e deve restare una categoria principale.',
+    });
   if (
     parentId &&
     !categories.some(
       (category) =>
         category.id === parentId &&
+        category.id !== id &&
         !category.parentId &&
         category.systemRole !== 'vat_taxes',
     )
@@ -43,6 +64,7 @@ export function prepareBankExpenseCategory(
   if (
     categories.some(
       (category) =>
+        category.id !== id &&
         category.parentId === parentId &&
         category.name.trim().toLocaleLowerCase('it') ===
           name.toLocaleLowerCase('it'),
@@ -53,7 +75,14 @@ export function prepareBankExpenseCategory(
       message:
         'Esiste già una categoria con questo nome nello stesso livello. Selezionala dall’elenco.',
     });
-  return ok({ ...meta(), name, ...(parentId ? { parentId } : {}) });
+  const value: BankExpenseCategory = {
+    ...(existing ?? meta()),
+    name,
+    updatedAt: nowIso(),
+  };
+  if (parentId) value.parentId = parentId;
+  else delete value.parentId;
+  return ok(value);
 }
 
 export function prepareBankExpense(
