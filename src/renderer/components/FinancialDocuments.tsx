@@ -39,6 +39,10 @@ type RegisteredDocument = FicIssuedDocument | FicReceivedDocument;
 type Selection =
   | { kind: 'registered'; document: RegisteredDocument }
   | { kind: 'pending'; document: FicPendingReceivedDocument };
+type SelectionKey = { companyId: string; id: string } & (
+  | { kind: 'registered'; type: RegisteredDocument['type'] }
+  | { kind: 'pending'; source: FicPendingReceivedDocument['source'] }
+);
 const typeLabels = {
   invoice: 'Fattura emessa',
   credit_note: 'Nota di credito emessa',
@@ -68,7 +72,38 @@ export function FinancialDocuments({
   year?: number;
   today: string;
 }) {
-  const [selected, setSelected] = useState<Selection>();
+  const [selection, setSelection] = useState<SelectionKey>();
+  const setSelected = (value: Selection | undefined) =>
+    setSelection(
+      value
+        ? {
+            companyId: snapshot.company.id,
+            id: value.document.id,
+            ...(value.kind === 'registered'
+              ? { kind: value.kind, type: value.document.type }
+              : { kind: value.kind, source: value.document.source }),
+          }
+        : undefined,
+    );
+  // Resolve details from the latest snapshot, including updated payments.
+  const selected: Selection | undefined = (() => {
+    if (!selection || selection.companyId !== snapshot.company.id) return;
+    if (selection.kind === 'pending') {
+      const document = snapshot.pendingReceivedDocuments?.find(
+        (document) =>
+          document.id === selection.id && document.source === selection.source,
+      );
+      return document ? { kind: 'pending', document } : undefined;
+    }
+    const document = [
+      ...snapshot.issuedDocuments,
+      ...snapshot.receivedDocuments,
+    ].find(
+      (document) =>
+        document.id === selection.id && document.type === selection.type,
+    );
+    return document ? { kind: 'registered', document } : undefined;
+  })();
   const annual = (document: RegisteredDocument) =>
     document.date.slice(0, 4) === String(year);
   const invoices = snapshot.issuedDocuments.filter(

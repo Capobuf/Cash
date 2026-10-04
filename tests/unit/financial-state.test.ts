@@ -8,6 +8,8 @@ import {
 } from '../../src/domain/model';
 import { AppState } from '../../src/renderer/state';
 import type { ArchiveSession } from '../../src/native/persistence';
+import { syncFinancialData } from '../../src/native/integrations/fatture-in-cloud';
+import { financialPaymentSummary } from '../../src/domain/financial-analysis';
 
 const snapshot = (
   acquiredAt = '2026-09-01T00:00:00Z',
@@ -82,6 +84,92 @@ describe('applicazione atomica dello snapshot', () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(state.status).toBe('Salvato');
   });
+
+  it.each(['invoice', 'credit_note', 'expense', 'passive_credit_note'])(
+    'aggiorna e salva i pagamenti del documento %s già importato da FIC',
+    async (type) => {
+      const { state, sync, save } = setup();
+      let paidAmount = 0;
+      const fetcher = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        const data = url.pathname.endsWith('/company/info')
+          ? {
+              data: {
+                id: 1,
+                name: 'Studio',
+                access_info: {
+                  permissions: {
+                    fic_received_documents: 'read',
+                    fic_issued_documents: 'read',
+                  },
+                },
+              },
+            }
+          : {
+              current_page: 1,
+              last_page: 1,
+              data:
+                url.searchParams.get('type') === type
+                  ? [
+                      {
+                        id: 1,
+                        type,
+                        date: '2025-12-01',
+                        amount_gross: 100,
+                        payments_list: [
+                          ...(paidAmount
+                            ? [
+                                {
+                                  amount: paidAmount,
+                                  status: 'paid',
+                                  paid_date: '2026-10-04',
+                                },
+                              ]
+                            : []),
+                          ...(paidAmount < 100
+                            ? [
+                                {
+                                  amount: 100 - paidAmount,
+                                  status: 'not_paid',
+                                },
+                              ]
+                            : []),
+                        ],
+                      },
+                    ]
+                  : [],
+            };
+        return new Response(JSON.stringify(data));
+      });
+      sync.mockImplementation(() =>
+        syncFinancialData('1', 'token', fetcher as typeof fetch),
+      );
+      for (const amount of [0, 40, 100, 0]) {
+        paidAmount = amount;
+        await state.syncFinancialData();
+        await state.save();
+        expect(state.error).toBeNull();
+        expect(state.status).toBe('Salvato');
+        const current = state.document!.financialSnapshot!;
+        const documents = [
+          ...current.issuedDocuments,
+          ...current.receivedDocuments,
+        ];
+        expect(documents).toHaveLength(1);
+        expect(documents[0]).toMatchObject({ id: '1', type });
+        expect(
+          financialPaymentSummary(documents[0]!, '2026-10-04'),
+        ).toMatchObject({
+          paid: `${amount}.00`,
+          outstanding: `${100 - amount}.00`,
+          status:
+            amount === 100 ? 'Pagata' : amount ? 'Parziale' : 'Da incassare',
+        });
+        expect(save.mock.lastCall?.[1].financialSnapshot).toEqual(current);
+      }
+      expect(sync).toHaveBeenCalledTimes(4);
+    },
+  );
 
   it('non modifica né salva nulla quando una pagina remota fallisce', async () => {
     const { state, sync, save } = setup();

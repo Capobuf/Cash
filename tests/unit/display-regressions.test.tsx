@@ -1,7 +1,13 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createEmptyDocument, meta, type Quote } from '../../src/domain/model';
+import {
+  createEmptyDocument,
+  meta,
+  type Quote,
+  type FicFinancialSnapshot,
+  type FicReceivedDocument,
+} from '../../src/domain/model';
 import { FinancialDocuments } from '../../src/renderer/components/FinancialDocuments';
 import { ExportDialog } from '../../src/renderer/components/quotes/ExportDialog';
 import { ResourcesView } from '../../src/renderer/views/ResourcesView';
@@ -68,15 +74,17 @@ it.each([
   'pending',
 ] as const)('shows the remote identifier in %s details', (type) => {
   selection.value = {
+    companyId: '1',
+    id: 'fic-908172',
+    type,
+    source: 'agyo',
     kind: type === 'pending' ? 'pending' : 'registered',
-    document: {
-      id: 'fic-908172',
-      type,
-      date: '2026-01-01',
-      amountGross: '10.00',
-      payments: [],
-      source: 'agyo',
-    },
+  };
+  const document = {
+    id: 'fic-908172',
+    date: '2026-01-01',
+    amountGross: '10.00',
+    payments: [],
   };
   selection.inject = true;
   const markup = renderToStaticMarkup(
@@ -85,8 +93,16 @@ it.each([
         source: 'fatture_in_cloud',
         company: { id: '1', name: 'Studio' },
         acquiredAt: '2026-01-01T00:00:00Z',
-        issuedDocuments: [],
-        receivedDocuments: [],
+        issuedDocuments:
+          type === 'invoice' || type === 'credit_note'
+            ? [{ ...document, type }]
+            : [],
+        receivedDocuments:
+          type === 'expense' || type === 'passive_credit_note'
+            ? [{ ...document, type }]
+            : [],
+        pendingReceivedDocuments:
+          type === 'pending' ? [{ ...document, source: 'agyo' }] : [],
       },
       year: 2026,
       today: '2026-01-01',
@@ -94,6 +110,53 @@ it.each([
   );
   expect(markup).toContain('ID FIC');
   expect(markup).toContain('fic-908172');
+});
+
+it('refreshes open invoice details when the FIC payment changes', () => {
+  selection.value = {
+    companyId: '1',
+    id: 'expense-1',
+    kind: 'registered',
+    type: 'expense',
+  };
+  const document: FicReceivedDocument = {
+    id: 'expense-1',
+    type: 'expense',
+    date: '2026-01-01',
+    amountGross: '100.00',
+    payments: [{ amount: '100.00', status: 'not_paid' }],
+  };
+  const snapshot: FicFinancialSnapshot = {
+    source: 'fatture_in_cloud',
+    company: { id: '1', name: 'Studio' },
+    acquiredAt: '2026-01-01T00:00:00Z',
+    issuedDocuments: [],
+    receivedDocuments: [document],
+  };
+  const render = (current: FicFinancialSnapshot) => {
+    selection.inject = true;
+    return renderToStaticMarkup(
+      createElement(FinancialDocuments, {
+        snapshot: current,
+        year: 2026,
+        today: '2026-10-04',
+      }),
+    );
+  };
+  expect(render(snapshot)).toContain('Da pagare');
+  const next = structuredClone(snapshot);
+  next.receivedDocuments[0]!.payments = [
+    { amount: '100.00', status: 'paid', paidDate: '2026-10-04' },
+  ];
+  const updated = render(next);
+  expect(updated).toContain('Pagata');
+  expect(updated).toContain('04 ott 2026');
+  expect(updated).not.toContain('Da pagare');
+  expect(updated).not.toContain('not_paid');
+  expect(render({ ...next, receivedDocuments: [] })).not.toContain('ID FIC');
+  expect(
+    render({ ...next, company: { id: '2', name: 'Altra azienda' } }),
+  ).not.toContain('ID FIC');
 });
 
 it('keeps provider diagnostics visible inside the export dialog', () => {
