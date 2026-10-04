@@ -57,6 +57,9 @@ categorie manuali e automatiche e stato di esclusione. “Ignora nei conteggi”
 spesa nell’archivio e nella lista, ma la esclude da riepiloghi, Sankey e panoramica finanziaria,
 comprese le imposte già pagate. L’opzione sulle categorie si applica anche alle sottocategorie:
 una sola categoria effettiva esclusa basta a escludere l’intero movimento.
+Le regole automatiche sono ricercabili per testo e categoria, filtrabili per categoria
+(incluse le sottocategorie) e presenza di corrispondenze, e ordinabili per testo,
+categoria o numero di corrispondenze. I conteggi considerano tutti gli anni e le spese escluse.
 Movimenti e regole assenti vengono letti con liste vuote; le vecchie
 assegnazioni `categoryId` diventano categorie manuali in `categoryIds`. L’apertura non riscrive
 il file: il successivo salvataggio conserva il formato precedente nel consueto backup.

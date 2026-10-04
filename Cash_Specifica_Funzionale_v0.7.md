@@ -1706,6 +1706,8 @@ La tabella **Movimenti** offre il controllo esplicito **Ignora nei conteggi** e 
 
 La migrazione esplicita **10 → 11** richiede anteprima, conferma e backup, preserva i dati e porta lo schema a 11 senza escludere automaticamente spese o categorie. I flag possono restare assenti finché falsi. I client precedenti aprono lo schema più recente soltanto in lettura.
 
+La tabella **Regole automatiche** offre ricerca per testo riconosciuto e percorso categoria, filtro per categoria (un padre comprende i figli), filtro per regole con o senza corrispondenze e ordinamento crescente/decrescente per testo, categoria e numero di corrispondenze. I conteggi considerano tutti gli anni e anche i movimenti esclusi dai conteggi finanziari. Ricerca, filtri e ordinamento restano disponibili in sola lettura e sono stato locale della vista: non modificano l’archivio, l’ordine persistito o la semantica additiva delle regole. Un risultato vuoto consente di azzerare ricerca e filtri.
+
 Imposte pagate = somma dei movimenti inclusi nei conteggi dell’anno N la cui categoria effettiva, ottenuta con `effectiveCategoryIds()`, comprende la categoria di sistema. Assegnazioni manuali e regole si uniscono senza contare due volte il movimento. Non si deduce l’appartenenza fiscale da una sottocategoria o dal testo del nome.
 
 > Margine dopo le uscite = Incassato − Uscite dal conto

@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import {
   bankCategoryDeletionBlocker,
-  bankCategoryLabel,
   bankCategoryTree,
-  bankRuleMatches,
   filterBankCategoryTree,
 } from '../../domain/bank-expenses';
 import { prepareBankExpenseCategory } from '../../domain/bank-expense-editing';
@@ -15,6 +13,7 @@ import {
 } from '../../domain/model';
 import type { AppState } from '../state';
 import { BankRuleDialog } from '@/components/BankRuleDialog';
+import { BankRulesTable } from '@/components/BankRulesTable';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -43,14 +42,6 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 export function BankCategoriesView({
   doc,
@@ -264,73 +255,13 @@ export function BankCategoriesView({
             Modificarle o eliminarle aggiorna subito le categorie automatiche;
             le assegnazioni manuali restano intatte.
           </p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Testo riconosciuto</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead className="text-right">Corrispondenze</TableHead>
-                <TableHead>Azioni</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {doc.bankExpenseRules.map((rule) => (
-                <TableRow key={rule.id}>
-                  <TableCell className="whitespace-normal break-words">
-                    {rule.matchText}
-                  </TableCell>
-                  <TableCell>
-                    {bankCategoryLabel(
-                      doc.bankExpenseCategories,
-                      rule.categoryId,
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {
-                      doc.bankExpenses.filter((expense) =>
-                        bankRuleMatches(expense.description, rule.matchText),
-                      ).length
-                    }
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={readOnly}
-                        aria-label={`Modifica regola ${rule.matchText}`}
-                        onClick={() => setRuleEditor({ rule })}
-                      >
-                        <Pencil />
-                        Modifica
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={readOnly}
-                        aria-label={`Elimina regola ${rule.matchText}`}
-                        onClick={() => setDeletingRule(rule)}
-                      >
-                        <Trash2 />
-                        Elimina
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!doc.bankExpenseRules.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="py-8 text-center text-muted-foreground"
-                  >
-                    Nessuna regola automatica. Puoi crearne una anche dalla
-                    lista Movimenti.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
+          <BankRulesTable
+            key={`${doc.documentId}:${appState.session?.path}`}
+            doc={doc}
+            readOnly={Boolean(readOnly)}
+            onEdit={(rule) => setRuleEditor({ rule })}
+            onDelete={setDeletingRule}
+          />
         </CardContent>
       </Card>
       {ruleEditor ? (
