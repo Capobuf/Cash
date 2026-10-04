@@ -169,46 +169,51 @@ I nuovi permessi sono di sola lettura; i vecchi token vanno riconfigurati con gl
 
 L’emesso segue la data fattura; l’incassato segue paid_date, anche per fatture di anni precedenti.
 I pagamenti paid senza data valida bloccano l’intera acquisizione. Note di credito e costi documentati
-restano separati da ricavi e costi pianificati. La **Previsione fiscale gestionale** riusa il calcolo forfettario
+restano separati da ricavi e costi pianificati. La **Previsione fiscale automatica** riusa il calcolo forfettario
 con il profilo confermato dello stesso anno. Sono disponibili tabella mensile e dettagli dei residui.
 
 Lo snapshot rimane consultabile offline, con integrazione disattivata o rimossa e su postazioni senza token.
 La data dell’ultimo aggiornamento è sempre mostrata. Un cambio azienda viene segnalato e una sincronizzazione
 riuscita sostituisce interamente i dati, senza mescolarli. Cash non ricostruisce saldi bancari dai movimenti e non gestisce contabilità.
 
-La **Previsione fiscale gestionale** comprende contributi INPS stimati, sostitutiva stimata,
+La **Previsione fiscale automatica** mostra il totale anno N (`annualTotal`): contributi INPS stimati, sostitutiva stimata e
 bollo di 2 euro per ogni fattura dell’anno con importo lordo superiore a 77,46 euro
-e numerazione che non inizia con PA, e acconti dell’anno successivo (sostitutiva 100%
+e con numerazione e numero privi del prefisso PA. Separatamente mostra il totale acconti N+1 (`totalAdvances`, sostitutiva 100%
 oltre 51,65 euro, INPS 80%). Il profilo annuale fornisce coefficienti e aliquote; in assenza
 di un profilo successivo confermato l’acconto INPS usa l’aliquota corrente con avviso.
 Non è un calcolo dichiarativo: la base sostitutiva usa contributi stimati anziché versamenti
 fiscali effettivi. Il bollo viene calcolato indipendentemente dall’incasso e dal campo
 stamp_duty importato, anche se assente o pari a zero.
 
-Il box **Correzione con il prospetto del commercialista** permette di sostituire la stima con un
+Il box **Correzione con il prospetto del commercialista** permette di inserire un
 solo totale annuale facoltativo, riferito ai versamenti dell’anno selezionato. La guida spiega
 quali saldi e acconti includere, come evitare duplicazioni tra totale e rate, e come trattare
 bollo, compensazioni e importi già pagati. Non è un’aggiunta alla stima e non modifica i movimenti.
-`Residuo = max(0, totale del commercialista − pagamenti bancari Imposte P.IVA nell’anno)`.
-La stima automatica resta visibile per confronto; **Torna alla stima** elimina la correzione.
+`Ancora da versare N = max(0, totale del commercialista N − pagamenti bancari Imposte P.IVA nell’anno N)`,
+solo se il totale annuale è disponibile. La stima automatica resta visibile per confronto e non è un fallback;
+**Rimuovi totale annuale** elimina il dato e rende indisponibili residuo e disponibilità stimata.
 Zero è un totale valido; un’eccedenza pagata non viene trasformata in credito fiscale.
 La correzione funziona anche quando la stima è indisponibile, resta confinata al suo anno ed è
 salvata in `fiscalPaymentOverrides` (schema 10); la migrazione non inventa importi dagli archivi precedenti.
 
 La categoria di sistema **Imposte P.IVA** è rinominabile e non eliminabile. Il riconoscimento
 usa systemRole, anche dopo un rename, e le categorie effettive manuali/automatiche.
-`Residuo fiscale = max(0, monte fiscale − imposte pagate tramite banca)`.
+I movimenti classificati come Imposte P.IVA sono esclusivamente versamenti effettivamente usciti dal conto nell’anno,
+senza attribuzione automatica a tributo, saldo/acconto o anno fiscale.
 Le imposte pagate restano nel totale delle uscite. L’eccedenza è mostrata come differenza,
 senza crediti o riporti. La dashboard distingue anno corrente e acconti successivi.
 
 `Margine dopo le uscite = Incassato − Uscite dal conto`.
-`Disponibilità stimata = Margine dopo le uscite − Fiscalità ancora da coprire`.
-La panoramica non richiede dati finanziari manuali. Il risultato negativo è un **Disavanzo stimato**;
-se la previsione fiscale non è calcolabile, il KPI mostra il motivo reale.
+`Disponibilità stimata = Margine dopo le uscite − Ancora da versare N`, solo con totale annuale del commercialista.
+Con quel totale la Card principale mostra **Disponibilità stimata** o **Disavanzo stimato** se negativa;
+senza quel totale mostra **Margine dopo le uscite** e spiega che il residuo annuale non è determinabile.
+Stima fiscale N e acconti N+1 restano indipendenti e non vengono sottratti dai pagamenti bancari N.
 Le imposte già pagate sono comprese nelle uscite e riducono il residuo fiscale: non si sottraggono due volte.
 Il Sankey Recharts rappresenta Top 5 clienti + Altri clienti → Incassato → Uscite dal conto / Margine.
-Le uscite si dividono in Imposte P.IVA già pagate / Altre uscite; il margine in Fiscalità ancora da coprire /
-Disponibilità stimata. Le normali categorie, potenzialmente sovrapposte, restano nel grafico separato.
+Le uscite si dividono in Imposte P.IVA già pagate / Altre uscite. Senza totale annuale il Sankey termina al margine;
+con quel totale il margine si divide in Ancora da versare nell’anno / Disponibilità stimata, quando non negativa.
+Le stime automatiche non entrano nel Sankey o nel grafico mensile. Le normali categorie, potenzialmente sovrapposte,
+restano nel grafico separato.
 Nella stessa Card, Fatturato emesso, Incassato nell’anno e Da incassare forniscono il contesto:
 fatturato e incassato hanno perimetri temporali diversi e non sono collegati nel Sankey.
 Costi pianificati, costi FIC e preventivazione mantengono le loro logiche precedenti.

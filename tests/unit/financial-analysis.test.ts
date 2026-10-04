@@ -86,28 +86,12 @@ const snapshot = (): FicFinancialSnapshot => ({
 
 describe('analisi finanziaria', () => {
   it.each([
-    ['ordinary', false, '15', '3714.98', '12450.43', '10701.74', '23152.17'],
-    [
-      'reduced_eligible',
-      true,
-      '5',
-      '1238.33',
-      '9973.78',
-      '8225.09',
-      '18198.87',
-    ],
-    [
-      'reduced_eligible',
-      false,
-      '15',
-      '3714.98',
-      '12450.43',
-      '10701.74',
-      '23152.17',
-    ],
+    ['ordinary', false, '15', '3714.98', '12450.43', '10701.74'],
+    ['reduced_eligible', true, '5', '1238.33', '9973.78', '8225.09'],
+    ['reduced_eligible', false, '15', '3714.98', '12450.43', '10701.74'],
   ] as const)(
     'previsione completa %s confermata %s: %s%% con bollo e acconti',
-    (phase, confirmed, rate, tax, annual, advances, total) => {
+    (phase, confirmed, rate, tax, annual, advances) => {
       const profile = createFiscalPreset2026();
       profile.confirmed = true;
       profile.fiscal.activityPhase = phase;
@@ -145,9 +129,9 @@ describe('analisi finanziaria', () => {
         contributionAdvanceFirst: '3493.38',
         contributionAdvanceSecond: '3493.38',
         totalAdvances: advances,
-        totalToReserve: total,
         advanceRateProjected: true,
       });
+      expect(result.fiscalProjection).not.toHaveProperty('totalToReserve');
       expect(result.fiscalWarnings).toContain(
         'Aliquota INPS dell’anno successivo non disponibile: proiezione effettuata con l’aliquota 2026.',
       );
@@ -248,7 +232,7 @@ describe('analisi finanziaria', () => {
         expect(result.fiscalProjection).toMatchObject({
           stampDuty: expected,
           annualTotal: expected,
-          totalToReserve: expected,
+          totalAdvances: '0.00',
         });
         expect(result.fiscalUnavailableReason).toBeUndefined();
       }
@@ -435,7 +419,8 @@ describe('analisi finanziaria', () => {
         planning.value.substituteTax,
       );
     }
-    expect(result.fiscalProjection?.totalToReserve).toBe('120.61');
+    expect(result.fiscalProjection?.annualTotal).toBe('78.69');
+    expect(result.fiscalProjection?.totalAdvances).toBe('41.92');
   });
 
   it('deriva residui e scadenze senza inventare date, ignorando reversed nell’incassato', () => {

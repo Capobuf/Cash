@@ -110,10 +110,16 @@ describe('panoramica finanziaria unificata', () => {
     expectConservativeFlow(buildFinancialOverviewFlow(result));
     const html = htmlFor(result);
     expect(html).toContain('Totale annuale del commercialista');
-    expect(html).toContain('Stima automatica, non utilizzata nel residuo');
+    expect(html).toContain('Totale anno e totale acconti sono stime separate');
+    const hero = html.split('Fatturato emesso')[0]!;
+    expect(hero).toContain('Disponibilità stimata');
+    expect(hero).toContain('17.417,34');
     expect(overview(doc, 2027).fiscalPaymentOverride).toBeUndefined();
     delete doc.fiscalPaymentOverrides;
-    expect(overview(doc).fiscalSituation.total).toBe(automatic?.totalToReserve);
+    expect(overview(doc)).toMatchObject({
+      fiscalSituation: { total: undefined, remaining: undefined },
+      estimatedAvailability: undefined,
+    });
   });
 
   it('accetta zero esplicito, eccedenza e correzione anche senza una stima fiscale valida', () => {
@@ -126,13 +132,19 @@ describe('panoramica finanziaria unificata', () => {
       fiscalSituation: { total: '0.00', remaining: '0.00', excess: '10000.00' },
       estimatedAvailability: '30000.00',
     });
+    const zeroFlow = buildFinancialOverviewFlow(overview(doc));
+    expect(
+      zeroFlow.nodes.find((node) => node.key === 'available')?.amount,
+    ).toBe('30000.00');
+    expect(zeroFlow.nodes.some((node) => node.key === 'fiscal')).toBe(false);
+    expectConservativeFlow(zeroFlow);
     doc.fiscalPaymentOverrides[0]!.total = '15000.00';
     expect(overview(doc)).toMatchObject({
       fiscalReserve: '5000.00',
       estimatedAvailability: '25000.00',
     });
   });
-  it('calcola residuo e disponibilità per il profilo FIC independent_contractor forfettario', () => {
+  it('mantiene la stima FIC forfettaria separata dai versamenti senza totale annuale', () => {
     const doc = fixture();
     doc.settings.fic.taxProfile = {
       acquiredAt: '2026-09-30T17:24:53.927Z',
@@ -143,27 +155,33 @@ describe('panoramica finanziaria unificata', () => {
     const result = overview(doc);
     expect(result.fiscalUnavailableReason).toBeUndefined();
     expect(result.fiscalSituation).toMatchObject({
-      total: '12002.00',
-      remaining: '12002.00',
+      total: undefined,
+      remaining: undefined,
     });
-    expect(result.estimatedAvailability).toBe('17998.00');
-    expect(htmlFor(result)).not.toContain('Non disponibile');
+    expect(result.analysis?.fiscalProjection).toMatchObject({
+      annualTotal: '6402.00',
+      totalAdvances: '5600.00',
+    });
+    expect(result.estimatedAvailability).toBeUndefined();
+    expect(result.fiscalPaymentUnavailableReason).toContain('totale annuale');
+    expect(htmlFor(result)).not.toContain('Stima automatica non disponibile');
   });
 
   it('presenta anno, acconti ed eccedenza senza i controlli fiscali manuali', () => {
     const doc = fixture();
     doc.bankExpenses[0]!.amount = '14000.00';
     doc.bankExpenses[0]!.categoryIds = [doc.bankExpenseCategories[0]!.id];
+    doc.fiscalPaymentOverrides = [{ year: 2026, total: '12000.00' }];
     const html = renderToStaticMarkup(
       createElement(FinancialOverviewDashboard, { overview: overview(doc) }),
     );
     for (const label of [
-      'Previsione fiscale gestionale',
-      'Pagato tramite banca',
-      'Ancora da coprire',
-      'Pagato oltre la previsione',
-      'Anno corrente',
-      'Acconti anno successivo',
+      'Previsione fiscale automatica',
+      'Imposte P.IVA già pagate',
+      'Ancora da versare',
+      'Pagato oltre il totale previsto',
+      'Stima anno',
+      'Acconti stimati',
       'Contributi INPS stimati',
       'Base sostitutiva stimata',
       'Bollo',
@@ -192,7 +210,7 @@ describe('panoramica finanziaria unificata', () => {
     ['10000.00', '0.00', '0.00'],
     ['12000.00', '0.00', '2000.00'],
   ])(
-    'stima 10000, pagato %s: residuo %s, eccedenza %s',
+    'totale annuale 10000, pagato %s: residuo %s, eccedenza %s',
     (paid, remaining, excess) => {
       expect(calculateFiscalReserve('10000.00', paid)).toEqual({
         total: '10000.00',
@@ -216,6 +234,7 @@ describe('panoramica finanziaria unificata', () => {
     'correla la categoria di sistema rinominata via %s senza doppio conteggio',
     (mode) => {
       const doc = fixture('50000.00', '10000.00');
+      doc.fiscalPaymentOverrides = [{ year: 2026, total: '12000.00' }];
       doc.profiles[0]!.fiscal.profitabilityCoefficient = '40';
       const category = doc.bankExpenseCategories[0]!;
       category.name = 'Versamenti rinominati';
@@ -282,10 +301,11 @@ describe('panoramica finanziaria unificata', () => {
     },
   );
 
-  it('limita il residuo a zero con imposte superiori alla previsione, senza riporti', () => {
+  it('limita il residuo a zero con imposte superiori al totale annuale, senza riporti', () => {
     const doc = fixture();
     doc.bankExpenses[0]!.amount = '14000.00';
     doc.bankExpenses[0]!.categoryIds = [doc.bankExpenseCategories[0]!.id];
+    doc.fiscalPaymentOverrides = [{ year: 2026, total: '12000.00' }];
     const result = overview(doc);
     expect(result).toMatchObject({
       fiscalReserve: '0.00',
@@ -308,20 +328,82 @@ describe('panoramica finanziaria unificata', () => {
     });
   });
 
-  it('include anno corrente e acconti automatici nel disponibile', () => {
+  it('mostra margine e stime separate senza inventare il disponibile o rami fiscali', () => {
     const result = overview();
     expect(result).toMatchObject({
       collectedRevenue: '40000.00',
       bankExpenses: '10000.00',
       marginAfterOutflows: '30000.00',
-      fiscalReserve: '12000.00',
-      estimatedAvailability: '18000.00',
+      fiscalReserve: undefined,
+      estimatedAvailability: undefined,
       bankExpenseShareOfCollections: '25.00',
-      availableShareOfCollections: '45.00',
+      availableShareOfCollections: undefined,
     });
-    expect(result.fiscalReserve).toBe(
-      result.analysis?.fiscalProjection?.totalToReserve,
+    expect(result.analysis?.fiscalProjection).toMatchObject({
+      annualTotal: '6400.00',
+      totalAdvances: '5600.00',
+    });
+    const html = htmlFor(result);
+    const hero = html.slice(0, html.indexOf('Fatturato emesso'));
+    expect(hero).toContain('Margine dopo le uscite');
+    expect(hero).toContain('30.000,00');
+    expect(hero).not.toContain('Disponibilità stimata');
+    expect(html).toContain('Totale anno');
+    expect(html).toContain('6.400,00');
+    expect(html).toContain('Totale acconti');
+    expect(html).toContain('5.600,00');
+    expect(html).toContain('Ancora da versare');
+    expect(html).toContain('Non disponibile');
+    const flow = buildFinancialOverviewFlow(result);
+    expect(
+      flow.nodes.some((node) => ['fiscal', 'available'].includes(node.key)),
+    ).toBe(false);
+    expect(
+      flow.links.some((link) => flow.nodes[link.source]?.key === 'margin'),
+    ).toBe(false);
+    expect(flow.message).toContain('totale annuale');
+    expectConservativeFlow(flow);
+  });
+
+  it('mantiene i versamenti bancari nelle uscite senza sottrarli dalle stime automatiche', () => {
+    const doc = fixture();
+    const automatic = overview(doc).analysis?.fiscalProjection;
+    doc.bankExpenses.push({
+      ...meta(),
+      date: '2026-06-30',
+      amount: '7000.03',
+      description: 'F24 saldo e acconti',
+      categoryIds: [doc.bankExpenseCategories[0]!.id],
+    });
+    const result = overview(doc);
+    expect(result).toMatchObject({
+      bankExpenses: '17000.03',
+      marginAfterOutflows: '22999.97',
+      fiscalSituation: {
+        total: undefined,
+        paid: '7000.03',
+        remaining: undefined,
+        excess: undefined,
+      },
+      fiscalReserve: undefined,
+      estimatedAvailability: undefined,
+    });
+    expect(result.analysis?.fiscalProjection).toEqual(automatic);
+    const flow = buildFinancialOverviewFlow(result);
+    expect(flow.nodes.find((node) => node.key === 'paid-taxes')?.amount).toBe(
+      '7000.03',
     );
+    expect(
+      flow.nodes.some((node) => ['fiscal', 'available'].includes(node.key)),
+    ).toBe(false);
+    expect(
+      flow.links.some((link) => flow.nodes[link.source]?.key === 'margin'),
+    ).toBe(false);
+    expectConservativeFlow(flow);
+    const html = htmlFor(result);
+    expect(html).toContain('Imposte P.IVA già pagate');
+    expect(html).toContain('7.000,03');
+    expect(html).not.toContain('Pagato oltre il totale previsto');
   });
 
   it.each(['missing', 'unconfirmed', 'other-year'] as const)(
@@ -349,7 +431,9 @@ describe('panoramica finanziaria unificata', () => {
   );
 
   it('preserva il disavanzo e non crea un flusso incoerente', () => {
-    const result = overview(fixture('10000.00', '12000.00'));
+    const doc = fixture('10000.00', '12000.00');
+    doc.fiscalPaymentOverrides = [{ year: 2026, total: '3000.00' }];
+    const result = overview(doc);
     expect(result.marginAfterOutflows).toBe('-2000.00');
     expect(result.estimatedAvailability).toBe('-5000.00');
     expect(htmlFor(result)).toContain('Disavanzo stimato');
@@ -357,6 +441,20 @@ describe('panoramica finanziaria unificata', () => {
       nodes: [],
       links: [],
       message: expect.stringContaining('superano'),
+    });
+  });
+
+  it('mostra il margine negativo senza chiamarlo disponibilità quando manca il totale annuale', () => {
+    const result = overview(fixture('10000.00', '12000.00'));
+    expect(result.marginAfterOutflows).toBe('-2000.00');
+    expect(result.estimatedAvailability).toBeUndefined();
+    const hero = htmlFor(result).split('Fatturato emesso')[0]!;
+    expect(hero).toContain('Margine dopo le uscite');
+    expect(hero).toContain('-2.000,00');
+    expect(hero).not.toContain('Disavanzo stimato');
+    expect(buildFinancialOverviewFlow(result)).toMatchObject({
+      nodes: [],
+      links: [],
     });
   });
 
@@ -519,6 +617,14 @@ describe('panoramica finanziaria unificata', () => {
       ),
     ).toBe(true);
     expect(buildFinancialOverviewFlow(absent).links).toEqual([]);
+    doc.fiscalPaymentOverrides = [{ year: 2026, total: '5000.00' }];
+    expect(overview(doc)).toMatchObject({
+      fiscalReserve: '5000.00',
+      collectedRevenue: undefined,
+      marginAfterOutflows: undefined,
+      estimatedAvailability: undefined,
+    });
+    expect(buildFinancialOverviewFlow(overview(doc)).links).toEqual([]);
     const empty = fixture();
     empty.bankExpenses = [];
     empty.financialSnapshot!.issuedDocuments = [];
@@ -526,7 +632,7 @@ describe('panoramica finanziaria unificata', () => {
       bankExpenses: '0.00',
       collectedRevenue: '0.00',
       marginAfterOutflows: '0.00',
-      estimatedAvailability: '0.00',
+      estimatedAvailability: undefined,
       bankExpenseShareOfCollections: undefined,
       availableShareOfCollections: undefined,
     });
@@ -540,6 +646,7 @@ describe('panoramica finanziaria unificata', () => {
 
   it('conserva gli importi del Sankey, inclusi top 5 e resto esatto', () => {
     const doc = fixture('40000.00', '10000.00');
+    doc.fiscalPaymentOverrides = [{ year: 2026, total: '12000.00' }];
     doc.financialSnapshot!.issuedDocuments = Array.from({ length: 8 }, (_, i) =>
       invoice('5000.00', { entityId: String(i), entityName: `Cliente ${i}` }),
     );
@@ -573,7 +680,9 @@ describe('panoramica finanziaria unificata', () => {
   it.each(['10000.00', '8000.00', '7750.00', '7000.00', '0.00'])(
     'gestisce i confini del Sankey con uscite %s',
     (spent) => {
-      const result = overview(fixture('10000.00', spent));
+      const doc = fixture('10000.00', spent);
+      doc.fiscalPaymentOverrides = [{ year: 2026, total: '3000.00' }];
+      const result = overview(doc);
       const flow = buildFinancialOverviewFlow(result);
       expect(flow.links.every((link) => link.value > 0)).toBe(true);
       expect(
@@ -598,6 +707,7 @@ describe('panoramica finanziaria unificata', () => {
 
   it('conserva anche i centesimi in ogni partizione del Sankey', () => {
     const doc = fixture('40000.13', '10000.07');
+    doc.fiscalPaymentOverrides = [{ year: 2026, total: '12000.11' }];
     doc.bankExpenses.push({
       ...meta(),
       date: '2026-06-01',
@@ -609,28 +719,27 @@ describe('panoramica finanziaria unificata', () => {
     expect(result).toMatchObject({
       bankExpenses: '17000.10',
       marginAfterOutflows: '23000.03',
-      fiscalSituation: { paid: '7000.03' },
+      fiscalSituation: { paid: '7000.03', remaining: '5000.08' },
+      estimatedAvailability: '17999.95',
     });
     expectConservativeFlow(buildFinancialOverviewFlow(result));
   });
 
-  it('include il bollo calcolato nel totale e nel flusso anche senza stamp_duty importato', () => {
+  it('include il bollo nella stima anno e non nel flusso senza totale annuale', () => {
     const doc = fixture();
     delete doc.financialSnapshot!.issuedDocuments[0]!.stampDuty;
     doc.financialSnapshot!.issuedDocuments[0]!.numeration = '/A';
     const result = overview(doc);
     expect(result.analysis?.fiscalProjection?.stampDuty).toBe('2.00');
-    expect(result.fiscalSituation.total).toBe('12002.00');
-    expect(result.estimatedAvailability).toBe('17998.00');
+    expect(result.analysis?.fiscalProjection?.annualTotal).toBe('6402.00');
+    expect(result.fiscalSituation.total).toBeUndefined();
+    expect(result.estimatedAvailability).toBeUndefined();
     expect(result.fiscalUnavailableReason).toBeUndefined();
-    expect(htmlFor(result)).toContain('17.998,00');
+    expect(htmlFor(result)).toContain('6.402,00');
     const flow = buildFinancialOverviewFlow(result);
-    expect(flow.nodes.find((node) => node.key === 'fiscal')?.amount).toBe(
-      '12002.00',
-    );
-    expect(flow.nodes.find((node) => node.key === 'available')?.amount).toBe(
-      '17998.00',
-    );
+    expect(
+      flow.nodes.some((node) => ['fiscal', 'available'].includes(node.key)),
+    ).toBe(false);
     expectConservativeFlow(flow);
   });
 
@@ -673,7 +782,7 @@ describe('panoramica finanziaria unificata', () => {
         expect(context).toContain(value);
       expect(html).not.toMatch(/Incassato \/ Fatturato/);
       const flow = buildFinancialOverviewFlow(result);
-      expect(flow.message).toBeUndefined();
+      expect(flow.message).toContain('totale annuale');
       expect(
         flow.nodes.some((node) => /fatturato|emesso/i.test(node.name)),
       ).toBe(false);

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FiscalCorrectionForm } from '../../src/renderer/components/FiscalCorrectionForm';
 
 describe('correzione annuale del commercialista', () => {
-  it('spiega il perimetro annuale e rende disponibile il ritorno alla stima anche con zero', () => {
+  it('spiega il perimetro annuale e consente di rimuovere il totale anche con zero', () => {
     const html = renderToStaticMarkup(
       createElement(FiscalCorrectionForm, {
         year: 2026,
@@ -17,7 +17,10 @@ describe('correzione annuale del commercialista', () => {
     expect(html).toContain('Non sommare due volte');
     expect(html).toContain('compenso del commercialista');
     expect(html).toContain('compensazioni');
-    expect(html).toContain('Torna alla stima');
+    expect(html).toContain('Rimuovi totale annuale');
+    expect(html).toContain(
+      'abilita «Ancora da versare» e «Disponibilità stimata»',
+    );
     expect(html).toContain('value="0,00"');
   });
 

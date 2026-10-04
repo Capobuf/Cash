@@ -112,7 +112,7 @@ describe('snapshot finanziario FIC completo', () => {
       );
       expect(analysis.collectedRevenue).toBe('0.00');
       if (expected) expect(analysis.fiscalProjection).toBeUndefined();
-      else expect(analysis.fiscalProjection?.totalToReserve).toBe('0.00');
+      else expect(analysis.fiscalProjection?.annualTotal).toBe('0.00');
     },
   );
   // Contract-shaped fixture: stamp_duty is an amount, while payment.amount is
@@ -183,7 +183,7 @@ describe('snapshot finanziario FIC completo', () => {
         stamp === 0 ? '0.00' : stamp === 2 ? '2.00' : undefined,
       );
       expect(analysis.fiscalProjection?.stampDuty).toBe('2.00');
-      expect(analysis.fiscalProjection?.totalToReserve).toBeDefined();
+      expect(analysis.fiscalProjection?.annualTotal).toBeDefined();
       expect(analysis.fiscalUnavailableReason).toBeUndefined();
     },
   );

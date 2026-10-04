@@ -348,7 +348,6 @@ export type ManagementFiscalProjection = Omit<
     advanceRateProjected: boolean;
     stampDuty?: string;
     annualTotal?: string;
-    totalToReserve?: string;
   };
 
 export function calculateFinancialAnalysis(
@@ -450,11 +449,10 @@ export function calculateFinancialAnalysis(
               ),
           );
           const stampDuty = money(d(stampInvoices.length).mul(2));
-          const annualTotal = money(
-            d(result.value.totalToReserve).plus(stampDuty),
-          );
+          const { totalToReserve, ...annualProjection } = result.value;
+          const annualTotal = money(d(totalToReserve).plus(stampDuty));
           fiscalProjection = {
-            ...result.value,
+            ...annualProjection,
             ...advances,
             atecoCode: fiscal.atecoCode,
             profitabilityCoefficient: fiscal.profitabilityCoefficient,
@@ -464,7 +462,6 @@ export function calculateFinancialAnalysis(
             advanceRateProjected: !confirmedNext,
             stampDuty,
             annualTotal,
-            totalToReserve: money(d(annualTotal).plus(advances.totalAdvances)),
           };
           if (!confirmedNext)
             fiscalWarnings.push(
