@@ -27,14 +27,14 @@ import {
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { useAppState } from '@/hooks/use-app-state';
-import { state, type ArchiveDecision } from './state';
+import { state, type AppState, type ArchiveDecision } from './state';
 import type { DeleteTarget, View } from './types';
 import { CatalogView } from './views/CatalogView';
 import { ClientsView } from './views/ClientsView';
 import { FinancialAnalysisView } from './views/FinancialAnalysisView';
 import { DashboardView } from './views/DashboardView';
 import { QuotesView } from './views/QuotesView';
-import { SettingsView } from './views/SettingsView';
+import { SettingsView, type FicUiState } from './views/SettingsView';
 
 export function selectableYears(
   doc: CashDocument | undefined,
@@ -60,29 +60,6 @@ export function selectableYears(
 export function App() {
   const appState = useAppState(state);
   const [view, setView] = useState<View>('dashboard');
-  const [financialSelection, setFinancialSelection] = useState<{
-    documentId: string;
-    year: number;
-  }>();
-  const financialDoc = appState.document;
-  const currentYear = new Date().getFullYear();
-  const years = useMemo(() => {
-    return selectableYears(financialDoc, currentYear);
-  }, [financialDoc, currentYear]);
-  const selectedYear =
-    financialSelection?.documentId === financialDoc?.documentId
-      ? financialSelection?.year
-      : undefined;
-  const financialYear =
-    selectedYear !== undefined && years.includes(selectedYear)
-      ? selectedYear
-      : years.includes(currentYear)
-        ? currentYear
-        : (years[0] ?? currentYear);
-  const [activeQuoteId, setActiveQuoteId] = useState<string>();
-  const [activeProfileId, setActiveProfileId] = useState<string>();
-  const [copyProfileId, setCopyProfileId] = useState<string>();
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [decisionResolver, setDecisionResolver] = useState<
     ((choice: ArchiveDecision) => void) | null
   >(null);
@@ -129,6 +106,126 @@ export function App() {
     });
   }, []);
 
+  return (
+    <>
+      {appState.document ? (
+        <ArchiveWorkspace
+          key={appState.document.documentId}
+          doc={appState.document}
+          appState={appState}
+          view={view}
+          setView={setView}
+          ficUi={{
+            hasToken: hasFicToken,
+            connectionError: ficConnectionError,
+            setupInfo: ficSetupInfo,
+            setSetupInfo: setFicSetupInfo,
+            setHasToken: setHasFicToken,
+            setConnectionError: setFicConnectionError,
+          }}
+        />
+      ) : (
+        <Onboarding appState={appState} />
+      )}
+      <AlertDialog
+        open={Boolean(decisionResolver)}
+        onOpenChange={(open) => {
+          if (!open && decisionResolver) {
+            decisionResolver('cancel');
+            setDecisionResolver(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Ci sono modifiche non ancora salvate
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {archiveDecisionAllowsSave ? (
+                <>
+                  Prima di aprire un altro archivio o chiudere Cash puoi
+                  attendere il salvataggio, creare una copia di recupero oppure
+                  scartare le modifiche locali.
+                </>
+              ) : (
+                'Prima del ripristino puoi creare una copia di recupero oppure scartare le modifiche locali. Salvare nel file corrente sostituirebbe il backup da recuperare.'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => {
+                decisionResolver?.('cancel');
+                setDecisionResolver(null);
+              }}
+            >
+              Annulla
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                decisionResolver?.('recovery');
+                setDecisionResolver(null);
+              }}
+            >
+              Copia di recupero
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                decisionResolver?.('discard');
+                setDecisionResolver(null);
+              }}
+            >
+              Scarta modifiche
+            </Button>
+            {archiveDecisionAllowsSave ? (
+              <Button
+                onClick={() => {
+                  decisionResolver?.('save');
+                  setDecisionResolver(null);
+                }}
+              >
+                Salva e continua
+              </Button>
+            ) : null}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function ArchiveWorkspace({
+  doc,
+  appState,
+  view,
+  setView,
+  ficUi,
+}: {
+  doc: CashDocument;
+  appState: AppState;
+  view: View;
+  setView: (view: View) => void;
+  ficUi: FicUiState;
+}) {
+  const [selectedYear, setSelectedYear] = useState<number>();
+  const currentYear = new Date().getFullYear();
+  const years = useMemo(() => {
+    return selectableYears(doc, currentYear);
+  }, [doc, currentYear]);
+  const financialYear =
+    selectedYear !== undefined && years.includes(selectedYear)
+      ? selectedYear
+      : years.includes(currentYear)
+        ? currentYear
+        : (years[0] ?? currentYear);
+  const [activeQuoteId, setActiveQuoteId] = useState<string>();
+  const [activeProfileId, setActiveProfileId] = useState<string>();
+  const [copyProfileId, setCopyProfileId] = useState<string>();
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const navigate = (next: View) => {
     setView(next);
     setActiveQuoteId(undefined);
@@ -256,8 +353,6 @@ export function App() {
     return true;
   };
 
-  if (!appState.document) return <Onboarding appState={appState} />;
-  const doc = appState.document;
   const openProfile = (id?: string) => {
     setActiveProfileId(id);
     setView('settings');
@@ -278,7 +373,7 @@ export function App() {
     ) : view === 'quotes' ? (
       <QuotesView
         doc={doc}
-        hasToken={hasFicToken}
+        hasToken={ficUi.hasToken}
         appState={appState}
         activeQuoteId={activeQuoteId}
         setActiveQuoteId={setActiveQuoteId}
@@ -287,7 +382,7 @@ export function App() {
     ) : view === 'clients' ? (
       <ClientsView
         doc={doc}
-        hasToken={hasFicToken}
+        hasToken={ficUi.hasToken}
         appState={appState}
         requestDelete={setDeleteTarget}
       />
@@ -299,36 +394,23 @@ export function App() {
       />
     ) : view === 'financial-analysis' ? (
       <FinancialAnalysisView
-        key={doc.documentId}
         doc={doc}
         appState={appState}
-        hasToken={hasFicToken}
+        hasToken={ficUi.hasToken}
         year={financialYear}
       />
     ) : view === 'bank-summary' ? (
       <BankSummaryView doc={doc} year={financialYear} />
     ) : view === 'bank-movements' ? (
-      <BankMovementsView
-        key={doc.documentId}
-        doc={doc}
-        appState={appState}
-        year={financialYear}
-      />
+      <BankMovementsView doc={doc} appState={appState} year={financialYear} />
     ) : view === 'bank-categories' ? (
-      <BankCategoriesView key={doc.documentId} doc={doc} appState={appState} />
+      <BankCategoriesView doc={doc} appState={appState} />
     ) : (
       <SettingsView
         doc={doc}
         appState={appState}
         activeProfileId={activeProfileId}
-        ficUi={{
-          hasToken: hasFicToken,
-          connectionError: ficConnectionError,
-          setupInfo: ficSetupInfo,
-          setSetupInfo: setFicSetupInfo,
-          setHasToken: setHasFicToken,
-          setConnectionError: setFicConnectionError,
-        }}
+        ficUi={ficUi}
         onEditProfile={setActiveProfileId}
         onCopyProfile={setCopyProfileId}
         requestDelete={setDeleteTarget}
@@ -346,9 +428,7 @@ export function App() {
         onView={navigate}
         years={years}
         selectedYear={financialYear}
-        onYearChange={(year) =>
-          setFinancialSelection({ documentId: doc.documentId, year })
-        }
+        onYearChange={setSelectedYear}
       >
         {content}
       </AppShell>
@@ -410,73 +490,6 @@ export function App() {
           </form>
         </DialogContent>
       </Dialog>
-      <AlertDialog
-        open={Boolean(decisionResolver)}
-        onOpenChange={(open) => {
-          if (!open && decisionResolver) {
-            decisionResolver('cancel');
-            setDecisionResolver(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Ci sono modifiche non ancora salvate
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {archiveDecisionAllowsSave ? (
-                <>
-                  Prima di aprire un altro archivio o chiudere Cash puoi
-                  attendere il salvataggio, creare una copia di recupero oppure
-                  scartare le modifiche locali.
-                </>
-              ) : (
-                'Prima del ripristino puoi creare una copia di recupero oppure scartare le modifiche locali. Salvare nel file corrente sostituirebbe il backup da recuperare.'
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => {
-                decisionResolver?.('cancel');
-                setDecisionResolver(null);
-              }}
-            >
-              Annulla
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                decisionResolver?.('recovery');
-                setDecisionResolver(null);
-              }}
-            >
-              Copia di recupero
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                decisionResolver?.('discard');
-                setDecisionResolver(null);
-              }}
-            >
-              Scarta modifiche
-            </Button>
-            {archiveDecisionAllowsSave ? (
-              <Button
-                onClick={() => {
-                  decisionResolver?.('save');
-                  setDecisionResolver(null);
-                }}
-              >
-                Salva e continua
-              </Button>
-            ) : null}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
