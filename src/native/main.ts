@@ -145,14 +145,16 @@ async function openWithMigration(path: string) {
       });
     const migrated = await migrateArchive(path);
     if (migrated.ok) {
+      const remembered = await rememberArchive(migrated.value.path);
+      if (!remembered.ok) return remembered;
       current = migrated.value;
-      await rememberArchive(migrated.value.path);
     }
     return migrated;
   }
   if (result.ok) {
+    const remembered = await rememberArchive(result.value.path);
+    if (!remembered.ok) return remembered;
     current = result.value;
-    await rememberArchive(result.value.path);
   }
   return result;
 }
@@ -177,7 +179,9 @@ function registerHandlers(): void {
   });
   ipcMain.handle(IPC.archiveOpen, () => selectOpen());
   ipcMain.handle(IPC.archiveOpenLast, async () => {
-    const path = (await readPreferences()).lastArchivePath;
+    const preferences = await readPreferences();
+    if (!preferences.ok) return preferences;
+    const path = preferences.value.lastArchivePath;
     if (!path) return { ok: true, value: null };
     const result = await openWithMigration(path);
     if (!result.ok && result.error.code === 'FILE_NOT_FOUND') return ok(null);
@@ -196,8 +200,9 @@ function registerHandlers(): void {
       document ?? createEmptyDocument(),
     );
     if (result.ok) {
+      const remembered = await rememberArchive(result.value.path);
+      if (!remembered.ok) return remembered;
       current = result.value;
-      await rememberArchive(result.value.path);
     }
     return result;
   });
@@ -336,10 +341,15 @@ function registerHandlers(): void {
         : key;
     },
   );
-  ipcMain.handle(IPC.ficSetupInfo, async () => ({
-    clientId: (await readPreferences()).ficClientId?.trim() ?? '',
-    requiredScopes: FIC_SCOPES,
-  }));
+  ipcMain.handle(IPC.ficSetupInfo, async () => {
+    const preferences = await readPreferences();
+    return preferences.ok
+      ? ok({
+          clientId: preferences.value.ficClientId?.trim() ?? '',
+          requiredScopes: FIC_SCOPES,
+        })
+      : preferences;
+  });
   ipcMain.handle(IPC.ficSetClientId, async (_event, value: unknown) => {
     const clientId = typeof value === 'string' ? value.trim() : '';
     if (!clientId)
@@ -349,17 +359,8 @@ function registerHandlers(): void {
         field: 'clientId',
         message: 'Il Client ID è obbligatorio.',
       });
-    try {
-      await setFicClientId(clientId);
-      return ok({ clientId });
-    } catch (cause) {
-      return err({
-        code: 'IO',
-        source: 'FattureInCloud',
-        message: 'Impossibile salvare il Client ID nelle preferenze locali.',
-        details: [String(cause)],
-      });
-    }
+    const saved = await setFicClientId(clientId);
+    return saved.ok ? ok({ clientId }) : saved;
   });
   ipcMain.handle(IPC.ficWizardCompanies, (_event, token: string) =>
     listCompanies(token),

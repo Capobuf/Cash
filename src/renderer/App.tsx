@@ -108,7 +108,10 @@ export function App() {
       setHasFicToken(result.ok && result.value);
       setFicConnectionError(!result.ok);
     });
-    void window.cash.fic.setupInfo().then(setFicSetupInfo);
+    void window.cash.fic.setupInfo().then((result) => {
+      if (result.ok) setFicSetupInfo(result.value);
+      else state.setError(result.error);
+    });
     return window.cash.onCloseRequested(() => {
       void requestArchiveDecision().then(async (choice) => {
         if (choice === 'save') {

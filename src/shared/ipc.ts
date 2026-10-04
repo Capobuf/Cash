@@ -125,7 +125,9 @@ export interface CashNativeApi {
     syncFinancialData(input: {
       companyId: string;
     }): Promise<Result<FicFinancialSnapshot>>;
-    setupInfo(): Promise<{ clientId: string; requiredScopes: string[] }>;
+    setupInfo(): Promise<
+      Result<{ clientId: string; requiredScopes: string[] }>
+    >;
     setClientId(clientId: string): Promise<Result<{ clientId: string }>>;
     listCompaniesForActivation(
       token: string,
