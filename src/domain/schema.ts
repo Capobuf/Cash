@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { isYearMonth } from './calendar';
+import { calculateProfile } from './calculations';
 import {
   CURRENT_SCHEMA_VERSION,
   type CashDocument,
@@ -386,47 +387,39 @@ export const profileSchema = z
     capacity: capacitySchema,
   })
   .superRefine((profile, ctx) => {
-    if (
-      new Decimal(profile.fiscal.cessationThreshold).lt(
-        profile.fiscal.ordinaryThreshold,
+    if (!profile.confirmed) {
+      if (
+        new Decimal(profile.fiscal.cessationThreshold).lt(
+          profile.fiscal.ordinaryThreshold,
+        )
       )
-    )
+        ctx.addIssue({
+          code: 'custom',
+          path: ['fiscal', 'cessationThreshold'],
+          message:
+            'la soglia di cessazione deve essere almeno pari alla soglia ordinaria',
+        });
+      return;
+    }
+    // Share confirmProfile's validation. Empty costs isolate the profile's
+    // static parameters; archive business costs are validated separately.
+    const validation = calculateProfile(profile, []);
+    if (!validation.ok) {
+      const field = validation.error.field;
+      const path =
+        field === 'fiscal.thresholds'
+          ? ['fiscal', 'cessationThreshold']
+          : field && field in profile.fiscal
+            ? ['fiscal', field]
+            : field && field in profile.capacity
+              ? ['capacity', field]
+              : (field?.split('.') ?? []);
       ctx.addIssue({
         code: 'custom',
-        path: ['fiscal', 'cessationThreshold'],
-        message:
-          'la soglia di cessazione deve essere almeno pari alla soglia ordinaria',
+        path,
+        message: validation.error.message,
       });
-    if (!profile.confirmed) return;
-    if (!profile.fiscal.atecoCode.trim())
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fiscal', 'atecoCode'],
-        message: 'ATECO obbligatorio per un profilo confermato',
-      });
-    if (
-      profile.fiscal.activityPhase === 'reduced_eligible' &&
-      !profile.fiscal.reducedEligibilityConfirmed
-    )
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fiscal', 'reducedEligibilityConfirmed'],
-        message: 'conferma aliquota ridotta obbligatoria',
-      });
-    const revenue = new Decimal(profile.revenueTarget);
-    const ordinary = new Decimal(profile.fiscal.ordinaryThreshold);
-    const cessation = new Decimal(profile.fiscal.cessationThreshold);
-    if (
-      profile.fiscal.activityPhase === 'ordinary' &&
-      revenue.gt(ordinary) &&
-      revenue.lte(cessation) &&
-      !profile.fiscal.ordinaryApplicabilityConfirmed
-    )
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fiscal', 'ordinaryApplicabilityConfirmed'],
-        message: 'conferma applicabilità oltre soglia obbligatoria',
-      });
+    }
   });
 
 const profileSnapshotSchema = z.object({
