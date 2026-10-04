@@ -535,6 +535,15 @@ describe('persistenza dell’esito export', () => {
       await vi.runAllTimersAsync();
       expect(test.save).toHaveBeenCalledTimes(2);
       expect(test.exportQuote).toHaveBeenCalledOnce();
+      if (code === 'IO') {
+        await test.state.save();
+        expect(test.save).toHaveBeenCalledTimes(3);
+        expect(
+          test.save.mock.calls[2]?.[1].quotes[0]?.exportAttempts[0]?.outcome,
+        ).toBe('uncertain');
+        expect(test.state.status).toBe('Salvato');
+        expect(test.exportQuote).toHaveBeenCalledOnce();
+      }
     },
   );
 

@@ -31,7 +31,8 @@ export class AppState {
   status: SaveStatus = 'Nessun archivio';
   error: CashError | null = null;
   private listeners = new Set<Listener>();
-  private timer?: number;
+  private pendingSaves: { document: CashDocument; version: number }[] = [];
+  private saving = false;
   private savePromise: Promise<void> = Promise.resolve();
   private mutationVersion = 0;
   private sessionVersion = 0;
@@ -96,7 +97,10 @@ export class AppState {
     }
   }
 
-  private accept(session: ArchiveSession): void {
+  private accept(
+    session: ArchiveSession,
+    error: CashError | null = null,
+  ): void {
     if (
       session.document?.documentId !== this.document?.documentId ||
       session.path !== this.session?.path
@@ -107,6 +111,7 @@ export class AppState {
     }
     this.session = session;
     this.mutationVersion = 0;
+    this.pendingSaves = [];
     this.sessionVersion += 1;
     this.status = session.readOnly ? 'Sola lettura' : 'Salvato';
     this.error = session.headerOnly
@@ -121,7 +126,7 @@ export class AppState {
             `Revisione: ${session.token.revision} · Sola lettura: contenuto non disponibile in questa versione.`,
           ],
         }
-      : null;
+      : error;
     window.cash.setDirty(false);
     this.emit();
   }
@@ -295,18 +300,20 @@ export class AppState {
     }
     this.mutationVersion += 1;
     this.session = { ...this.session, document: validation.data };
+    this.pendingSaves.push({
+      document: validation.data,
+      version: this.mutationVersion,
+    });
     this.status = 'Modifiche non salvate';
     this.error = null;
     window.cash.setDirty(true);
     this.emit();
-    if (this.timer) window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => {
-      void this.save();
-    }, 350);
+    void this.save();
     return true;
   }
 
   async save(): Promise<void> {
+    if (this.saving) return this.savePromise;
     if (
       this.restoringBackup ||
       !this.session?.document ||
@@ -315,63 +322,85 @@ export class AppState {
       this.status === 'Salvato'
     )
       return;
-    if (this.timer) window.clearTimeout(this.timer);
-    this.savePromise = this.savePromise.then(async () => {
-      if (
-        this.restoringBackup ||
-        !this.session?.document ||
-        this.session.readOnly ||
-        this.status === 'Conflitto esterno' ||
-        this.status === 'Salvato'
-      )
-        return;
-      const snapshot = this.session;
-      const savingVersion = this.mutationVersion;
-      const savingSessionVersion = this.sessionVersion;
-      this.status = 'Salvataggio';
-      this.emit();
-      let result: Awaited<ReturnType<typeof window.cash.archive.save>>;
-      try {
-        result = await window.cash.archive.save(
-          snapshot.path,
-          snapshot.document!,
-          snapshot.token,
-        );
-      } catch (cause) {
-        result = {
-          ok: false,
-          error: {
-            code: 'IO',
-            source: 'archive',
-            message:
-              'Comunicazione interrotta durante il salvataggio. Le modifiche restano non salvate.',
-            details: [String(cause)],
-          },
-        };
-      }
-      if (savingSessionVersion !== this.sessionVersion) return;
-      if (result.ok && this.mutationVersion === savingVersion)
-        this.accept(result.value);
-      else if (result.ok) {
-        this.session = { ...result.value, document: this.session?.document };
-        this.status = 'Modifiche non salvate';
-        window.cash.setDirty(true);
-        this.emit();
-        this.timer = window.setTimeout(() => {
-          void this.save();
-        }, 0);
-      } else {
-        this.error = result.error;
-        this.status =
-          result.error.code === 'CONFLICT'
-            ? 'Conflitto esterno'
-            : result.error.code === 'VALIDATION'
-              ? 'Dati da correggere'
-              : 'Errore di salvataggio';
-        window.cash.setDirty(true);
-        this.emit();
-      }
-    });
+    if (!this.pendingSaves.length) {
+      this.pendingSaves.push({
+        document: this.session.document,
+        version: this.mutationVersion,
+      });
+    }
+    this.saving = true;
+    this.savePromise = this.savePromise
+      .then(async () => {
+        while (this.pendingSaves.length) {
+          if (
+            this.restoringBackup ||
+            !this.session?.document ||
+            this.session.readOnly ||
+            this.hasExternalConflict()
+          )
+            return;
+          const pending = this.pendingSaves[0]!;
+          const snapshot = this.session;
+          const savingSessionVersion = this.sessionVersion;
+          const savingError = this.error;
+          this.status = 'Salvataggio';
+          this.emit();
+          let result: Awaited<ReturnType<typeof window.cash.archive.save>>;
+          try {
+            result = await window.cash.archive.save(
+              snapshot.path,
+              pending.document,
+              snapshot.token,
+            );
+          } catch (cause) {
+            result = {
+              ok: false,
+              error: {
+                code: 'IO',
+                source: 'archive',
+                message:
+                  'Comunicazione interrotta durante il salvataggio. Le modifiche restano non salvate.',
+                details: [String(cause)],
+              },
+            };
+          }
+          if (savingSessionVersion !== this.sessionVersion) continue;
+          if (result.ok) {
+            this.pendingSaves.shift();
+            if (this.hasExternalConflict()) {
+              this.session = { ...result.value, document: this.document };
+              window.cash.setDirty(true);
+              this.emit();
+              return;
+            }
+            if (this.mutationVersion === pending.version) {
+              this.accept(
+                result.value,
+                this.error !== savingError ? this.error : null,
+              );
+            } else {
+              this.session = { ...result.value, document: this.document };
+              this.status = 'Modifiche non salvate';
+              window.cash.setDirty(true);
+              this.emit();
+            }
+          } else {
+            if (!this.hasExternalConflict()) this.error = result.error;
+            this.status =
+              this.hasExternalConflict() || result.error.code === 'CONFLICT'
+                ? 'Conflitto esterno'
+                : result.error.code === 'VALIDATION'
+                  ? 'Dati da correggere'
+                  : 'Errore di salvataggio';
+            window.cash.setDirty(true);
+            this.emit();
+            return;
+          }
+        }
+      })
+      .finally(() => {
+        this.saving = false;
+      });
     await this.savePromise;
   }
 
@@ -397,8 +426,9 @@ export class AppState {
     touch(attempt);
     touch(quote);
     this.session = { ...this.session, document };
-    // Keep the unsaved response without scheduling another save after a failure.
-    if (this.timer) window.clearTimeout(this.timer);
+    // Keep the unsaved response in its logical snapshot without retrying the save.
+    const pending = this.pendingSaves.at(-1);
+    if (pending?.version === this.mutationVersion) pending.document = document;
     if (this.status !== 'Conflitto esterno')
       this.status = 'Errore di salvataggio';
     window.cash.setDirty(true);
@@ -410,7 +440,6 @@ export class AppState {
     if (!this.session || this.restoringBackup) return;
     this.restoringBackup = true;
     const context = this.archiveContextVersion;
-    if (this.timer) window.clearTimeout(this.timer);
     try {
       // A save already sent must finish before selecting the backup to restore.
       await this.savePromise;
@@ -456,11 +485,7 @@ export class AppState {
       });
     } finally {
       this.restoringBackup = false;
-      if (this.status === 'Modifiche non salvate') {
-        this.timer = window.setTimeout(() => {
-          void this.save();
-        }, 350);
-      }
+      if (this.status === 'Modifiche non salvate') void this.save();
     }
   }
 
