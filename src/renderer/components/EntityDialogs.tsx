@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { parseDecimalInput } from '../../domain/decimal';
 import { coordinatesInput, parseCoordinates } from '../../domain/locations';
 import {
   meta,
@@ -55,13 +56,12 @@ export function CostDialog({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const { get, money } = formReader(event.currentTarget);
-    const amount = Number(money('monthlyAmount'));
-    if (
-      !get('category') ||
-      !get('description') ||
-      !Number.isFinite(amount) ||
-      amount < 0
-    ) {
+    const amount = parseDecimalInput(money('monthlyAmount'), 2);
+    if (!amount.ok) {
+      appState.setError(amount.error);
+      return;
+    }
+    if (!get('category') || !get('description')) {
       appState.setError({
         code: 'VALIDATION',
         message: 'Completa categoria, descrizione e importo mensile.',
@@ -77,7 +77,7 @@ export function CostDialog({
             {
               category: get('category'),
               description: get('description'),
-              monthlyAmount: amount.toFixed(2),
+              monthlyAmount: amount.value,
               updatedAt: new Date().toISOString(),
             },
           );
@@ -87,7 +87,7 @@ export function CostDialog({
             id,
             category: get('category'),
             description: get('description'),
-            monthlyAmount: amount.toFixed(2),
+            monthlyAmount: amount.value,
           });
       })
     )
@@ -256,12 +256,25 @@ export function SiteDialog({
       return;
     }
     let location = resolved;
+    if (mode === 'coordinates') {
+      const parsed = parseCoordinates(coordinateText);
+      if (!parsed.ok) {
+        appState.setError(parsed.error);
+        return;
+      }
+      location = {
+        coordinates: parsed.value,
+        inputKind: 'coordinates',
+        inputValue: coordinatesInput(parsed.value),
+      };
+    }
     if (
       location?.inputKind === 'address' &&
       location.inputValue !== address.trim()
     )
       location = undefined;
     if (
+      mode !== 'coordinates' &&
       location?.inputKind === 'coordinates' &&
       location.inputValue !== coordinateText.trim()
     )
@@ -470,18 +483,29 @@ export function VehicleDialog({
     event.preventDefault();
     const { get, money } = formReader(event.currentTarget);
     const id = existing?.id ?? meta().id;
-    const consumption = Number(get('consumption'));
-    const annualKm = Number(get('annualKm'));
-    const costs = [
-      Number(money('annualInsurance')),
-      Number(money('annualTax')),
-      Number(money('annualMaintenance')),
-    ];
+    const consumption = parseDecimalInput(get('consumption'), 2);
+    if (!consumption.ok) {
+      appState.setError(consumption.error);
+      return;
+    }
+    const annualKm = parseDecimalInput(get('annualKm'), 1);
+    if (!annualKm.ok) {
+      appState.setError(annualKm.error);
+      return;
+    }
+    const amounts: Record<string, string> = {};
+    for (const name of ['annualInsurance', 'annualTax', 'annualMaintenance']) {
+      const parsed = parseDecimalInput(money(name), 2);
+      if (!parsed.ok) {
+        appState.setError(parsed.error);
+        return;
+      }
+      amounts[name] = parsed.value;
+    }
     if (
       !get('name') ||
-      consumption <= 0 ||
-      annualKm <= 0 ||
-      costs.some((value) => !Number.isFinite(value) || value < 0)
+      Number(consumption.value) <= 0 ||
+      Number(annualKm.value) <= 0
     ) {
       appState.setError({
         code: 'VALIDATION',
@@ -492,13 +516,13 @@ export function VehicleDialog({
     const values = {
       name: get('name'),
       fuel: get('fuel') as Vehicle['fuel'],
-      consumption: get('consumption'),
+      consumption: consumption.value,
       consumptionUnit:
         get('fuel') === 'Metano' ? ('kg/100km' as const) : ('km/l' as const),
-      annualKm: get('annualKm'),
-      annualInsurance: costs[0]!.toFixed(2),
-      annualTax: costs[1]!.toFixed(2),
-      annualMaintenance: costs[2]!.toFixed(2),
+      annualKm: annualKm.value,
+      annualInsurance: amounts.annualInsurance!,
+      annualTax: amounts.annualTax!,
+      annualMaintenance: amounts.annualMaintenance!,
     };
     if (
       !appState.mutate((document) => {

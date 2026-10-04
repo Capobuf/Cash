@@ -2,7 +2,7 @@ import { createElement, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createEmptyDocument, err, ok } from '../../src/domain/model';
-import { FicWizard } from '../../src/renderer/views/SettingsView';
+import { FicWizard } from '../../src/renderer/components/integrations/FicWizard';
 import { AppState } from '../../src/renderer/state';
 
 const hooks = vi.hoisted(() => ({

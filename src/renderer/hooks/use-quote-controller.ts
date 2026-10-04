@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { isYearMonth } from '../../domain/calendar';
+import { parseDecimalInput } from '../../domain/decimal';
 import {
   calculateTravel,
   calculateVehicleCost,
@@ -10,7 +11,7 @@ import {
   templateFromQuote,
 } from '../../domain/catalog';
 import { buildExportLines, createPendingAttempt } from '../../domain/export';
-import { snapshotSite } from '../../domain/locations';
+import { siteMatchesClient, snapshotSite } from '../../domain/locations';
 import {
   meta,
   touch,
@@ -27,6 +28,7 @@ import { refreshQuote, snapshotProfile } from '../../domain/refresh';
 import { applyVariantSelections, changeVariant } from '../../domain/variants';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
+import { decimalInputValue } from '../lib/format';
 
 export interface TravelInput {
   description: string;
@@ -165,6 +167,15 @@ export function useQuoteController({
     }
     const withTotals = { ...travel, ...totals.value };
     if (!vehicle || distance === undefined) return withTotals;
+    if (!doc.settings.fuelTerritory) {
+      appState.setError({
+        code: 'MISSING_DATA',
+        field: 'fuelTerritory',
+        message:
+          'Configura la regione o provincia autonoma MIMIT nelle Impostazioni per calcolare il costo della trasferta.',
+      });
+      return undefined;
+    }
     if (
       previous?.vehicleId === vehicle.id &&
       previous.vehicleCostPerKm &&
@@ -176,27 +187,29 @@ export function useQuoteController({
         occurrences: definition.occurrences,
         vehicleCostPerKm: previous.vehicleCostPerKm,
       });
-      if (calculated.ok)
-        return {
-          ...withTotals,
-          ...calculated.value,
-          vehicleCostPerKm: previous.vehicleCostPerKm,
-          fuelEvidence: previous.fuelEvidence,
-        };
+      if (!calculated.ok) {
+        appState.setError(calculated.error);
+        return undefined;
+      }
+      return {
+        ...withTotals,
+        ...calculated.value,
+        vehicleCostPerKm: previous.vehicleCostPerKm,
+        fuelEvidence: previous.fuelEvidence,
+      };
     }
-    if (!doc.settings.fuelTerritory) return withTotals;
     const fuel = await window.cash.mimit.latestFuelPrice({
       territory: doc.settings.fuelTerritory,
       fuel: vehicle.fuel,
     });
     if (!fuel.ok) {
       appState.setError(fuel.error);
-      return withTotals;
+      return undefined;
     }
     const vehicleCost = calculateVehicleCost(vehicle, fuel.value);
     if (!vehicleCost.ok) {
       appState.setError(vehicleCost.error);
-      return withTotals;
+      return undefined;
     }
     const calculated = calculateTravel({
       distanceKmPerOccurrence: distance,
@@ -206,7 +219,7 @@ export function useQuoteController({
     });
     if (!calculated.ok) {
       appState.setError(calculated.error);
-      return withTotals;
+      return undefined;
     }
     return {
       ...withTotals,
@@ -234,6 +247,13 @@ export function useQuoteController({
     allowYearMismatch = false,
   ): 'updated' | 'year-mismatch' | 'invalid' => {
     if (!quote) return 'invalid';
+    const commission = updates.commission?.trim()
+      ? parseDecimalInput(decimalInputValue(updates.commission), 2)
+      : undefined;
+    if (commission && !commission.ok) {
+      appState.setError({ ...commission.error, field: 'commission' });
+      return 'invalid';
+    }
     const date = updates.date ?? quote.date;
     const profileId =
       updates.profileId === undefined
@@ -263,6 +283,15 @@ export function useQuoteController({
         ? quote.mainSite?.sourceId
         : updates.mainSiteId || undefined;
     const site = doc.sites.find((entry) => entry.id === siteId);
+    if (siteId && (!site || !siteMatchesClient(site, quote.client))) {
+      appState.setError({
+        code: 'VALIDATION',
+        field: 'mainSiteId',
+        message:
+          'Scegli una Sede del Cliente del preventivo oppure una Sede senza Cliente.',
+      });
+      return 'invalid';
+    }
     const updated = appState.mutate((document) => {
       const target = touch(
         document.quotes.find((entry) => entry.id === quote.id)!,
@@ -272,11 +301,24 @@ export function useQuoteController({
       target.profileSnapshot = snapshot?.ok ? snapshot.value : undefined;
       target.mainSite = site ? snapshotSite(site) : undefined;
       if (updates.commission !== undefined)
-        target.commission = updates.commission
-          ? Number(updates.commission).toFixed(2)
-          : undefined;
+        target.commission = commission?.ok ? commission.value : undefined;
     });
     return updated ? 'updated' : 'invalid';
+  };
+
+  const updateClient = (client?: FicClientSnapshot) => {
+    if (!quote) return false;
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      const site = document.sites.find(
+        (entry) => entry.id === target.mainSite?.sourceId,
+      );
+      if (target.mainSite && (!site || !siteMatchesClient(site, client)))
+        target.mainSite = undefined;
+      target.client = client;
+    });
   };
 
   const searchRemoteClients = async (query: string) => {
@@ -341,13 +383,11 @@ export function useQuoteController({
 
   const updateChosenPrice = (itemId: string, chosenPrice: string) => {
     if (!quote) return false;
-    const value = chosenPrice.trim();
-    if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
-      appState.setError({
-        code: 'VALIDATION',
-        field: 'chosenPrice',
-        message: 'Il Prezzo scelto deve essere un importo non negativo.',
-      });
+    const value = chosenPrice.trim()
+      ? parseDecimalInput(decimalInputValue(chosenPrice), 2)
+      : undefined;
+    if (value && !value.ok) {
+      appState.setError({ ...value.error, field: 'chosenPrice' });
       return false;
     }
     return appState.mutate((document) => {
@@ -356,7 +396,7 @@ export function useQuoteController({
           document.quotes.find((entry) => entry.id === quote.id)!,
         ).items.find((entry) => entry.id === itemId)!,
       );
-      item.chosenPrice = value ? Number(value).toFixed(2) : undefined;
+      item.chosenPrice = value?.ok ? value.value : undefined;
     });
   };
 
@@ -375,13 +415,15 @@ export function useQuoteController({
         ).referencePrice;
       });
     }
-    if (
-      !referenceAmount ||
-      !referencePeriod ||
-      !Number.isFinite(Number(referenceAmount)) ||
-      Number(referenceAmount) < 0 ||
-      !isYearMonth(referencePeriod)
-    ) {
+    const amount = parseDecimalInput(
+      decimalInputValue(referenceAmount ?? ''),
+      2,
+    );
+    if (!amount.ok) {
+      appState.setError({ ...amount.error, field: 'referencePrice' });
+      return false;
+    }
+    if (!referenceAmount || !referencePeriod || !isYearMonth(referencePeriod)) {
       appState.setError({
         code: 'VALIDATION',
         field: 'referencePrice',
@@ -390,7 +432,7 @@ export function useQuoteController({
       });
       return false;
     }
-    const normalizedAmount = Number(referenceAmount).toFixed(2);
+    const normalizedAmount = amount.value;
     return appState.mutate((document) => {
       const item = touch(
         touch(
@@ -426,16 +468,14 @@ export function useQuoteController({
       });
       return false;
     }
-    if (
-      input.kind === 'expense' &&
-      (!Number.isFinite(Number(input.amount)) || Number(input.amount) < 0)
-    ) {
-      appState.setError({
-        code: 'VALIDATION',
-        field: 'amount',
-        message: 'L’importo della spesa non è valido.',
-      });
-      return false;
+    let amount: string | undefined;
+    if (input.kind === 'expense') {
+      const parsed = parseDecimalInput(decimalInputValue(input.amount), 2);
+      if (!parsed.ok) {
+        appState.setError({ ...parsed.error, field: 'amount' });
+        return false;
+      }
+      amount = parsed.value;
     }
     return appState.mutate((document) => {
       const item = touch(
@@ -455,7 +495,7 @@ export function useQuoteController({
         existing.kind === 'expense'
       ) {
         existing.description = input.description.trim();
-        existing.amount = Number(input.amount).toFixed(2);
+        existing.amount = amount!;
         if (existing.variantOwner) existing.manuallyModified = true;
         touch(existing);
       } else
@@ -471,7 +511,7 @@ export function useQuoteController({
                 ...meta(),
                 kind: 'expense',
                 description: input.description.trim(),
-                amount: Number(input.amount).toFixed(2),
+                amount: amount!,
               },
         );
     });
@@ -813,23 +853,29 @@ export function useQuoteController({
     }
     if (
       quote.client?.source !== 'fatture_in_cloud' ||
+      quote.client.companyId !== client.companyId ||
       quote.client.clientId !== client.clientId
     ) {
-      if (
-        !appState.mutate((document) => {
-          touch(
-            document.quotes.find((entry) => entry.id === quote.id)!,
-          ).client = client;
-        })
-      )
-        return false;
+      if (!updateClient(client)) return false;
       isCurrent = guardQuoteContext(
         appState.document?.quotes.find((entry) => entry.id === quote.id),
       );
       await appState.save();
       if (!isCurrent() || appState.status !== 'Salvato') return false;
     }
-    const attempt = createPendingAttempt(fic.company.id, built.value);
+    let attempt: Awaited<ReturnType<typeof createPendingAttempt>>;
+    try {
+      attempt = await createPendingAttempt(fic.company.id, built.value);
+    } catch {
+      if (isCurrent())
+        appState.setError({
+          code: 'VALIDATION',
+          message:
+            'Impossibile calcolare il fingerprint del preventivo. Invio non eseguito.',
+        });
+      return false;
+    }
+    if (!isCurrent()) return false;
     if (
       !appState.mutate((document) =>
         touch(
@@ -964,6 +1010,7 @@ export function useQuoteController({
     clientResults,
     newQuote,
     updateQuote,
+    updateClient,
     searchRemoteClients,
     setClientResults,
     addItem,

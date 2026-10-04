@@ -20,6 +20,7 @@ export type CashErrorCode =
   | 'CREDENTIALS'
   | 'AUTHENTICATION'
   | 'RATE_LIMIT'
+  | 'FILE_NOT_FOUND'
   | 'IO';
 
 export interface CashError {
@@ -560,3 +561,6 @@ export const createBlankProfile = (year: number): EconomicProfile => ({
     localHolidays: [],
   },
 });
+
+export const createManualProfile = (year: number): EconomicProfile =>
+  year === 2026 ? createFiscalPreset2026() : createBlankProfile(year);

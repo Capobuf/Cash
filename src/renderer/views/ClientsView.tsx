@@ -22,6 +22,7 @@ import type {
   Site,
 } from '../../domain/model';
 import { SiteDialog } from '@/components/EntityDialogs';
+import { coordinatesInput } from '../../domain/locations';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -497,7 +498,7 @@ export function ClientDetailsDialog({
                         <TableCell>{site.address ?? 'Non indicato'}</TableCell>
                         <TableCell>
                           {site.location
-                            ? `${site.location.coordinates.longitude}, ${site.location.coordinates.latitude}`
+                            ? coordinatesInput(site.location.coordinates)
                             : 'Da localizzare'}
                         </TableCell>
                         <TableCell>

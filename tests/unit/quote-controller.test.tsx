@@ -535,6 +535,15 @@ describe('persistenza dell’esito export', () => {
       await vi.runAllTimersAsync();
       expect(test.save).toHaveBeenCalledTimes(2);
       expect(test.exportQuote).toHaveBeenCalledOnce();
+      if (code === 'IO') {
+        await test.state.save();
+        expect(test.save).toHaveBeenCalledTimes(3);
+        expect(
+          test.save.mock.calls[2]?.[1].quotes[0]?.exportAttempts[0]?.outcome,
+        ).toBe('uncertain');
+        expect(test.state.status).toBe('Salvato');
+        expect(test.exportQuote).toHaveBeenCalledOnce();
+      }
     },
   );
 
@@ -579,6 +588,68 @@ describe('esito delle modifiche ai preventivi', () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it.each(['10,999', '10.999', '-1', 'NaN', 'Infinity'])(
+    'rifiuta gli importi non validi %s prima di modificare il preventivo',
+    (amount) => {
+      const { controller, item, state, document } = setup();
+      const mutate = vi.spyOn(state, 'mutate');
+      expect(controller.updateQuote({ commission: amount })).toBe('invalid');
+      expect(controller.updateChosenPrice(item.id, amount)).toBe(false);
+      expect(controller.updateReferencePrice(item.id, amount, '2026-01')).toBe(
+        false,
+      );
+      expect(
+        controller.saveSimpleSub(item.id, {
+          kind: 'expense',
+          description: 'Spesa',
+          amount,
+        }),
+      ).toBe(false);
+      expect(mutate).not.toHaveBeenCalled();
+      expect(state.error?.code).toBe('VALIDATION');
+      expect(state.document).toEqual(document);
+    },
+  );
+
+  it('persiste gli importi validi del preventivo senza cambiare il valore', () => {
+    const { controller, item, state } = setup();
+    expect(controller.updateQuote({ commission: '10,9' })).toBe('updated');
+    expect(controller.updateChosenPrice(item.id, '100.2')).toBe(true);
+    expect(
+      controller.updateReferencePrice(item.id, '1.234,56', '2026-01'),
+    ).toBe(true);
+    expect(
+      controller.saveSimpleSub(item.id, {
+        kind: 'expense',
+        description: 'Spesa',
+        amount: '10,9',
+      }),
+    ).toBe(true);
+    const quote = state.document!.quotes[0]!;
+    expect(quote.commission).toBe('10.90');
+    expect(quote.items[0]?.chosenPrice).toBe('100.20');
+    expect(quote.items[0]?.referencePrice).toEqual({
+      amount: '1234.56',
+      period: '2026-01',
+    });
+    const expense = quote.items[0]!.subItems.find(
+      (sub) => sub.kind === 'expense',
+    )!;
+    expect(expense).toMatchObject({ amount: '10.90' });
+    expect(
+      controller.saveSimpleSub(
+        item.id,
+        { kind: 'expense', description: 'Spesa modificata', amount: '20,25' },
+        expense.id,
+      ),
+    ).toBe(true);
+    expect(
+      state.document!.quotes[0]!.items[0]!.subItems.find(
+        (sub) => sub.id === expense.id,
+      ),
+    ).toMatchObject({ amount: '20.25' });
   });
 
   it('non segnala aggiornamento o seleziona un nuovo preventivo in sola lettura', () => {
@@ -639,3 +710,82 @@ describe('esito delle modifiche ai preventivi', () => {
     expect(test.exportQuote).not.toHaveBeenCalled();
   });
 });
+it.each(['none', 'same', 'other', 'other-company'] as const)(
+  'validates main site client ownership: %s',
+  async (kind) => {
+    const test = setup();
+    const client = test.quote.client!;
+    const site = {
+      ...meta(),
+      name: 'Office',
+      ...(kind === 'none'
+        ? {}
+        : {
+            client: {
+              ...client,
+              clientId: kind === 'other' ? 'different' : client.clientId,
+              companyId:
+                kind === 'other-company' ? 'different' : client.companyId,
+            },
+          }),
+    };
+    test.document.sites.push(site);
+    const accepted = kind === 'none' || kind === 'same';
+    expect(test.controller.updateQuote({ mainSiteId: site.id })).toBe(
+      accepted ? 'updated' : 'invalid',
+    );
+    await test.state.save();
+    expect(test.state.document?.quotes[0]?.mainSite?.sourceId).toBe(
+      accepted ? site.id : undefined,
+    );
+  },
+);
+it('only permits independent sites without a quote client and clears incompatible sites on client change', async () => {
+  const test = setup();
+  const site = { ...meta(), name: 'Office', client: test.quote.client! };
+  test.document.sites.push(site);
+  expect(test.controller.updateQuote({ mainSiteId: site.id })).toBe('updated');
+  await test.state.save();
+  expect(test.controller.updateClient(undefined)).toBe(true);
+  await test.state.save();
+  expect(test.state.document?.quotes[0]?.mainSite).toBeUndefined();
+  test.quote.client = undefined;
+  expect(test.controller.updateQuote({ mainSiteId: site.id })).toBe('invalid');
+  const independent = { ...meta(), name: 'Other site' };
+  test.document.sites.push(independent);
+  expect(test.controller.updateQuote({ mainSiteId: independent.id })).toBe(
+    'updated',
+  );
+  await test.state.save();
+});
+it.each(['success', 'rejected', 'uncertain'] as const)(
+  'persists and visibly reports export outcome %s',
+  async (outcome) => {
+    const test = setup();
+    const diagnostic =
+      outcome === 'success' ? undefined : 'HTTP 422: Invalid client data';
+    test.exportQuote.mockResolvedValue(
+      ok({
+        outcome,
+        diagnostic,
+        ...(outcome === 'success' ? { remoteDocumentId: 'remote-1' } : {}),
+      }),
+    );
+    const sending = test.operations.performExport();
+    test.complete();
+    expect(await sending).toBe(outcome === 'success');
+    expect(test.state.document?.quotes[0]?.exportAttempts[0]).toMatchObject({
+      outcome,
+      diagnostic,
+    });
+    if (outcome === 'success') expect(test.state.error).toBeNull();
+    else {
+      expect(test.state.error?.details).toContain(diagnostic);
+      if (outcome === 'uncertain')
+        expect(test.state.error?.action).toContain(
+          'Controlla Fatture in Cloud',
+        );
+    }
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  },
+);

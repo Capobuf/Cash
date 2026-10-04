@@ -127,8 +127,11 @@ function AmountRow({
 
 function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
   const a = o.analysis;
-  const deficit =
-    o.estimatedAvailability !== undefined && d(o.estimatedAvailability).lt(0);
+  const hasAnnualTotal = o.fiscalPaymentOverride !== undefined;
+  const heroValue = hasAnnualTotal
+    ? o.estimatedAvailability
+    : o.marginAfterOutflows;
+  const deficit = heroValue !== undefined && d(heroValue).lt(0);
   return (
     <section aria-label="Indicatori principali" className="space-y-4">
       <Card
@@ -140,31 +143,38 @@ function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
       >
         <CardHeader>
           <CardDescription className="font-medium text-foreground">
-            {deficit ? 'Disavanzo stimato' : 'Disponibilità stimata'}
+            {hasAnnualTotal
+              ? deficit
+                ? 'Disavanzo stimato'
+                : 'Disponibilità stimata'
+              : 'Margine dopo le uscite'}
           </CardDescription>
           <CardTitle
             className={`text-3xl tabular-nums sm:text-4xl ${deficit ? 'text-destructive' : ''}`}
           >
-            {amount(o.estimatedAvailability)}
+            {amount(heroValue)}
           </CardTitle>
           <CardDescription>
-            Incassato − Uscite dal conto − Fiscalità ancora da coprire
+            {hasAnnualTotal
+              ? 'Incassato − Uscite dal conto − Ancora da versare nell’anno'
+              : 'Incassato − Uscite dal conto'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {o.fiscalReserve === undefined ? (
-            <p>{o.fiscalUnavailableReason}</p>
+            <p>{o.fiscalPaymentUnavailableReason}</p>
           ) : null}
-          {deficit ? (
+          {hasAnnualTotal && deficit ? (
             <p>
-              Gli incassi non coprono le uscite dal conto e la fiscalità
-              residua.
+              Gli incassi non coprono le uscite dal conto e i versamenti residui
+              dell’anno.
             </p>
           ) : null}
           <p className="text-xs text-muted-foreground">
-            Stima derivata dagli incassi, dalle uscite dal conto e dalla
-            previsione fiscale {o.year}. Le imposte già pagate sono comprese
-            nelle uscite e riducono la fiscalità ancora da coprire.
+            {hasAnnualTotal
+              ? `Le imposte già pagate sono comprese nelle uscite e riducono il totale ancora da versare nel ${o.year}.`
+              : `Il carico fiscale stimato ${o.year} e gli acconti stimati ${o.year + 1} restano separati dai flussi annuali.`}{' '}
+            Questo flusso annuale non è il saldo bancario.
           </p>
         </CardContent>
       </Card>
@@ -221,20 +231,9 @@ function OverviewKpis({ overview: o }: { overview: FinancialOverview }) {
             <Badge variant="destructive">Uscite superiori agli incassi</Badge>
           ) : null}
         </Kpi>
-        <Kpi title="Ancora da coprire" value={o.fiscalReserve}>
-          {o.fiscalReserve !== undefined ? (
-            <>
-              <p>
-                {o.fiscalPaymentOverride !== undefined
-                  ? 'Totale commercialista'
-                  : 'Previsione totale'}
-                : {eur(o.fiscalSituation.total)}
-              </p>
-              <p>Pagato tramite banca: {eur(o.fiscalSituation.paid)}</p>
-            </>
-          ) : (
-            <p>{o.fiscalUnavailableReason}</p>
-          )}
+        <Kpi title="Imposte P.IVA già pagate" value={o.fiscalSituation.paid}>
+          <p>Versamenti effettivamente usciti dal conto nel {o.year}.</p>
+          <p>Già compresi nelle uscite dal conto.</p>
         </Kpi>
       </div>
       {a?.fiscalWarnings.map((warning) => (
@@ -253,8 +252,8 @@ function CashFormation({ overview: o }: { overview: FinancialOverview }) {
       <CardHeader>
         <CardTitle>Margine dei flussi annuali · {o.year}</CardTitle>
         <CardDescription>
-          Incassi FIC meno uscite effettive del conto e fiscalità ancora da
-          coprire.
+          Incassi FIC meno uscite effettive del conto. Il totale del
+          commercialista consente di sottrarre anche quanto resta da versare.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -267,16 +266,20 @@ function CashFormation({ overview: o }: { overview: FinancialOverview }) {
             value={o.marginAfterOutflows}
             strong
           />
-          <AmountRow
-            label="− Fiscalità ancora da coprire"
-            value={o.fiscalReserve}
-          />
-          <Separator />
-          <AmountRow
-            label="Disponibilità stimata"
-            value={o.estimatedAvailability}
-            strong
-          />
+          {o.fiscalPaymentOverride !== undefined ? (
+            <>
+              <AmountRow
+                label="− Ancora da versare nell’anno"
+                value={o.fiscalReserve}
+              />
+              <Separator />
+              <AmountRow
+                label="Disponibilità stimata"
+                value={o.estimatedAvailability}
+                strong
+              />
+            </>
+          ) : null}
         </dl>
       </CardContent>
     </Card>
@@ -292,40 +295,37 @@ function FiscalSituation({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Previsione fiscale gestionale · {o.year}</CardTitle>
+        <CardTitle>Versamenti annuali e stima fiscale · {o.year}</CardTitle>
         <CardDescription>
-          {o.fiscalPaymentOverride !== undefined
-            ? `Residuo basato sul totale del commercialista per i versamenti ${o.year}. La stima automatica resta consultabile sotto.`
-            : `Stima per pianificare la liquidità, basata sugli incassi e comprensiva degli acconti ${o.year + 1}.`}
+          Versamenti effettivi nell’anno e proiezioni sugli incassi hanno
+          periodi diversi. Il residuo richiede il totale del commercialista.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <dl className="max-w-3xl space-y-3 text-sm">
           <AmountRow
-            label={
-              o.fiscalPaymentOverride !== undefined
-                ? 'Totale annuale del commercialista'
-                : 'Previsione fiscale totale'
-            }
+            label="Totale annuale del commercialista"
             value={o.fiscalSituation.total}
             strong
           />
           <AmountRow
-            label="Pagato tramite banca"
+            label="Imposte P.IVA già pagate"
             value={o.fiscalSituation.paid}
           />
-          <AmountRow label="Ancora da coprire" value={o.fiscalReserve} strong />
-          {o.fiscalSituation.excess && d(o.fiscalSituation.excess).gt(0) ? (
+          <AmountRow label="Ancora da versare" value={o.fiscalReserve} strong />
+          {o.fiscalSituation.excess !== undefined &&
+          d(o.fiscalSituation.excess).gt(0) ? (
             <AmountRow
-              label={
-                o.fiscalPaymentOverride !== undefined
-                  ? 'Pagato oltre il totale previsto'
-                  : 'Pagato oltre la previsione'
-              }
+              label="Pagato oltre il totale previsto"
               value={o.fiscalSituation.excess}
             />
           ) : null}
         </dl>
+        {o.fiscalPaymentUnavailableReason ? (
+          <p className="text-sm text-muted-foreground">
+            {o.fiscalPaymentUnavailableReason}
+          </p>
+        ) : null}
         {onFiscalCorrection ? (
           <FiscalCorrectionForm
             key={`${o.year}:${o.fiscalPaymentOverride ?? 'auto'}`}
@@ -343,19 +343,9 @@ function FiscalSituation({
         {f ? (
           <>
             <Separator />
-            {o.fiscalPaymentOverride !== undefined ? (
-              <div className="space-y-2">
-                <p className="text-sm font-medium">
-                  Dettaglio della stima automatica sugli incassi · {o.year}
-                </p>
-                <dl className="text-sm">
-                  <AmountRow
-                    label="Stima automatica, non utilizzata nel residuo"
-                    value={f.totalToReserve}
-                  />
-                </dl>
-              </div>
-            ) : null}
+            <p className="text-sm font-medium">
+              Previsione fiscale automatica sugli incassi · {o.year}
+            </p>
             <p className="text-sm">
               ATECO {f.atecoCode} · Redditività{' '}
               {percentage(f.profitabilityCoefficient)} · Gestione Separata{' '}
@@ -364,9 +354,7 @@ function FiscalSituation({
             </p>
             <div className="grid gap-6 lg:grid-cols-2">
               <section className="space-y-3">
-                <h3 className="text-sm font-semibold">
-                  Anno corrente · {o.year}
-                </h3>
+                <h3 className="text-sm font-semibold">Stima anno · {o.year}</h3>
                 <dl className="space-y-3 text-sm">
                   <AmountRow
                     label="Compensi percepiti"
@@ -398,7 +386,7 @@ function FiscalSituation({
               </section>
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold">
-                  Acconti anno successivo · {o.year + 1}
+                  Acconti stimati · {o.year + 1}
                 </h3>
                 <dl className="space-y-3 text-sm">
                   <AmountRow
@@ -438,10 +426,11 @@ function FiscalSituation({
               </section>
             </div>
             <p className="text-xs text-muted-foreground">
-              La base sostitutiva stimata usa i contributi INPS stimati
-              dell’anno. La dichiarazione deduce invece i contributi
-              effettivamente versati nel periodo. Le rate sono informative,
-              senza gestione delle scadenze.
+              Totale anno e totale acconti sono stime separate e non determinano
+              il residuo dei versamenti annuali. La base sostitutiva stimata usa
+              i contributi INPS stimati dell’anno. La dichiarazione deduce
+              invece i contributi effettivamente versati nel periodo. Le rate
+              sono informative, senza gestione delle scadenze.
             </p>
           </>
         ) : null}
@@ -463,9 +452,10 @@ function AnnualFlow({ overview }: { overview: FinancialOverview }) {
       <CardHeader>
         <CardTitle>Flusso finanziario · {overview.year}</CardTitle>
         <CardDescription>
-          Origine degli incassi → uscite dal conto e margine → fiscalità ancora
-          da coprire e disponibilità stimata. Le imposte già pagate sono
-          comprese nelle uscite dal conto.
+          {overview.fiscalPaymentOverride !== undefined
+            ? 'Origine degli incassi → uscite dal conto e margine → ancora da versare e disponibilità stimata.'
+            : 'Origine degli incassi → uscite dal conto e margine dopo le uscite.'}{' '}
+          Le imposte già pagate sono comprese nelle uscite dal conto.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

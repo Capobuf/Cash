@@ -15,7 +15,7 @@ import type { DeleteTarget } from '../../src/renderer/types';
 const harness = vi.hoisted(() => ({
   state: undefined as AppState | undefined,
   target: undefined as DeleteTarget | undefined,
-  injected: false,
+  nullStates: 0,
   confirm: undefined as (() => void) | undefined,
 }));
 vi.mock('react', async (importOriginal) => {
@@ -23,8 +23,8 @@ vi.mock('react', async (importOriginal) => {
   return {
     ...react,
     useState: (initial: unknown) => {
-      if (initial === null && !harness.injected) {
-        harness.injected = true;
+      // App owns the first null state (archive decisions); the workspace owns deletion.
+      if (initial === null && ++harness.nullStates === 2) {
         return [harness.target, vi.fn()];
       }
       return react.useState(initial);
@@ -88,7 +88,7 @@ it('elimina il profilo sorgente conservando calcoli storici e diagnosi di aggior
     });
     harness.state = state;
     harness.target = { kind: 'profile', id: profile.id, label: 'Profilo' };
-    harness.injected = false;
+    harness.nullStates = 0;
     const before = structuredClone(doc.quotes);
     renderToStaticMarkup(createElement(App));
     expect(harness.confirm).toBeDefined();

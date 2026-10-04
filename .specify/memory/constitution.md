@@ -2,7 +2,7 @@
 
 ## I. Specifica canonica
 
-`Cash_Specifica_Funzionale_v0.6.md` prevale su codice e artefatti derivati. Una decisione non definita non viene inventata; un conflitto realmente bloccante richiede una scelta esplicita.
+`Cash_Specifica_Funzionale_v0.7.md` prevale su codice e artefatti derivati. Una decisione non definita non viene inventata; un conflitto realmente bloccante richiede una scelta esplicita.
 
 ## II. Dominio deterministico
 

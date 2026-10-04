@@ -35,7 +35,9 @@ export function calculateFinancialOverview(
         doc.businessCosts,
         today,
         doc.profiles.find((profile) => profile.year === year + 1),
-        doc.settings.fic.taxProfile,
+        doc.settings.fic.company?.id === doc.financialSnapshot.company.id
+          ? doc.settings.fic.taxProfile
+          : undefined,
       )
     : undefined;
   const bankSummary = summarizeBankExpenses(
@@ -49,7 +51,6 @@ export function calculateFinancialOverview(
     collectedRevenue === undefined
       ? undefined
       : money(d(collectedRevenue).minus(bankSummary.total));
-  const fiscal = analysis?.fiscalProjection;
   const taxCategoryId = doc.bankExpenseCategories.find(
     (category) => category.systemRole === 'vat_taxes',
   )?.id;
@@ -69,7 +70,7 @@ export function calculateFinancialOverview(
     (entry) => entry.year === year,
   )?.total;
   const fiscalSituation = calculateFiscalReserve(
-    fiscalPaymentOverride ?? fiscal?.totalToReserve,
+    fiscalPaymentOverride,
     paidTaxes,
   );
   // All bank expenses include taxes already paid; subtract only the fiscal remainder.
@@ -96,6 +97,10 @@ export function calculateFinancialOverview(
     fiscalSituation,
     fiscalReserve: fiscalSituation.remaining,
     fiscalPaymentOverride,
+    fiscalPaymentUnavailableReason:
+      fiscalPaymentOverride === undefined
+        ? `Manca il totale annuale dei versamenti ${year} del commercialista; ancora da versare e disponibilità stimata non sono determinabili.`
+        : undefined,
     fiscalUnavailableReason:
       analysis?.fiscalUnavailableReason ??
       (!analysis
@@ -212,7 +217,7 @@ export function buildFinancialOverviewFlow(
       if (d(reserve).gt(0))
         link(
           marginNode,
-          node('fiscal', 'Fiscalità ancora da coprire', reserve),
+          node('fiscal', 'Ancora da versare nell’anno', reserve),
           reserve,
         );
       if (d(available).gt(0))
@@ -224,9 +229,9 @@ export function buildFinancialOverviewFlow(
     }
   }
   if (reserve === undefined)
-    flow.message = `Ripartizione fiscale non disponibile. ${overview.fiscalUnavailableReason ?? ''}`;
+    flow.message = overview.fiscalPaymentUnavailableReason;
   else if (available !== undefined && d(available).lt(0))
     flow.message =
-      'La fiscalità ancora da coprire supera il margine: il diagramma si ferma al margine dopo le uscite. Il disavanzo stimato è indicato nel riepilogo.';
+      'Il totale ancora da versare supera il margine: il diagramma si ferma al margine dopo le uscite. Il disavanzo stimato è indicato nel riepilogo.';
   return flow;
 }

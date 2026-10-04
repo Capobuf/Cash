@@ -336,3 +336,15 @@ describe('persistenza atomica', () => {
     expect(await readFile(path, 'utf8')).toBe(before);
   });
 });
+
+it('distinguishes a missing archive from other filesystem read failures', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cash-open-errors-'));
+  expect(await openArchive(join(directory, 'missing.json'))).toMatchObject({
+    ok: false,
+    error: { code: 'FILE_NOT_FOUND' },
+  });
+  expect(await openArchive(directory)).toMatchObject({
+    ok: false,
+    error: { code: 'IO' },
+  });
+});

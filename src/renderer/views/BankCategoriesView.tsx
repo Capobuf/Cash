@@ -121,7 +121,7 @@ export function BankCategoriesView({
     );
     return (
       <div className="flex flex-wrap items-center gap-2">
-        {!category.parentId ? (
+        {!category.parentId && category.systemRole !== 'vat_taxes' ? (
           <Button
             variant="outline"
             size="sm"

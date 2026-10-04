@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateQuote } from '../../domain/calculations';
-import { touch, type CashDocument, type QuoteItem } from '../../domain/model';
+import { type CashDocument, type QuoteItem } from '../../domain/model';
+import { siteMatchesClient } from '../../domain/locations';
 import { Analysis } from '@/components/Analysis';
 import {
   CatalogPickerDialog,
@@ -171,12 +172,11 @@ export function QuotesView({
   const selectCustomer = (
     selection: string | import('../../domain/model').FicClientSnapshot,
   ) => {
-    return appState.mutate((document) => {
-      const target = document.quotes.find((entry) => entry.id === quote.id)!;
-      if (typeof selection !== 'string') target.client = selection;
-      else if (!selection) target.client = undefined;
-      touch(target);
-    });
+    return typeof selection === 'string' && selection
+      ? false
+      : controller.updateClient(
+          typeof selection === 'string' ? undefined : selection,
+        );
   };
 
   const itemActions: QuoteItemActions = {
@@ -372,11 +372,13 @@ export function QuotesView({
               }
             >
               <NativeSelectOption value="">Nessuna</NativeSelectOption>
-              {doc.sites.map((site) => (
-                <NativeSelectOption key={site.id} value={site.id}>
-                  {site.name}
-                </NativeSelectOption>
-              ))}
+              {doc.sites
+                .filter((site) => siteMatchesClient(site, quote.client))
+                .map((site) => (
+                  <NativeSelectOption key={site.id} value={site.id}>
+                    {site.name}
+                  </NativeSelectOption>
+                ))}
             </NativeSelect>
           </Field>
           <Field>
@@ -630,6 +632,7 @@ export function QuotesView({
           onSearch={controller.searchRemoteClients}
           onClose={() => setOverlay(undefined)}
           onExport={controller.performExport}
+          error={appState.error}
         />
       ) : null}
       <AlertDialog

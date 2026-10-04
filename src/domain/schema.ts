@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { isYearMonth } from './calendar';
+import { calculateProfile } from './calculations';
 import {
   CURRENT_SCHEMA_VERSION,
   type CashDocument,
@@ -11,6 +12,10 @@ import {
   normalizeBankDescription,
   normalizeBankRuleText,
 } from './bank-expenses';
+
+const nonBlank = z
+  .string()
+  .refine((value) => value.trim().length > 0, 'campo obbligatorio');
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
@@ -152,7 +157,7 @@ const resolvedLocationSchema = z.object({
 });
 const siteSnapshotSchema = z.object({
   sourceId: uuid,
-  name: z.string().min(1),
+  name: nonBlank,
   address: z.string().min(1).optional(),
   coordinates: coordinatesSchema.optional(),
 });
@@ -188,7 +193,7 @@ const variantOwner = z.object({
 });
 const baseSub = {
   ...entity,
-  description: z.string().min(1),
+  description: nonBlank,
   variantOwner: variantOwner.optional(),
   manuallyModified: z.boolean().optional(),
 };
@@ -253,7 +258,7 @@ export const quoteSubItemSchema = z.discriminatedUnion('kind', [
 
 const reusableTravelFields = {
   kind: z.literal('travel'),
-  description: z.string().min(1),
+  description: nonBlank,
   roundTrip: z.boolean(),
   occurrences: z.number().int().positive(),
   distanceKmPerOccurrence: distance.optional(),
@@ -263,13 +268,13 @@ const reusableSubItemSchema = z.discriminatedUnion('kind', [
   z.object({
     ...entity,
     kind: z.literal('time'),
-    description: z.string().min(1),
+    description: nonBlank,
     minutes: z.number().int().positive(),
   }),
   z.object({
     ...entity,
     kind: z.literal('expense'),
-    description: z.string().min(1),
+    description: nonBlank,
     amount: moneyInput,
   }),
   z.object({ ...entity, ...reusableTravelFields }),
@@ -277,25 +282,25 @@ const reusableSubItemSchema = z.discriminatedUnion('kind', [
 const definitionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('time'),
-    description: z.string().min(1),
+    description: nonBlank,
     minutes: z.number().int().positive(),
   }),
   z.object({
     kind: z.literal('expense'),
-    description: z.string().min(1),
+    description: nonBlank,
     amount: moneyInput,
   }),
   z.object(reusableTravelFields),
 ]);
 const variantOptionSchema = z.object({
   ...entity,
-  name: z.string().min(1),
+  name: nonBlank,
   subItems: z.array(definitionSchema),
 });
 const variantGroupSchema = z
   .object({
     ...entity,
-    name: z.string().min(1),
+    name: nonBlank,
     options: z.array(variantOptionSchema).min(1),
     defaultOptionId: uuid.optional(),
   })
@@ -353,13 +358,13 @@ const fiscalSchema = z.object({
 const holidaySchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('recurring'),
-    name: z.string().min(1),
+    name: nonBlank,
     month: z.number().int().min(1).max(12),
     day: z.number().int().min(1).max(31),
   }),
   z.object({
     kind: z.literal('specific'),
-    name: z.string().min(1),
+    name: nonBlank,
     date: z.string().date(),
   }),
 ]);
@@ -382,47 +387,39 @@ export const profileSchema = z
     capacity: capacitySchema,
   })
   .superRefine((profile, ctx) => {
-    if (
-      new Decimal(profile.fiscal.cessationThreshold).lt(
-        profile.fiscal.ordinaryThreshold,
+    if (!profile.confirmed) {
+      if (
+        new Decimal(profile.fiscal.cessationThreshold).lt(
+          profile.fiscal.ordinaryThreshold,
+        )
       )
-    )
+        ctx.addIssue({
+          code: 'custom',
+          path: ['fiscal', 'cessationThreshold'],
+          message:
+            'la soglia di cessazione deve essere almeno pari alla soglia ordinaria',
+        });
+      return;
+    }
+    // Share confirmProfile's validation. Empty costs isolate the profile's
+    // static parameters; archive business costs are validated separately.
+    const validation = calculateProfile(profile, []);
+    if (!validation.ok) {
+      const field = validation.error.field;
+      const path =
+        field === 'fiscal.thresholds'
+          ? ['fiscal', 'cessationThreshold']
+          : field && field in profile.fiscal
+            ? ['fiscal', field]
+            : field && field in profile.capacity
+              ? ['capacity', field]
+              : (field?.split('.') ?? []);
       ctx.addIssue({
         code: 'custom',
-        path: ['fiscal', 'cessationThreshold'],
-        message:
-          'la soglia di cessazione deve essere almeno pari alla soglia ordinaria',
+        path,
+        message: validation.error.message,
       });
-    if (!profile.confirmed) return;
-    if (!profile.fiscal.atecoCode.trim())
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fiscal', 'atecoCode'],
-        message: 'ATECO obbligatorio per un profilo confermato',
-      });
-    if (
-      profile.fiscal.activityPhase === 'reduced_eligible' &&
-      !profile.fiscal.reducedEligibilityConfirmed
-    )
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fiscal', 'reducedEligibilityConfirmed'],
-        message: 'conferma aliquota ridotta obbligatoria',
-      });
-    const revenue = new Decimal(profile.revenueTarget);
-    const ordinary = new Decimal(profile.fiscal.ordinaryThreshold);
-    const cessation = new Decimal(profile.fiscal.cessationThreshold);
-    if (
-      profile.fiscal.activityPhase === 'ordinary' &&
-      revenue.gt(ordinary) &&
-      revenue.lte(cessation) &&
-      !profile.fiscal.ordinaryApplicabilityConfirmed
-    )
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fiscal', 'ordinaryApplicabilityConfirmed'],
-        message: 'conferma applicabilità oltre soglia obbligatoria',
-      });
+    }
   });
 
 const profileSnapshotSchema = z.object({
@@ -444,7 +441,7 @@ const priceReferenceSchema = z.object({
 const quoteItemSchema = z
   .object({
     ...entity,
-    name: z.string().min(1),
+    name: nonBlank,
     subItems: z.array(quoteSubItemSchema),
     variantGroups: variantGroupsSchema,
     variantSelections: z.array(z.object({ groupId: uuid, optionId: uuid })),
@@ -474,7 +471,7 @@ const quoteItemSchema = z
   });
 const exportLineSchema = z.object({
   itemIds: z.array(uuid).min(1),
-  description: z.string().min(1),
+  description: nonBlank,
   amount: moneyInput,
   quantity: z.literal(1),
 });
@@ -489,14 +486,14 @@ const exportAttemptSchema = z.object({
 });
 const templateItemSchema = z.object({
   ...entity,
-  name: z.string().min(1),
+  name: nonBlank,
   referencePrice: z.object({ amount: moneyInput, period }).optional(),
   subItems: z.array(reusableSubItemSchema),
   variantGroups: variantGroupsSchema,
 });
 const templateSchema = z.object({
   ...entity,
-  name: z.string().min(1),
+  name: nonBlank,
   items: z.array(templateItemSchema).min(1),
 });
 
@@ -736,15 +733,15 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
     businessCosts: z.array(
       z.object({
         ...entity,
-        category: z.string().min(1),
-        description: z.string().min(1),
+        category: nonBlank,
+        description: nonBlank,
         monthlyAmount: moneyInput,
       }),
     ),
     vehicles: z.array(
       z.object({
         ...entity,
-        name: z.string().min(1),
+        name: nonBlank,
         fuel,
         consumption: positiveConsumption,
         consumptionUnit: z.enum(['km/l', 'kg/100km']),
@@ -757,7 +754,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
     sites: z.array(
       z.object({
         ...entity,
-        name: z.string().min(1),
+        name: nonBlank,
         address: z.string().min(1).optional(),
         client: ficClientRefSchema.optional(),
         location: resolvedLocationSchema.optional(),
@@ -880,12 +877,14 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
         category.parentId &&
         (category.parentId === category.id ||
           !categories.has(category.parentId) ||
-          categories.get(category.parentId)?.parentId)
+          categories.get(category.parentId)?.parentId ||
+          categories.get(category.parentId)?.systemRole === 'vat_taxes')
       )
         ctx.addIssue({
           code: 'custom',
           path,
-          message: 'Il padre deve essere una categoria principale esistente',
+          message:
+            'Il padre deve essere una categoria principale utente esistente',
         });
     });
     const movements = new Set<string>();

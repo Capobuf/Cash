@@ -1,6 +1,7 @@
 import { ArrowLeft, Plus, Save } from 'lucide-react';
 import { useState } from 'react';
 import { cloneReusableSubItem } from '../../../domain/catalog';
+import { parseDecimalInput } from '../../../domain/decimal';
 import {
   meta,
   touch,
@@ -99,7 +100,8 @@ export function TemplateWorkspace({
       });
       return;
     }
-    for (const item of draft.items) {
+    const prepared = structuredClone(draft);
+    for (const item of prepared.items) {
       const valid = validateVariantGroups(item.variantGroups);
       if (!valid.ok) {
         appState.setError(valid.error);
@@ -125,14 +127,18 @@ export function TemplateWorkspace({
         return;
       }
       const referenceAmount = item.referencePrice
-        ? decimalInputValue(item.referencePrice.amount)
+        ? parseDecimalInput(decimalInputValue(item.referencePrice.amount), 2)
         : undefined;
+      if (referenceAmount && !referenceAmount.ok) {
+        appState.setError({
+          ...referenceAmount.error,
+          field: 'template.items.referencePrice',
+        });
+        return;
+      }
       if (
         item.referencePrice &&
-        (!referenceAmount ||
-          !Number.isFinite(Number(referenceAmount)) ||
-          Number(referenceAmount) < 0 ||
-          !item.referencePrice.period)
+        (!referenceAmount || !item.referencePrice.period)
       ) {
         appState.setError({
           code: 'VALIDATION',
@@ -141,13 +147,8 @@ export function TemplateWorkspace({
         });
         return;
       }
-    }
-    const prepared = structuredClone(draft);
-    for (const item of prepared.items) {
-      if (item.referencePrice)
-        item.referencePrice.amount = Number(
-          decimalInputValue(item.referencePrice.amount),
-        ).toFixed(2);
+      if (item.referencePrice && referenceAmount?.ok)
+        item.referencePrice.amount = referenceAmount.value;
     }
     onSave({
       ...prepared,

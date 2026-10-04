@@ -12,6 +12,8 @@ import {
   type ProfileAnalysis,
 } from '../../domain/calculations';
 import { italianNationalHolidayEntries } from '../../domain/calendar';
+import { parseDecimalInput } from '../../domain/decimal';
+import { ok, type Result } from '../../domain/model';
 import { confirmProfile, saveProfileRevision } from '../../domain/profiles';
 import type {
   CashDocument,
@@ -72,14 +74,24 @@ function draftFromForm(
   source: EconomicProfile,
   form: HTMLFormElement,
   localHolidays: LocalHoliday[],
-): EconomicProfile {
+): Result<EconomicProfile> {
   const { data, get, money } = formReader(form);
   const draft = structuredClone(source);
   draft.year = Number(get('year'));
-  draft.revenueTarget = Number(money('revenueTarget')).toFixed(2);
-  draft.specificAnnualExpenses = Number(
-    money('specificAnnualExpenses'),
-  ).toFixed(2);
+  for (const name of ['revenueTarget', 'specificAnnualExpenses'] as const) {
+    const parsed = parseDecimalInput(money(name), 2);
+    if (!parsed.ok) return parsed;
+    draft[name] = parsed.value;
+  }
+  for (const name of [
+    'contributionCeiling',
+    'ordinaryThreshold',
+    'cessationThreshold',
+  ] as const) {
+    const parsed = parseDecimalInput(money(name), 2);
+    if (!parsed.ok) return parsed;
+    draft.fiscal[name] = parsed.value;
+  }
   Object.assign(draft.capacity, {
     hoursPerDay: get('hoursPerDay'),
     clientTimePercentage: get('clientTimePercentage'),
@@ -91,7 +103,6 @@ function draftFromForm(
     atecoCode: get('atecoCode'),
     profitabilityCoefficient: get('profitabilityCoefficient'),
     contributionRate: get('contributionRate') || '0',
-    contributionCeiling: Number(money('contributionCeiling')).toFixed(2),
     activityPhase: get(
       'activityPhase',
     ) as EconomicProfile['fiscal']['activityPhase'],
@@ -101,10 +112,8 @@ function draftFromForm(
       data.get('ordinaryApplicabilityConfirmed') === 'on',
     reducedSubstituteTaxRate: get('reducedSubstituteTaxRate'),
     ordinarySubstituteTaxRate: get('ordinarySubstituteTaxRate'),
-    ordinaryThreshold: Number(money('ordinaryThreshold')).toFixed(2),
-    cessationThreshold: Number(money('cessationThreshold')).toFixed(2),
   });
-  return draft;
+  return ok(draft);
 }
 
 export function ProfileEditor({
@@ -156,10 +165,12 @@ export function ProfileEditor({
     importedFromFic && ficTaxProfile?.regime !== undefined;
 
   const updatePreview = (event: FormEvent<HTMLFormElement>) => {
-    const result = previewProfile(
-      draftFromForm(profile, event.currentTarget, holidays),
-      doc.businessCosts,
-    );
+    const draft = draftFromForm(profile, event.currentTarget, holidays);
+    if (!draft.ok) {
+      setPreview({ error: draft.error.message });
+      return;
+    }
+    const result = previewProfile(draft.value, doc.businessCosts);
     setPreview(
       result.ok ? { value: result.value } : { error: result.error.message },
     );
@@ -167,7 +178,12 @@ export function ProfileEditor({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const draft = draftFromForm(profile, event.currentTarget, holidays);
+    const parsed = draftFromForm(profile, event.currentTarget, holidays);
+    if (!parsed.ok) {
+      appState.setError(parsed.error);
+      return;
+    }
+    const draft = parsed.value;
     if (
       doc.profiles.some(
         (entry) => entry.id !== profile.id && entry.year === draft.year,

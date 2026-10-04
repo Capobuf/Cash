@@ -32,7 +32,7 @@ export function FiscalCorrectionForm({
       setError(undefined);
     } catch {
       setError(
-        'Inserisci un totale non negativo, con al massimo due decimali. Per tornare al calcolo automatico usa «Torna alla stima».',
+        'Inserisci un totale non negativo, con al massimo due decimali. Per rimuovere il totale usa «Rimuovi totale annuale».',
       );
     }
   };
@@ -50,9 +50,10 @@ export function FiscalCorrectionForm({
       >
         <p>
           Inserisci il <strong>totale da versare nel {year}</strong>,
-          comprensivo di quanto hai già pagato nell’anno. Questo importo
-          sostituisce la stima nel calcolo del residuo: Cash sottrae già i
-          movimenti {year} della categoria di sistema Imposte P.IVA.
+          comprensivo di quanto hai già pagato nell’anno. Questo importo abilita
+          «Ancora da versare» e «Disponibilità stimata»: Cash sottrae i
+          movimenti {year} della categoria di sistema Imposte P.IVA dal totale
+          annuale.
         </p>
         <p>
           <strong>Includi:</strong> saldo imposta e saldo INPS {year - 1}, primo
@@ -127,7 +128,7 @@ export function FiscalCorrectionForm({
                     );
                 }}
               >
-                Torna alla stima
+                Rimuovi totale annuale
               </Button>
             ) : null}
           </div>

@@ -47,9 +47,7 @@ export const decimalInputValue = (value: string): string => {
   if (!normalized) return '';
   if (normalized.includes(','))
     return normalized.replace(/\./g, '').replace(',', '.');
-  return /^-?\d{1,3}(?:\.\d{3})+$/.test(normalized)
-    ? normalized.replace(/\./g, '')
-    : normalized;
+  return normalized;
 };
 
 export const formReader = (form: HTMLFormElement) => {

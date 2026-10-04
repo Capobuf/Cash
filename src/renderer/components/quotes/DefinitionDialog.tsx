@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { parseDecimalInput } from '../../../domain/decimal';
 import { parseDuration } from '../../../domain/duration';
 import { type SubItemDefinition } from '../../../domain/model';
 import { Button } from '@/components/ui/button';
@@ -43,9 +44,11 @@ export function DefinitionDialog({
     value?.kind ?? initialKind ?? 'time',
   );
   const [durationError, setDurationError] = useState<string>();
+  const [decimalError, setDecimalError] = useState<string>();
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const { data, get, money } = formReader(event.currentTarget);
+    setDecimalError(undefined);
     if (kind === 'time') {
       const duration = parseDuration(get('minutes'));
       if (!duration.ok) {
@@ -57,14 +60,25 @@ export function DefinitionDialog({
         description: get('description'),
         minutes: duration.value,
       });
-    } else if (kind === 'expense')
+    } else if (kind === 'expense') {
+      const amount = parseDecimalInput(money('amount'), 2);
+      if (!amount.ok) {
+        setDecimalError(amount.error.message);
+        return;
+      }
       onSave({
         kind,
         description: get('description'),
-        amount: Number(money('amount')).toFixed(2),
+        amount: amount.value,
       });
-    else {
-      const distance = get('distance');
+    } else {
+      const distance = get('distance')
+        ? parseDecimalInput(get('distance'), 1)
+        : undefined;
+      if (distance && !distance.ok) {
+        setDecimalError(distance.error.message);
+        return;
+      }
       const minutes = get('travelMinutes');
       const duration = minutes ? parseDuration(minutes) : undefined;
       if (duration && !duration.ok) {
@@ -76,11 +90,9 @@ export function DefinitionDialog({
         description: get('description'),
         roundTrip: data.get('roundTrip') === 'on',
         occurrences: Number(get('occurrences')),
-        ...(distance
+        ...(distance?.ok
           ? {
-              distanceKmPerOccurrence: Number(
-                distance.replace(',', '.'),
-              ).toFixed(1),
+              distanceKmPerOccurrence: distance.value,
             }
           : {}),
         ...(duration?.ok ? { travelMinutesPerOccurrence: duration.value } : {}),
@@ -112,6 +124,11 @@ export function DefinitionDialog({
             ) : null}
           </DialogHeader>
           <FieldGroup>
+            {decimalError ? (
+              <FieldDescription role="alert" className="text-destructive">
+                {decimalError}
+              </FieldDescription>
+            ) : null}
             {!lockKind && !value ? (
               <Field>
                 <FieldLabel htmlFor="definition-kind">Tipo</FieldLabel>

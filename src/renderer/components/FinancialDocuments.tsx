@@ -128,6 +128,7 @@ export function FinancialDocuments({
     ? []
     : selected.kind === 'pending'
       ? [
+          ['ID FIC', selected.document.id],
           ['Tipo', selected.document.documentType],
           ['Sorgente pending', selected.document.source],
           [
@@ -146,6 +147,7 @@ export function FinancialDocuments({
           ['Stato', 'Da registrare in Fatture in Cloud'],
         ]
       : [
+          ['ID FIC', selected.document.id],
           ['Tipo', typeLabels[selected.document.type]],
           ['Data', dateIt(selected.document.date)],
           ['Numero', numberOf(selected.document)],

@@ -120,11 +120,13 @@ export function BankQuickCategory({
               <NativeSelectOption value="">
                 Nessuna — crea categoria principale
               </NativeSelectOption>
-              {bankCategoryTree(categories).map((category) => (
-                <NativeSelectOption key={category.id} value={category.id}>
-                  {category.name}
-                </NativeSelectOption>
-              ))}
+              {bankCategoryTree(categories)
+                .filter((category) => category.systemRole !== 'vat_taxes')
+                .map((category) => (
+                  <NativeSelectOption key={category.id} value={category.id}>
+                    {category.name}
+                  </NativeSelectOption>
+                ))}
             </NativeSelect>
             <p className="text-xs text-muted-foreground">
               Scegli un padre per creare una sottocategoria.

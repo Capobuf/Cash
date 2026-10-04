@@ -25,7 +25,7 @@ const period = z.string().refine(isYearMonth, 'periodo YYYY-MM non valido');
 const timeDefinitionSchema = z
   .object({
     kind: z.literal('time'),
-    description: z.string().min(1),
+    description: nonEmptyString,
     minutes: z.number().int().positive(),
   })
   .strict();
@@ -33,7 +33,7 @@ const timeDefinitionSchema = z
 const expenseDefinitionSchema = z
   .object({
     kind: z.literal('expense'),
-    description: z.string().min(1),
+    description: nonEmptyString,
     amount: nonNegativeDecimal(2),
   })
   .strict();
@@ -41,7 +41,7 @@ const expenseDefinitionSchema = z
 const travelDefinitionSchema = z
   .object({
     kind: z.literal('travel'),
-    description: z.string().min(1),
+    description: nonEmptyString,
     roundTrip: z.boolean(),
     occurrences: z.number().int().positive(),
     distanceKmPerOccurrence: nonNegativeDecimal(1).optional(),

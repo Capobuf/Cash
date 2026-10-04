@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createEmptyDocument,
+  err,
   meta,
   ok,
   type CashDocument,
+  type CashError,
 } from '../../src/domain/model';
 import type { ArchiveSession } from '../../src/native/persistence';
 import { AppState, type ArchiveDecision } from '../../src/renderer/state';
@@ -35,7 +37,9 @@ describe('coordinatore autosalvataggio', () => {
       );
       const restored = createEmptyDocument();
       const restoreBackup = vi.fn(async () => ok(session(restored)));
-      const save = vi.fn();
+      const save = vi.fn(async (_path: string, document: CashDocument) =>
+        ok(session({ ...document, revision: 2 }, 2)),
+      );
       const saveRecovery = vi.fn(async () => ok('recovery.json'));
       vi.stubGlobal('window', {
         cash: {
@@ -65,13 +69,16 @@ describe('coordinatore autosalvataggio', () => {
         ).toBe(false);
         decide(choice);
         await restoring;
-        expect(save).not.toHaveBeenCalled();
         if (choice === 'discard' || choice === 'recovery') {
+          expect(save).not.toHaveBeenCalled();
           expect(restoreBackup).toHaveBeenCalledOnce();
           expect(state.document).toEqual(restored);
         } else {
           expect(restoreBackup).not.toHaveBeenCalled();
           expect(state.document).toEqual(local);
+          await state.save();
+          expect(save).toHaveBeenCalledOnce();
+          expect(state.status).toBe('Salvato');
         }
         if (choice === 'recovery')
           expect(saveRecovery).toHaveBeenCalledWith(local);
@@ -204,57 +211,288 @@ describe('coordinatore autosalvataggio', () => {
     }
   });
 
-  it('non perde una mutazione arrivata mentre un salvataggio è in corso', async () => {
-    let completeFirst!: (value: ReturnType<typeof ok<ArchiveSession>>) => void;
-    const first = new Promise<ReturnType<typeof ok<ArchiveSession>>>(
-      (resolve) => {
-        completeFirst = resolve;
+  it('persiste due mutazioni rapide in due revisioni senza accorparle', async () => {
+    const save = vi.fn<Window['cash']['archive']['save']>(
+      async (_path, document, token) => {
+        expect(document.settings.fuelTerritory).toBe(
+          token.revision === 1 ? 'Lazio' : 'Sicilia',
+        );
+        return ok(
+          session(
+            { ...document, revision: token.revision + 1 },
+            token.revision + 1,
+          ),
+        );
       },
     );
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty: vi.fn() } });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Lazio';
+      });
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Sicilia';
+      });
+      // The mutations schedule saves themselves, without advancing a debounce timer.
+      await Promise.resolve();
+      expect(save).toHaveBeenCalledTimes(1);
+      await state.save();
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(save.mock.calls.map((call) => call[2])).toEqual([
+        expect.objectContaining({ revision: 1, fingerprint: 'hash-1' }),
+        expect.objectContaining({ revision: 2, fingerprint: 'hash-2' }),
+      ]);
+      expect(state.document?.revision).toBe(3);
+      expect(state.document?.settings.fuelTerritory).toBe('Sicilia');
+      expect(state.status).toBe('Salvato');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('waits for a mutation during save and stays dirty until the final revision', async () => {
+    const completions: (() => void)[] = [];
+    let active = 0;
+    const save = vi.fn<Window['cash']['archive']['save']>(
+      async (_path, document, token) => {
+        active++;
+        expect(active).toBe(1);
+        await new Promise<void>((resolve) => {
+          completions.push(resolve);
+        });
+        active--;
+        return ok(
+          session(
+            { ...document, revision: token.revision + 1 },
+            token.revision + 1,
+          ),
+        );
+      },
+    );
+    const setDirty = vi.fn();
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty } });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Lazio';
+      });
+      let completed = false;
+      const saving = state.save().then(() => {
+        completed = true;
+      });
+      await Promise.resolve();
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Sicilia';
+      });
+      setDirty.mockClear();
+      expect(save).toHaveBeenCalledTimes(1);
+      completions[0]!();
+      await vi.runAllTimersAsync();
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(
+        save.mock.calls.map((call) => call[1].settings.fuelTerritory),
+      ).toEqual(['Lazio', 'Sicilia']);
+      expect(save.mock.calls[1]?.[2].revision).toBe(2);
+      expect(completed).toBe(false);
+      expect(setDirty).toHaveBeenCalledWith(true);
+      expect(setDirty).not.toHaveBeenCalledWith(false);
+      completions[1]!();
+      await saving;
+      expect(state.document?.settings.fuelTerritory).toBe('Sicilia');
+      expect(state.session?.token.revision).toBe(3);
+      expect(state.status).toBe('Salvato');
+      expect(setDirty).toHaveBeenLastCalledWith(false);
+      expect(active).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('ferma la coda dopo un errore e riprova ogni snapshot con un save esplicito', async () => {
     const save = vi
-      .fn()
-      .mockImplementationOnce(async (_path: string, document: CashDocument) =>
-        first.then(() =>
-          ok(session({ ...structuredClone(document), revision: 2 }, 2)),
+      .fn<Window['cash']['archive']['save']>()
+      .mockResolvedValueOnce(err({ code: 'IO', message: 'Disco pieno' }))
+      .mockImplementation(async (_path, document, token) =>
+        ok(
+          session(
+            { ...document, revision: token.revision + 1 },
+            token.revision + 1,
+          ),
         ),
-      )
-      .mockImplementationOnce(async (_path: string, document: CashDocument) =>
-        ok(session({ ...structuredClone(document), revision: 3 }, 3)),
       );
-    const cash = {
-      archive: { save },
-      setDirty: vi.fn(),
-    } as unknown as Window['cash'];
-    vi.stubGlobal('window', {
-      cash,
-      setTimeout: globalThis.setTimeout,
-      clearTimeout: globalThis.clearTimeout,
-      prompt: vi.fn(),
-    });
-    const appState = new AppState();
-    appState.acceptNativeSession(session(createEmptyDocument()));
-    appState.mutate((document) => {
-      document.settings.fuelTerritory = 'Lazio';
-    });
-    const saving = appState.save();
-    await Promise.resolve();
-    await Promise.resolve();
-    appState.mutate((document) => {
-      document.settings.fuelTerritory = 'Sicilia';
-    });
-    vi.mocked(cash.setDirty).mockClear();
-    completeFirst(ok(session(createEmptyDocument(), 2)));
-    await saving;
-    expect(cash.setDirty).toHaveBeenCalledWith(true);
-    expect(cash.setDirty).not.toHaveBeenCalledWith(false);
-    await vi.runAllTimersAsync();
-    await Promise.resolve();
-    expect(save).toHaveBeenCalledTimes(2);
-    expect(appState.document?.settings.fuelTerritory).toBe('Sicilia');
-    expect(appState.session?.token.revision).toBe(3);
-    expect(appState.status).toBe('Salvato');
-    expect(cash.setDirty).toHaveBeenLastCalledWith(false);
-    vi.unstubAllGlobals();
+    const setDirty = vi.fn();
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty } });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Lazio';
+      });
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Sicilia';
+      });
+      await state.save();
+      await vi.runAllTimersAsync();
+      expect(save).toHaveBeenCalledOnce();
+      expect(state.status).toBe('Errore di salvataggio');
+      expect(state.document?.settings.fuelTerritory).toBe('Sicilia');
+      expect(setDirty).toHaveBeenLastCalledWith(true);
+      await state.save();
+      expect(
+        save.mock.calls.map((call) => call[1].settings.fuelTerritory),
+      ).toEqual(['Lazio', 'Lazio', 'Sicilia']);
+      expect(state.session?.token.revision).toBe(3);
+      expect(state.status).toBe('Salvato');
+      expect(setDirty).toHaveBeenLastCalledWith(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('blocca gli snapshot successivi dopo un conflitto senza perdere le modifiche locali', async () => {
+    const save = vi
+      .fn<Window['cash']['archive']['save']>()
+      .mockResolvedValue(
+        err({ code: 'CONFLICT', message: 'Archivio cambiato' }),
+      );
+    const setDirty = vi.fn();
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty } });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Lazio';
+      });
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Sicilia';
+      });
+      await state.save();
+      await state.save();
+      expect(save).toHaveBeenCalledOnce();
+      expect(state.status).toBe('Conflitto esterno');
+      expect(state.document?.settings.fuelTerritory).toBe('Sicilia');
+      expect(
+        state.mutate((document) => {
+          document.settings.fuelTerritory = 'Veneto';
+        }),
+      ).toBe(false);
+      expect(setDirty).toHaveBeenLastCalledWith(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([true, false])(
+    'mantiene un conflitto esterno arrivato durante un save (successo: %s)',
+    async (success) => {
+      let complete!: (
+        value: Awaited<ReturnType<Window['cash']['archive']['save']>>,
+      ) => void;
+      let externalChange!: (error: CashError) => void;
+      const original = session(createEmptyDocument());
+      const save = vi.fn<Window['cash']['archive']['save']>(
+        () =>
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+      );
+      const setDirty = vi.fn();
+      vi.stubGlobal('window', {
+        cash: {
+          archive: { save, openLast: async () => ok(original) },
+          onExternalChange: (callback: typeof externalChange) => {
+            externalChange = callback;
+          },
+          onArchiveReloaded: vi.fn(),
+          setDirty,
+        },
+      });
+      try {
+        const state = new AppState();
+        await state.initialize();
+        state.mutate((document) => {
+          document.settings.fuelTerritory = 'Lazio';
+        });
+        state.mutate((document) => {
+          document.settings.fuelTerritory = 'Sicilia';
+        });
+        const saving = state.save();
+        await Promise.resolve();
+        const conflict = {
+          code: 'CONFLICT' as const,
+          message: 'File modificato esternamente',
+        };
+        externalChange(conflict);
+        complete(
+          success
+            ? ok(session({ ...save.mock.calls[0]![1], revision: 2 }, 2))
+            : err({ code: 'IO', message: 'IPC interrotto' }),
+        );
+        await saving;
+        await state.save();
+        expect(save).toHaveBeenCalledOnce();
+        expect(state.status).toBe('Conflitto esterno');
+        expect(state.error).toEqual(conflict);
+        expect(state.document?.settings.fuelTerritory).toBe('Sicilia');
+        expect(setDirty).toHaveBeenLastCalledWith(true);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it('scarta gli snapshot del vecchio archivio e salva quello nuovo dopo il save in corso', async () => {
+    let complete!: (
+      value: Awaited<ReturnType<Window['cash']['archive']['save']>>,
+    ) => void;
+    const save = vi
+      .fn<Window['cash']['archive']['save']>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+      )
+      .mockImplementation(async (_path, document, token) =>
+        ok(
+          session(
+            { ...document, revision: token.revision + 1 },
+            token.revision + 1,
+          ),
+        ),
+      );
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty: vi.fn() } });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Lazio';
+      });
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Sicilia';
+      });
+      const saving = state.save();
+      await Promise.resolve();
+      const replacement = createEmptyDocument();
+      state.acceptNativeSession(session(replacement));
+      state.mutate((document) => {
+        document.settings.fuelTerritory = 'Veneto';
+      });
+      expect(save).toHaveBeenCalledOnce();
+      complete(ok(session(save.mock.calls[0]![1], 2)));
+      await saving;
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(save.mock.calls[1]?.[1].documentId).toBe(replacement.documentId);
+      expect(save.mock.calls[1]?.[1].settings.fuelTerritory).toBe('Veneto');
+      expect(save.mock.calls[1]?.[2].revision).toBe(1);
+      expect(state.document?.documentId).toBe(replacement.documentId);
+      expect(state.status).toBe('Salvato');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('rifiuta una modifica non valida prima che raggiunga l’autosalvataggio', () => {

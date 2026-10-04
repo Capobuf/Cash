@@ -30,7 +30,10 @@ export function prepareBankExpenseCategory(
   if (
     parentId &&
     !categories.some(
-      (category) => category.id === parentId && !category.parentId,
+      (category) =>
+        category.id === parentId &&
+        !category.parentId &&
+        category.systemRole !== 'vat_taxes',
     )
   )
     return err({

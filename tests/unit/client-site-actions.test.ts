@@ -52,7 +52,17 @@ it('imposta la partenza dalla scheda cliente senza aprire o modificare la sede',
     clientId: '2',
     displayName: 'Cliente',
   };
-  const site = { ...meta(), name: 'Sede cliente', address: 'Roma', client };
+  const site = {
+    ...meta(),
+    name: 'Sede cliente',
+    address: 'Roma',
+    client,
+    location: {
+      inputKind: 'coordinates' as const,
+      inputValue: '41.9028, 12.4964',
+      coordinates: { latitude: '41.9028', longitude: '12.4964' },
+    },
+  };
   const previous = { ...meta(), name: 'Ufficio', address: 'Milano' };
   document.sites.push(previous, site);
   document.settings.defaultDepartureSiteId = previous.id;
@@ -69,7 +79,7 @@ it('imposta la partenza dalla scheda cliente senza aprire o modificare la sede',
   });
   const onEditSite = vi.fn();
   const onClose = vi.fn();
-  renderToStaticMarkup(
+  const markup = renderToStaticMarkup(
     createElement(ClientDetailsDialog, {
       appState: state,
       doc: document,
@@ -82,6 +92,8 @@ it('imposta la partenza dalla scheda cliente senza aprire o modificare la sede',
       requestDelete: vi.fn(),
     }),
   );
+  expect(markup).toContain('41.9028, 12.4964');
+  expect(markup).not.toContain('12.4964, 41.9028');
   actions.get('Imposta come partenza predefinita')!();
   expect(state.document?.settings.defaultDepartureSiteId).toBe(site.id);
   expect(state.document?.sites).toEqual(document.sites);

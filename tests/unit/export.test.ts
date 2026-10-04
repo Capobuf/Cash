@@ -90,10 +90,10 @@ describe('esportazione deliberata', () => {
       ],
     });
   });
-  it('crea evidenza pending prima dell’invio e avvisa sui tentativi', () => {
+  it('crea evidenza pending prima dell’invio e avvisa sui tentativi', async () => {
     const lines = buildExportLines(quote);
     if (!lines.ok) throw new Error('lines');
-    const attempt = createPendingAttempt('1', lines.value);
+    const attempt = await createPendingAttempt('1', lines.value);
     expect(attempt.outcome).toBe('pending');
     expect(attempt.payloadHash).toMatch(/^[a-f0-9]{64}$/);
     expect(needsRepeatWarning({ ...quote, exportAttempts: [attempt] })).toBe(
@@ -113,8 +113,8 @@ describe('esportazione deliberata', () => {
     expect(buildExportLines({ ...quote, client: undefined }).ok).toBe(false);
     expect(buildExportLines(quote, undefined, 'altra').ok).toBe(false);
   });
-  it('produce SHA-256 standard anche nel renderer', () => {
-    expect(sha256Text('abc')).toBe(
+  it('produce SHA-256 standard anche nel renderer', async () => {
+    expect(await sha256Text('abc')).toBe(
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
   });
