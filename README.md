@@ -6,6 +6,7 @@ tempo, spese e trasferte. Il prezzo finale resta sempre una scelta dell’utente
 fiscale o contabile e non sostituisce il commercialista.
 
 La specifica canonica è [Cash_Specifica_Funzionale_v0.7.md](Cash_Specifica_Funzionale_v0.7.md), del 30 settembre 2026.
+Gli artefatti in `specs/001-cash-mvp` sono documentazione storica e non definiscono i requisiti correnti.
 
 ## Avvio in sviluppo
 
@@ -221,7 +222,9 @@ Costi pianificati, costi FIC e preventivazione mantengono le loro logiche preced
 ## OpenRouteService
 
 La API key si configura in **Impostazioni → Integrazioni**, viene salvata nel Gestore credenziali di
-Windows e verificata con una richiesta reale. Le Sedi vengono localizzate solo tramite “Cerca”. Il
+Windows e verificata con una richiesta reale. Gli indirizzi delle Sedi vengono localizzati solo tramite
+“Cerca”; le coordinate esplicite valide si salvano direttamente, senza API key. In questo caso “Cerca”
+è facoltativo e serve a ottenere un indirizzo leggibile. Il
 percorso di una Trasferta viene calcolato solo tramite “Calcola percorso”; distanza e tempo restano
 modificabili e non sono aggiornati automaticamente.
 
@@ -258,8 +261,9 @@ richiederebbe un nuovo archivio cifrato e un percorso di migrazione dal Credenti
 
 Electron, electron-builder, ESLint, TypeScript, Vitest e la CLI shadcn restano nelle
 `devDependencies`. Le librerie applicative JavaScript vengono incorporate da esbuild
-in `dist`; ExcelJS e Recharts sono dichiarati in `dependencies` dal modulo di analisi
-finanziaria. Il modulo esterno per le credenziali deve essere distribuito in `dependencies`.
+in `dist`; anche ExcelJS e Recharts restano in `devDependencies`, evitando di distribuire
+una seconda copia dei loro alberi in `node_modules`. Il modulo esterno per le credenziali
+deve essere distribuito in `dependencies`.
 
 ESLint 10 è abbinato a `@eslint/js` 10 e typescript-eslint 8 compatibile con ESLint 10 e
 TypeScript 5.9. `globals` 16.3.0 resta compatibile. Le tre nuove regole recommended di

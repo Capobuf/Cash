@@ -252,7 +252,7 @@ describe('coordinatore autosalvataggio', () => {
     }
   });
 
-  it('attende anche una mutazione durante il save e mantiene dirty fino all?ultima revisione', async () => {
+  it('waits for a mutation during save and stays dirty until the final revision', async () => {
     const completions: (() => void)[] = [];
     let active = 0;
     const save = vi.fn<Window['cash']['archive']['save']>(

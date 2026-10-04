@@ -157,7 +157,7 @@ Cash deve aiutare a rispondere almeno a queste domande:
 
 **INV-016 -** Una Trasferta viene creata soltanto su azione dell'utente o perché presente in un template scelto. Cliente e Sede del preventivo non generano automaticamente Trasferte.
 
-**INV-017 -** Se l'utente modifica l'indirizzo o le coordinate di una Sede dopo una ricerca, le coordinate precedentemente associate non possono continuare a essere usate come se rappresentassero il nuovo valore. Prima di un nuovo calcolo automatico è necessario eseguire nuovamente **Cerca**.
+**INV-017 -** Se l'utente modifica l'indirizzo o le coordinate di una Sede dopo una ricerca, le coordinate precedentemente associate non possono continuare a essere usate come se rappresentassero il nuovo valore. Per un indirizzo modificato è necessario eseguire nuovamente **Cerca**; in modalità coordinate, il salvataggio valida e conserva direttamente le nuove coordinate esplicite.
 
 ## 3. Perimetro funzionale
 
@@ -456,7 +456,7 @@ Se è stato inserito un indirizzo, Cash interroga OpenRouteService, mostra i ris
 
 Se sono state inserite coordinate valide, Cash accetta nell'interfaccia il formato usato da Google Maps, **latitudine, longitudine**, lo converte internamente nell'ordine richiesto da OpenRouteService e può usarlo direttamente per il routing. Cash può inoltre chiedere a OpenRouteService un indirizzo leggibile tramite geocodifica inversa. La mancanza di un indirizzo leggibile non rende inutilizzabili coordinate valide inserite esplicitamente dall'utente.
 
-La Sede non possiede uno stato permanente **Indirizzo verificato**. Se l'utente modifica indirizzo o coordinate dopo una ricerca, le coordinate precedentemente associate vengono invalidate rispetto al nuovo valore e non possono essere usate per un nuovo calcolo automatico finché l'utente non esegue nuovamente **Cerca**. Le coordinate esplicite valide confermate dalla ricerca restano utilizzabili anche senza indirizzo leggibile.
+La Sede non possiede uno stato permanente **Indirizzo verificato**. Modificare un indirizzo invalida la risoluzione precedente e richiede una nuova ricerca prima del routing. In modalità coordinate, il salvataggio valida le nuove coordinate esplicite e le conserva direttamente, senza richiedere **Cerca** o una API key. **Cerca** è facoltativo per ottenere un indirizzo leggibile: non sostituisce le coordinate inserite con quelle del risultato di reverse geocoding.
 
 Il riferimento Cliente salvato su una Sede serve soltanto a ricerca e proposta. Se punta a Fatture in Cloud conserva un riferimento leggibile, ma non diventa una cache utilizzabile per operazioni live.
 
@@ -1088,7 +1088,7 @@ I documenti amministrativi nello snapshot finanziario usano esclusivamente l’I
 | Prezzo di riferimento | Non negativo; mese/anno obbligatorio se il prezzo è presente e non successivo all'ultimo mese FOI pubblicato. |
 | Prezzo scelto | Non negativo; può essere inferiore al valore teorico o alle spese. È obbligatorio per l'esportazione. |
 | Provvigione | Facoltativa; se presente, importo in euro non negativo. Non entra nei calcoli del preventivo. |
-| Sede | Nome non vuoto, Cliente facoltativo, indirizzo quando disponibile e coordinate valide utilizzabili per il routing. Una modifica a indirizzo o coordinate invalida l'associazione precedente e impedisce il routing finché non viene eseguito nuovamente **Cerca**. |
+| Sede | Nome non vuoto, Cliente facoltativo, indirizzo quando disponibile e coordinate valide utilizzabili per il routing. Un indirizzo modificato richiede nuovamente **Cerca**; le coordinate esplicite vengono validate e salvate direttamente, senza riutilizzare una risoluzione precedente. |
 | Cliente Fatture in Cloud | Deve provenire dall'azienda configurata; identificativo e denominazione sono obbligatori, la partita IVA è facoltativa. |
 | Costi annuali del veicolo | Assicurazione, bollo e manutenzione non negativi. La UI ricorda di non duplicarli nei Costi aziendali. |
 | Cambio variante | Un gruppo sostituisce solo le sottovoci prodotte dalle proprie opzioni; warning obbligatorio prima di perdere modifiche manuali su tali sottovoci. |
@@ -1112,7 +1112,7 @@ Esempi:
 | Basic API key OpenRouteService assente o non valida | Indicare che ricerca o routing richiedono una chiave valida e rimandare alle Impostazioni. | Usare un altro servizio o una chiave precedente non valida. |
 | Connessione OpenRouteService non disponibile | Mostrare l'errore per l'operazione richiesta; consentire l'inserimento manuale esplicito di distanza e tempo. | Usare distanza in linea d'aria, velocità media, un vecchio percorso o un provider alternativo. |
 | Indirizzo non trovato o ambiguo | Mostrare i risultati disponibili o l'assenza di risultati e richiedere una scelta esplicita. | Considerare valido automaticamente il primo risultato o inventare coordinate. |
-| Coordinate non valide o non più coerenti con il valore modificato | Evidenziare il campo e richiedere una nuova esecuzione di Cerca. | Riutilizzare silenziosamente coordinate precedenti o presunte. |
+| Coordinate non valide o non più coerenti con il valore modificato | Evidenziare il campo: correggere le coordinate esplicite oppure eseguire nuovamente Cerca per l'indirizzo modificato. | Riutilizzare silenziosamente coordinate precedenti o presunte. |
 | Sede priva di coordinate utilizzabili | Indicare quale Sede impedisce Calcola percorso. | Assumere coordinate o una distanza precedente. |
 | Percorso non calcolabile | Mostrare l'errore restituito per la tratta richiesta. | Inventare distanza o tempo, calcolare la linea d'aria o interrogare automaticamente un altro provider. |
 | Veicolo necessario ma non selezionato | Richiedere la selezione di un Veicolo per calcolare il costo. | Scegliere arbitrariamente un Veicolo non configurato come predefinito. |
