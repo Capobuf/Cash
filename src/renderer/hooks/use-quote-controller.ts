@@ -829,7 +829,19 @@ export function useQuoteController({
       await appState.save();
       if (!isCurrent() || appState.status !== 'Salvato') return false;
     }
-    const attempt = createPendingAttempt(fic.company.id, built.value);
+    let attempt: Awaited<ReturnType<typeof createPendingAttempt>>;
+    try {
+      attempt = await createPendingAttempt(fic.company.id, built.value);
+    } catch {
+      if (isCurrent())
+        appState.setError({
+          code: 'VALIDATION',
+          message:
+            'Impossibile calcolare il fingerprint del preventivo. Invio non eseguito.',
+        });
+      return false;
+    }
+    if (!isCurrent()) return false;
     if (
       !appState.mutate((document) =>
         touch(

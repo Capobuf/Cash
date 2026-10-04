@@ -145,7 +145,10 @@ export async function openArchive(
     return ok({ path, document: parsed.data, token, readOnly: false });
   } catch (cause) {
     return err({
-      code: 'IO',
+      code:
+        (cause as NodeJS.ErrnoException).code === 'ENOENT'
+          ? 'FILE_NOT_FOUND'
+          : 'IO',
       source: 'archive',
       message: 'Impossibile aprire l’archivio.',
       details: [String(cause)],

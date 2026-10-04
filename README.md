@@ -152,7 +152,10 @@ Filtri e KPI usano le categorie effettive: una spesa è senza categoria solo se 
 né automatiche. Il filtro e il totale del padre includono i figli, contando ogni spesa una sola volta
 nel ramo. Categorie di rami diversi possono sovrapporsi: i loro totali non sono sommabili e le percentuali
 possono superare complessivamente il 100%. Il totale generale e i conteggi restano unici.
-L’anno è condiviso con la Panoramica finanziaria, include gli anni bancari ed è solo stato UI.
+Il selettore anno nell’AppShell è visibile in tutte le sezioni ed è solo stato UI. Include sempre
+l’anno corrente, oltre agli anni di profili, preventivi, banca, documenti/pagamenti FIC e correzioni
+fiscali. Il default è l’anno corrente anche con soli dati storici o archivio vuoto. La selezione
+influenza Dashboard, Analisi finanziaria, Movimenti e Riepilogo; le altre sezioni non filtrano i contenuti.
 L’import acquisisce tutti gli anni del file; Categorie è indipendente dall’anno.
 
 I movimenti bancari restano separati dai documenti e dai KPI Fatture in Cloud: nessuna somma,

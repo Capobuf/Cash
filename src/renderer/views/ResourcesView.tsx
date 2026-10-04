@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateVehicleCost } from '../../domain/calculations';
+import { annualPlannedBusinessCosts } from '../../domain/financial-analysis';
+import { coordinatesInput } from '../../domain/locations';
 import type { CashDocument, Vehicle } from '../../domain/model';
 import {
   CostDialog,
@@ -91,9 +93,7 @@ export function ResourcesView({
     },
     { label: 'Altre sedi', sites: doc.sites.filter((site) => !site.client) },
   ];
-  const annualCosts = doc.businessCosts
-    .reduce((sum, cost) => sum + Number(cost.monthlyAmount) * 12, 0)
-    .toFixed(2);
+  const annualCosts = annualPlannedBusinessCosts(doc.businessCosts);
 
   const checkVehicleCost = async (id: string) => {
     const vehicle = doc.vehicles.find((entry) => entry.id === id);
@@ -427,7 +427,7 @@ export function ResourcesView({
                             </TableCell>
                             <TableCell>
                               {site.location
-                                ? `${site.location.coordinates.longitude}, ${site.location.coordinates.latitude}`
+                                ? coordinatesInput(site.location.coordinates)
                                 : 'Da localizzare'}
                             </TableCell>
                             <TableCell>

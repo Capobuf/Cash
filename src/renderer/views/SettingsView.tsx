@@ -13,7 +13,7 @@ import {
   disableFic,
   type FicActivationPreview,
 } from '../../domain/integration';
-import { createBlankProfile, type CashDocument } from '../../domain/model';
+import { createManualProfile, type CashDocument } from '../../domain/model';
 import { FicAccessPanel } from '@/components/FicAccessPanel';
 import { ProfileEditor } from '@/components/ProfileEditor';
 import { ResourcesView } from './ResourcesView';
@@ -137,7 +137,7 @@ export function SettingsView({
       });
       return;
     }
-    const created = createBlankProfile(year);
+    const created = createManualProfile(year);
     if (!appState.mutate((document) => document.profiles.unshift(created)))
       return;
     setNewProfileOpen(false);
@@ -336,8 +336,8 @@ export function SettingsView({
                   defaultValue={doc.settings.fuelTerritory ?? ''}
                   placeholder="es. Lazio"
                   onBlur={(event) => {
-                    const value = event.currentTarget.value.trim();
-                    if (value && value !== doc.settings.fuelTerritory)
+                    const value = event.currentTarget.value.trim() || undefined;
+                    if (value !== doc.settings.fuelTerritory)
                       appState.mutate((document) => {
                         document.settings.fuelTerritory = value;
                       });
@@ -1137,14 +1137,25 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function OpenRouteServiceCard({ appState }: { appState: AppState }) {
   const [apiKey, setApiKey] = useState('');
-  const [hasKey, setHasKey] = useState(false);
+  const [hasKey, setHasKey] = useState<boolean>();
+  const [keyReadError, setKeyReadError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string }>();
   useEffect(() => {
+    let active = true;
     void window.cash.ors.hasApiKey().then((result) => {
+      if (!active) return;
       if (result.ok) setHasKey(result.value);
+      else {
+        setKeyReadError(true);
+        setOutcome({ ok: false, message: result.error.message });
+        appState.setError(result.error);
+      }
     });
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [appState]);
   const verify = async () => {
     setBusy(true);
     setOutcome(undefined);
@@ -1156,6 +1167,7 @@ function OpenRouteServiceCard({ appState }: { appState: AppState }) {
         return;
       }
       setHasKey(true);
+      setKeyReadError(false);
       setApiKey('');
     }
     const result = await window.cash.ors.verify();
@@ -1191,9 +1203,13 @@ function OpenRouteServiceCard({ appState }: { appState: AppState }) {
           >
             {outcome?.ok
               ? 'Verificata'
-              : hasKey
-                ? 'Chiave presente'
-                : 'Da configurare'}
+              : keyReadError
+                ? 'Non verificabile'
+                : hasKey === undefined
+                  ? 'Verifica credenziali…'
+                  : hasKey
+                    ? 'Chiave presente'
+                    : 'Da configurare'}
           </Badge>
         </CardAction>
       </CardHeader>

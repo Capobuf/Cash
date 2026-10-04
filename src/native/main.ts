@@ -111,9 +111,12 @@ async function selectOpen() {
   });
   if (choice.canceled || !choice.filePaths[0])
     return err({ code: 'CANCELLED', message: 'Apertura annullata.' });
-  const result = await openArchive(choice.filePaths[0]);
+  return openWithMigration(choice.filePaths[0]);
+}
+async function openWithMigration(path: string) {
+  const result = await openArchive(path);
   if (!result.ok && result.error.code === 'MIGRATION_REQUIRED') {
-    const preview = await previewMigration(choice.filePaths[0]);
+    const preview = await previewMigration(path);
     if (!preview.ok) return preview;
     if (preview.value.blockers.length)
       return err({
@@ -140,7 +143,7 @@ async function selectOpen() {
         source: 'archive',
         message: 'Migrazione annullata.',
       });
-    const migrated = await migrateArchive(choice.filePaths[0]);
+    const migrated = await migrateArchive(path);
     if (migrated.ok) {
       current = migrated.value;
       await rememberArchive(migrated.value.path);
@@ -176,8 +179,8 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.archiveOpenLast, async () => {
     const path = (await readPreferences()).lastArchivePath;
     if (!path) return { ok: true, value: null };
-    const result = await openArchive(path);
-    if (result.ok) current = result.value;
+    const result = await openWithMigration(path);
+    if (!result.ok && result.error.code === 'FILE_NOT_FOUND') return ok(null);
     return result;
   });
   ipcMain.handle(IPC.archiveCreate, async (_event, document: CashDocument) => {

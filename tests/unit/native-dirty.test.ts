@@ -13,6 +13,9 @@ const native = vi.hoisted(() => ({
   windowEvents: new Map<string, (...args: any[]) => void>(),
   send: vi.fn(),
   openArchive: vi.fn(),
+  previewMigration: vi.fn(),
+  migrateArchive: vi.fn(),
+  showMessageBox: vi.fn(),
   saveArchive: vi.fn(),
   inspectArchive: vi.fn(),
 }));
@@ -30,7 +33,7 @@ vi.mock('electron', () => ({
     on: (name: string, callback: (...args: any[]) => void) =>
       native.events.set(name, callback),
   },
-  dialog: {},
+  dialog: { showMessageBox: native.showMessageBox },
   BrowserWindow: class {
     webContents = { send: native.send };
     removeMenu() {}
@@ -52,8 +55,8 @@ vi.mock('../../src/native/persistence', () => ({
   saveArchive: native.saveArchive,
   createArchive: vi.fn(),
   inspectArchive: native.inspectArchive,
-  migrateArchive: vi.fn(),
-  previewMigration: vi.fn(),
+  migrateArchive: native.migrateArchive,
+  previewMigration: native.previewMigration,
   restoreBackup: vi.fn(),
   saveRecoveryCopy: vi.fn(),
 }));
@@ -200,5 +203,47 @@ it.each([false, true])(
       setDirty(false);
       expect(close()).not.toHaveBeenCalled();
     }
+  },
+);
+
+it.each([0, 1])(
+  'offers migration of the last archive without another file selection (choice %s)',
+  async (response) => {
+    native.openArchive.mockResolvedValue({
+      ok: false,
+      error: { code: 'MIGRATION_REQUIRED', message: 'Legacy' },
+    });
+    native.previewMigration.mockResolvedValue(
+      ok({
+        fromVersion: 9,
+        toVersion: 10,
+        changes: ['Schema'],
+        blockers: [],
+        backupPath: 'Cash.backup.json',
+      }),
+    );
+    native.showMessageBox.mockResolvedValue({ response });
+    native.migrateArchive.mockResolvedValue(ok({ path: 'Cash.json' }));
+    await import('../../src/native/main');
+    const result = await native.handlers.get(IPC.archiveOpenLast)!();
+    expect(native.previewMigration).toHaveBeenCalledWith('Cash.json');
+    expect(native.showMessageBox).toHaveBeenCalledOnce();
+    expect(native.migrateArchive).toHaveBeenCalledTimes(response);
+    if (response) expect(result.ok).toBe(true);
+    else expect(result.error.code).toBe('CANCELLED');
+  },
+);
+it.each(['FILE_NOT_FOUND', 'IO', 'VALIDATION'])(
+  'only treats a missing last archive as no selection: %s',
+  async (code) => {
+    const failure = {
+      ok: false,
+      error: { code, message: 'Cannot open archive' },
+    };
+    native.openArchive.mockResolvedValue(failure);
+    await import('../../src/native/main');
+    expect(await native.handlers.get(IPC.archiveOpenLast)!()).toEqual(
+      code === 'FILE_NOT_FOUND' ? ok(null) : failure,
+    );
   },
 );

@@ -35,7 +35,9 @@ export function calculateFinancialOverview(
         doc.businessCosts,
         today,
         doc.profiles.find((profile) => profile.year === year + 1),
-        doc.settings.fic.taxProfile,
+        doc.settings.fic.company?.id === doc.financialSnapshot.company.id
+          ? doc.settings.fic.taxProfile
+          : undefined,
       )
     : undefined;
   const bankSummary = summarizeBankExpenses(

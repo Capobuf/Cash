@@ -36,6 +36,27 @@ import { DashboardView } from './views/DashboardView';
 import { QuotesView } from './views/QuotesView';
 import { SettingsView } from './views/SettingsView';
 
+export function selectableYears(
+  doc: CashDocument | undefined,
+  currentYear: number,
+) {
+  if (!doc) return [];
+  const available = new Set(
+    financialYears(
+      doc.financialSnapshot,
+      doc.profiles,
+      doc.bankExpenses,
+      doc.fiscalPaymentOverrides,
+    ),
+  );
+  for (const quote of doc.quotes) {
+    const year = Number(quote.date.slice(0, 4));
+    if (Number.isInteger(year)) available.add(year);
+  }
+  available.add(currentYear);
+  return [...available].sort((a, b) => b - a);
+}
+
 export function App() {
   const appState = useAppState(state);
   const [view, setView] = useState<View>('dashboard');
@@ -46,21 +67,7 @@ export function App() {
   const financialDoc = appState.document;
   const currentYear = new Date().getFullYear();
   const years = useMemo(() => {
-    if (!financialDoc) return [];
-    const available = new Set(
-      financialYears(
-        financialDoc.financialSnapshot,
-        financialDoc.profiles,
-        financialDoc.bankExpenses,
-        financialDoc.fiscalPaymentOverrides,
-      ),
-    );
-    for (const quote of financialDoc.quotes) {
-      const year = Number(quote.date.slice(0, 4));
-      if (Number.isInteger(year)) available.add(year);
-    }
-    if (!available.size) available.add(currentYear);
-    return [...available].sort((a, b) => b - a);
+    return selectableYears(financialDoc, currentYear);
   }, [financialDoc, currentYear]);
   const selectedYear =
     financialSelection?.documentId === financialDoc?.documentId

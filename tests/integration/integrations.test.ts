@@ -489,7 +489,7 @@ describe('fonti ufficiali', () => {
           items: [],
           snapshotRevision: 0,
           exportAttempts: [
-            { ...createPendingAttempt('1', []), ...result.value },
+            { ...(await createPendingAttempt('1', [])), ...result.value },
           ],
         }),
       ).toBe(outcome === 'uncertain');

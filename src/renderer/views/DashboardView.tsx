@@ -9,11 +9,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { calculateProfile } from '../../domain/calculations';
-import {
-  createBlankProfile,
-  createFiscalPreset2026,
-  type CashDocument,
-} from '../../domain/model';
+import { createManualProfile, type CashDocument } from '../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -102,10 +98,7 @@ export function DashboardView({
             <Button
               size="sm"
               onClick={() => {
-                const created =
-                  year === 2026
-                    ? createFiscalPreset2026()
-                    : createBlankProfile(year);
+                const created = createManualProfile(year);
                 if (
                   !appState.mutate((document) =>
                     document.profiles.push(created),

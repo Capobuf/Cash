@@ -256,12 +256,25 @@ export function SiteDialog({
       return;
     }
     let location = resolved;
+    if (mode === 'coordinates') {
+      const parsed = parseCoordinates(coordinateText);
+      if (!parsed.ok) {
+        appState.setError(parsed.error);
+        return;
+      }
+      location = {
+        coordinates: parsed.value,
+        inputKind: 'coordinates',
+        inputValue: coordinatesInput(parsed.value),
+      };
+    }
     if (
       location?.inputKind === 'address' &&
       location.inputValue !== address.trim()
     )
       location = undefined;
     if (
+      mode !== 'coordinates' &&
       location?.inputKind === 'coordinates' &&
       location.inputValue !== coordinateText.trim()
     )

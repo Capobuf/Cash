@@ -70,7 +70,7 @@ export class AppState {
     });
     const result = await window.cash.archive.openLast();
     if (result.ok && result.value) this.accept(result.value);
-    else if (!result.ok && result.error.code !== 'IO') {
+    else if (!result.ok && result.error.code !== 'CANCELLED') {
       this.error = result.error;
       this.emit();
     }
