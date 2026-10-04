@@ -590,6 +590,68 @@ describe('esito delle modifiche ai preventivi', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(['10,999', '10.999', '-1', 'NaN', 'Infinity'])(
+    'rifiuta gli importi non validi %s prima di modificare il preventivo',
+    (amount) => {
+      const { controller, item, state, document } = setup();
+      const mutate = vi.spyOn(state, 'mutate');
+      expect(controller.updateQuote({ commission: amount })).toBe('invalid');
+      expect(controller.updateChosenPrice(item.id, amount)).toBe(false);
+      expect(controller.updateReferencePrice(item.id, amount, '2026-01')).toBe(
+        false,
+      );
+      expect(
+        controller.saveSimpleSub(item.id, {
+          kind: 'expense',
+          description: 'Spesa',
+          amount,
+        }),
+      ).toBe(false);
+      expect(mutate).not.toHaveBeenCalled();
+      expect(state.error?.code).toBe('VALIDATION');
+      expect(state.document).toEqual(document);
+    },
+  );
+
+  it('persiste gli importi validi del preventivo senza cambiare il valore', () => {
+    const { controller, item, state } = setup();
+    expect(controller.updateQuote({ commission: '10,9' })).toBe('updated');
+    expect(controller.updateChosenPrice(item.id, '100.2')).toBe(true);
+    expect(
+      controller.updateReferencePrice(item.id, '1.234,56', '2026-01'),
+    ).toBe(true);
+    expect(
+      controller.saveSimpleSub(item.id, {
+        kind: 'expense',
+        description: 'Spesa',
+        amount: '10,9',
+      }),
+    ).toBe(true);
+    const quote = state.document!.quotes[0]!;
+    expect(quote.commission).toBe('10.90');
+    expect(quote.items[0]?.chosenPrice).toBe('100.20');
+    expect(quote.items[0]?.referencePrice).toEqual({
+      amount: '1234.56',
+      period: '2026-01',
+    });
+    const expense = quote.items[0]!.subItems.find(
+      (sub) => sub.kind === 'expense',
+    )!;
+    expect(expense).toMatchObject({ amount: '10.90' });
+    expect(
+      controller.saveSimpleSub(
+        item.id,
+        { kind: 'expense', description: 'Spesa modificata', amount: '20,25' },
+        expense.id,
+      ),
+    ).toBe(true);
+    expect(
+      state.document!.quotes[0]!.items[0]!.subItems.find(
+        (sub) => sub.id === expense.id,
+      ),
+    ).toMatchObject({ amount: '20.25' });
+  });
+
   it('non segnala aggiornamento o seleziona un nuovo preventivo in sola lettura', () => {
     const test = setup();
     test.state.acceptNativeSession({

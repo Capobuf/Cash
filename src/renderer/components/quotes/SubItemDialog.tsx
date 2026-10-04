@@ -5,6 +5,7 @@ import {
   valuesFromRoute,
 } from '../../../domain/calculations';
 import { parseDuration } from '../../../domain/duration';
+import { parseDecimalInput } from '../../../domain/decimal';
 import { siteHasUsableLocation } from '../../../domain/locations';
 import { type CashDocument, type QuoteSubItem } from '../../../domain/model';
 import { SiteDialog, VehicleDialog } from '@/components/EntityDialogs';
@@ -178,17 +179,20 @@ export function SubItemDialog({
       return;
     }
     const occurrences = Number(get('occurrences'));
-    const distanceValue = distance
-      ? Number(distance.replace(',', '.'))
+    const parsedDistance = distance
+      ? parseDecimalInput(distance, 1)
       : undefined;
+    if (parsedDistance && !parsedDistance.ok) {
+      appState.setError({ ...parsedDistance.error, field: 'travel.distance' });
+      return;
+    }
+    const distanceValue = parsedDistance?.ok ? parsedDistance.value : undefined;
     const minutesValue = parsedTravelDuration?.ok
       ? parsedTravelDuration.value
       : undefined;
     if (
       !Number.isInteger(occurrences) ||
       occurrences <= 0 ||
-      (distanceValue !== undefined &&
-        (!Number.isFinite(distanceValue) || distanceValue < 0)) ||
       (minutesValue !== undefined &&
         (!Number.isInteger(minutesValue) || minutesValue <= 0))
     ) {
@@ -210,7 +214,7 @@ export function SubItemDialog({
       occurrences,
       ...(distanceValue !== undefined
         ? {
-            distanceKmPerOccurrence: distanceValue.toFixed(1),
+            distanceKmPerOccurrence: distanceValue,
             distanceSource: distanceSource ?? 'manual',
           }
         : {}),

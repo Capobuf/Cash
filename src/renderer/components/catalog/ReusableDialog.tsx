@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { parseDecimalInput } from '../../../domain/decimal';
 import { parseDuration } from '../../../domain/duration';
 import { meta, type ReusableSubItem } from '../../../domain/model';
 import { Button } from '@/components/ui/button';
@@ -45,9 +46,11 @@ export function ReusableDialog({
 }) {
   const [kind, setKind] = useState<Kind>(value?.kind ?? initialKind ?? 'time');
   const [durationError, setDurationError] = useState<string>();
+  const [decimalError, setDecimalError] = useState<string>();
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const { data, get, money } = formReader(event.currentTarget);
+    setDecimalError(undefined);
     const identity = value
       ? {
           id: value.id,
@@ -67,15 +70,26 @@ export function ReusableDialog({
         description: get('description'),
         minutes: duration.value,
       });
-    } else if (kind === 'expense')
+    } else if (kind === 'expense') {
+      const amount = parseDecimalInput(money('amount'), 2);
+      if (!amount.ok) {
+        setDecimalError(amount.error.message);
+        return;
+      }
       onSave({
         ...identity,
         kind,
         description: get('description'),
-        amount: Number(money('amount')).toFixed(2),
+        amount: amount.value,
       });
-    else {
-      const distance = get('distance');
+    } else {
+      const distance = get('distance')
+        ? parseDecimalInput(get('distance'), 1)
+        : undefined;
+      if (distance && !distance.ok) {
+        setDecimalError(distance.error.message);
+        return;
+      }
       const minutes = get('travelMinutes');
       const duration = minutes ? parseDuration(minutes) : undefined;
       if (duration && !duration.ok) {
@@ -88,11 +102,9 @@ export function ReusableDialog({
         description: get('description'),
         occurrences: Number(get('occurrences')),
         roundTrip: data.get('roundTrip') === 'on',
-        ...(distance
+        ...(distance?.ok
           ? {
-              distanceKmPerOccurrence: Number(
-                distance.replace(',', '.'),
-              ).toFixed(1),
+              distanceKmPerOccurrence: distance.value,
             }
           : {}),
         ...(duration?.ok ? { travelMinutesPerOccurrence: duration.value } : {}),
@@ -123,6 +135,11 @@ export function ReusableDialog({
             ) : null}
           </DialogHeader>
           <FieldGroup>
+            {decimalError ? (
+              <FieldDescription role="alert" className="text-destructive">
+                {decimalError}
+              </FieldDescription>
+            ) : null}
             {!lockKind && !value ? (
               <Field>
                 <FieldLabel htmlFor="catalog-kind">Tipo</FieldLabel>

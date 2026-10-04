@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { isYearMonth } from '../../domain/calendar';
+import { parseDecimalInput } from '../../domain/decimal';
 import {
   calculateTravel,
   calculateVehicleCost,
@@ -27,6 +28,7 @@ import { refreshQuote, snapshotProfile } from '../../domain/refresh';
 import { applyVariantSelections, changeVariant } from '../../domain/variants';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
+import { decimalInputValue } from '../lib/format';
 
 export interface TravelInput {
   description: string;
@@ -234,6 +236,13 @@ export function useQuoteController({
     allowYearMismatch = false,
   ): 'updated' | 'year-mismatch' | 'invalid' => {
     if (!quote) return 'invalid';
+    const commission = updates.commission?.trim()
+      ? parseDecimalInput(decimalInputValue(updates.commission), 2)
+      : undefined;
+    if (commission && !commission.ok) {
+      appState.setError({ ...commission.error, field: 'commission' });
+      return 'invalid';
+    }
     const date = updates.date ?? quote.date;
     const profileId =
       updates.profileId === undefined
@@ -272,9 +281,7 @@ export function useQuoteController({
       target.profileSnapshot = snapshot?.ok ? snapshot.value : undefined;
       target.mainSite = site ? snapshotSite(site) : undefined;
       if (updates.commission !== undefined)
-        target.commission = updates.commission
-          ? Number(updates.commission).toFixed(2)
-          : undefined;
+        target.commission = commission?.ok ? commission.value : undefined;
     });
     return updated ? 'updated' : 'invalid';
   };
@@ -341,13 +348,11 @@ export function useQuoteController({
 
   const updateChosenPrice = (itemId: string, chosenPrice: string) => {
     if (!quote) return false;
-    const value = chosenPrice.trim();
-    if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
-      appState.setError({
-        code: 'VALIDATION',
-        field: 'chosenPrice',
-        message: 'Il Prezzo scelto deve essere un importo non negativo.',
-      });
+    const value = chosenPrice.trim()
+      ? parseDecimalInput(decimalInputValue(chosenPrice), 2)
+      : undefined;
+    if (value && !value.ok) {
+      appState.setError({ ...value.error, field: 'chosenPrice' });
       return false;
     }
     return appState.mutate((document) => {
@@ -356,7 +361,7 @@ export function useQuoteController({
           document.quotes.find((entry) => entry.id === quote.id)!,
         ).items.find((entry) => entry.id === itemId)!,
       );
-      item.chosenPrice = value ? Number(value).toFixed(2) : undefined;
+      item.chosenPrice = value?.ok ? value.value : undefined;
     });
   };
 
@@ -375,13 +380,15 @@ export function useQuoteController({
         ).referencePrice;
       });
     }
-    if (
-      !referenceAmount ||
-      !referencePeriod ||
-      !Number.isFinite(Number(referenceAmount)) ||
-      Number(referenceAmount) < 0 ||
-      !isYearMonth(referencePeriod)
-    ) {
+    const amount = parseDecimalInput(
+      decimalInputValue(referenceAmount ?? ''),
+      2,
+    );
+    if (!amount.ok) {
+      appState.setError({ ...amount.error, field: 'referencePrice' });
+      return false;
+    }
+    if (!referenceAmount || !referencePeriod || !isYearMonth(referencePeriod)) {
       appState.setError({
         code: 'VALIDATION',
         field: 'referencePrice',
@@ -390,7 +397,7 @@ export function useQuoteController({
       });
       return false;
     }
-    const normalizedAmount = Number(referenceAmount).toFixed(2);
+    const normalizedAmount = amount.value;
     return appState.mutate((document) => {
       const item = touch(
         touch(
@@ -426,16 +433,14 @@ export function useQuoteController({
       });
       return false;
     }
-    if (
-      input.kind === 'expense' &&
-      (!Number.isFinite(Number(input.amount)) || Number(input.amount) < 0)
-    ) {
-      appState.setError({
-        code: 'VALIDATION',
-        field: 'amount',
-        message: 'L’importo della spesa non è valido.',
-      });
-      return false;
+    let amount: string | undefined;
+    if (input.kind === 'expense') {
+      const parsed = parseDecimalInput(decimalInputValue(input.amount), 2);
+      if (!parsed.ok) {
+        appState.setError({ ...parsed.error, field: 'amount' });
+        return false;
+      }
+      amount = parsed.value;
     }
     return appState.mutate((document) => {
       const item = touch(
@@ -455,7 +460,7 @@ export function useQuoteController({
         existing.kind === 'expense'
       ) {
         existing.description = input.description.trim();
-        existing.amount = Number(input.amount).toFixed(2);
+        existing.amount = amount!;
         if (existing.variantOwner) existing.manuallyModified = true;
         touch(existing);
       } else
@@ -471,7 +476,7 @@ export function useQuoteController({
                 ...meta(),
                 kind: 'expense',
                 description: input.description.trim(),
-                amount: Number(input.amount).toFixed(2),
+                amount: amount!,
               },
         );
     });
