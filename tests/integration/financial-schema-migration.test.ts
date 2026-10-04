@@ -1,4 +1,4 @@
-﻿import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -17,7 +17,7 @@ import {
   saveArchive,
 } from '../../src/native/persistence';
 
-describe('migrazione fiscale v10', () => {
+describe('migrazione fiscale allo schema corrente', () => {
   it('migra v9 senza correzioni implicite e conserva correzioni annuali e zero dopo riapertura', async () => {
     const document = createEmptyDocument();
     document.profiles = [createFiscalPreset2026()];
@@ -29,7 +29,7 @@ describe('migrazione fiscale v10', () => {
     await writeFile(path, JSON.stringify(legacy));
     expect(await previewMigration(path)).toMatchObject({
       ok: true,
-      value: { fromVersion: 9, toVersion: 10 },
+      value: { fromVersion: 9, toVersion: 11 },
     });
     const migrated = await migrateArchive(path);
     if (!migrated.ok) throw new Error(migrated.error.message);
@@ -158,7 +158,7 @@ describe('migrazione fiscale v10', () => {
     const preview = await previewMigration(path);
     expect(preview).toMatchObject({
       ok: true,
-      value: { fromVersion: 8, toVersion: 10, blockers: [] },
+      value: { fromVersion: 8, toVersion: 11, blockers: [] },
     });
     if (!preview.ok) throw new Error(preview.error.message);
     expect(preview.value.changes.join(' ')).toContain(
@@ -191,7 +191,7 @@ describe('migrazione fiscale v10', () => {
 
   it('crea e valida documenti correnti senza il contenitore abbandonato', () => {
     const document = createEmptyDocument();
-    expect(document.schemaVersion).toBe(10);
+    expect(document.schemaVersion).toBe(11);
     expect(document).not.toHaveProperty('financialProvisions');
     expect(
       parseDocument({
@@ -268,7 +268,7 @@ describe('migrazione fiscale v10', () => {
       });
       expect(await previewMigration(path)).toMatchObject({
         ok: true,
-        value: { fromVersion: version, toVersion: 10, blockers: [] },
+        value: { fromVersion: version, toVersion: 11, blockers: [] },
       });
       expect(await readFile(path, 'utf8')).toBe(bytes);
       const migrated = await migrateArchive(path);

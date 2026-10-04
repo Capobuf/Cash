@@ -45,12 +45,18 @@ Ogni salvataggio valido incrementa la revisione, conserva la versione precedente
 revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
 automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
 
-Gli archivi schema 1–9 richiedono anteprima e conferma prima della migrazione allo schema 10.
-La migrazione rimuove il saldo bancario manuale e il relativo contenitore annuale, senza
+Gli archivi schema 1–10 richiedono anteprima e conferma prima della migrazione allo schema 11.
+La migrazione 10 → 11 conserva i dati senza escludere automaticamente spese o categorie.
+La migrazione dagli schemi 1–9 rimuove il saldo bancario manuale e il relativo contenitore annuale, senza
 trasferirli altrove. Conserva profili, movimenti, categorie, regole, snapshot FIC, preventivi
 e gli altri dati. Per gli archivi storici elimina anche covered/additions senza creare
 movimenti e aggiunge la categoria di sistema Imposte P.IVA solo se assente.
 Una categoria utente omonima rimane distinta.
+La ricerca dei movimenti include descrizione, importo (anche in formato italiano), data,
+categorie manuali e automatiche e stato di esclusione. “Ignora nei conteggi” conserva la
+spesa nell’archivio e nella lista, ma la esclude da riepiloghi, Sankey e panoramica finanziaria,
+comprese le imposte già pagate. L’opzione sulle categorie si applica anche alle sottocategorie:
+una sola categoria effettiva esclusa basta a escludere l’intero movimento.
 Movimenti e regole assenti vengono letti con liste vuote; le vecchie
 assegnazioni `categoryId` diventano categorie manuali in `categoryIds`. L’apertura non riscrive
 il file: il successivo salvataggio conserva il formato precedente nel consueto backup.

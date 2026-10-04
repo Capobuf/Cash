@@ -418,7 +418,7 @@ describe('pending nella sincronizzazione finanziaria', () => {
       },
     };
     expect(parseDocument(document)).toEqual(document);
-    expect(parseDocument(document).schemaVersion).toBe(10);
+    expect(parseDocument(document).schemaVersion).toBe(11);
   });
 });
 

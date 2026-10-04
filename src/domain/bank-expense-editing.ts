@@ -25,6 +25,7 @@ export function prepareBankExpenseCategory(
   nameInput: string,
   parentId?: string,
   id?: string,
+  excludedFromCalculations?: boolean,
 ): Result<BankExpenseCategory> {
   const existing = id
     ? categories.find((category) => category.id === id)
@@ -82,6 +83,8 @@ export function prepareBankExpenseCategory(
   };
   if (parentId) value.parentId = parentId;
   else delete value.parentId;
+  if (excludedFromCalculations !== undefined)
+    value.excludedFromCalculations = excludedFromCalculations;
   return ok(value);
 }
 

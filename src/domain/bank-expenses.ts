@@ -50,6 +50,61 @@ export function effectiveCategoryIds(
   ];
 }
 
+export function isBankExpenseExcluded(
+  expense: BankExpense,
+  categories: BankExpenseCategory[],
+  rules: BankExpenseRule[] = [],
+): boolean {
+  if (expense.excludedFromCalculations) return true;
+  return effectiveCategoryIds(expense, rules).some((id) => {
+    const category = categories.find((item) => item.id === id);
+    return Boolean(
+      category?.excludedFromCalculations ||
+      (category?.parentId &&
+        categories.find((item) => item.id === category.parentId)
+          ?.excludedFromCalculations),
+    );
+  });
+}
+
+const italianAmount = new Intl.NumberFormat('it-IT', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: 'always',
+});
+const italianDate = new Intl.DateTimeFormat('it-IT', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+function bankExpenseSearchText(
+  expense: BankExpense,
+  categories: BankExpenseCategory[],
+  rules: BankExpenseRule[],
+): string {
+  const [year, month, day] = expense.date.split('-');
+  return [
+    expense.description,
+    expense.amount,
+    expense.amount.replace('.', ','),
+    `${italianAmount.format(Number(expense.amount))} €`,
+    expense.date,
+    `${day}/${month}/${year}`,
+    italianDate.format(new Date(`${expense.date}T00:00:00Z`)),
+    ...effectiveCategoryIds(expense, rules).map((id) =>
+      bankCategoryLabel(categories, id),
+    ),
+    isBankExpenseExcluded(expense, categories, rules)
+      ? 'Esclusa dai conteggi Ignora nei conteggi'
+      : 'Inclusa nei conteggi',
+  ]
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('it');
+}
+
 export function bankCategoryLabel(
   categories: BankExpenseCategory[],
   id: string,
@@ -159,12 +214,13 @@ export function filterBankExpenses(
       .filter((item) => item.parentId === category)
       .map((item) => item.id),
   ]);
-  const needle = query.trim().toLocaleLowerCase('it');
+  const needle = query.trim().toLocaleLowerCase('it').replace(/\s+/g, ' ');
   return expenses
     .filter((expense) => {
       if (
         expense.date.slice(0, 4) !== String(year) ||
-        !expense.description.toLocaleLowerCase('it').includes(needle)
+        (needle &&
+          !bankExpenseSearchText(expense, categories, rules).includes(needle))
       )
         return false;
       const effective = effectiveCategoryIds(expense, rules);
@@ -182,7 +238,9 @@ export function summarizeBankExpenses(
   rules: BankExpenseRule[] = [],
 ) {
   const annual = expenses.filter(
-    (expense) => expense.date.slice(0, 4) === String(year),
+    (expense) =>
+      expense.date.slice(0, 4) === String(year) &&
+      !isBankExpenseExcluded(expense, categories, rules),
   );
   const total = annual.reduce((sum, expense) => sum.plus(expense.amount), d(0));
   const percentage = (amount: string) =>

@@ -46,7 +46,7 @@ afterEach(async () => {
   );
 });
 
-describe('XLSX bancario nativo e archivio v9', () => {
+describe('XLSX bancario nativo e archivio corrente', () => {
   it('legge un vero XLSX con preambolo, date Excel/testo, descrizioni complete/fallback, stati diversi e primo foglio', async () => {
     const { book, sheet } = workbook();
     sheet.addRow([
@@ -197,7 +197,7 @@ describe('XLSX bancario nativo e archivio v9', () => {
     });
     expect(await previewMigration(path)).toMatchObject({
       ok: true,
-      value: { fromVersion: 5, toVersion: 10, blockers: [] },
+      value: { fromVersion: 5, toVersion: 11, blockers: [] },
     });
     const migrated = await migrateArchive(path);
     if (!migrated.ok) throw new Error(migrated.error.message);

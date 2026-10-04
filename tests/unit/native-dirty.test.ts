@@ -189,7 +189,7 @@ it.each(['open', 'create', 'migrate'] as const)(
       native.previewMigration.mockResolvedValue(
         ok({
           fromVersion: 9,
-          toVersion: 10,
+          toVersion: 11,
           changes: ['Schema'],
           blockers: [],
           backupPath: 'New.backup.json',
@@ -341,7 +341,7 @@ it.each([0, 1])(
     native.previewMigration.mockResolvedValue(
       ok({
         fromVersion: 9,
-        toVersion: 10,
+        toVersion: 11,
         changes: ['Schema'],
         blockers: [],
         backupPath: 'Cash.backup.json',

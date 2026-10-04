@@ -5,10 +5,15 @@ import {
   bankCategoryLabel,
   effectiveCategoryIds,
   filterBankExpenses,
+  isBankExpenseExcluded,
 } from '../../domain/bank-expenses';
 import { deleteBankExpenses } from '../../domain/bank-expense-editing';
 import { d, money } from '../../domain/decimal';
-import type { BankExpense, CashDocument } from '../../domain/model';
+import {
+  nowIso,
+  type BankExpense,
+  type CashDocument,
+} from '../../domain/model';
 import type { AppState } from '../state';
 import { BankCategoryOptions } from '@/components/BankCategoryOptions';
 import { BankManualCategoriesDialog } from '@/components/BankManualCategoriesDialog';
@@ -114,7 +119,8 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
             </label>
             <Input
               id="bank-search"
-              placeholder="Cerca nella descrizione"
+              type="search"
+              placeholder="Cerca movimenti..."
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
@@ -250,6 +256,7 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
                 <TableHead>Descrizione</TableHead>
                 <TableHead className="text-right">Importo</TableHead>
                 <TableHead>Categorie</TableHead>
+                <TableHead>Conteggi</TableHead>
                 <TableHead>Azioni</TableHead>
               </TableRow>
             </TableHeader>
@@ -261,6 +268,11 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
                 );
                 const auto = automaticCategoryIds(
                   expense,
+                  doc.bankExpenseRules,
+                );
+                const excluded = isBankExpenseExcluded(
+                  expense,
+                  doc.bankExpenseCategories,
                   doc.bankExpenseRules,
                 );
                 return (
@@ -331,6 +343,38 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
                         Modifica categorie
                       </Button>
                     </TableCell>
+                    <TableCell className="min-w-44 whitespace-normal">
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            aria-label={`Ignora nei conteggi ${expense.description} del ${dateIt(expense.date)}`}
+                            checked={Boolean(expense.excludedFromCalculations)}
+                            disabled={readOnly}
+                            onCheckedChange={(checked) => {
+                              appState.mutate((document) => {
+                                const row = document.bankExpenses.find(
+                                  (item) => item.id === expense.id,
+                                );
+                                if (!row) return;
+                                row.excludedFromCalculations = checked === true;
+                                row.updatedAt = nowIso();
+                              });
+                            }}
+                          />
+                          Ignora nei conteggi
+                        </label>
+                        <Badge variant={excluded ? 'secondary' : 'outline'}>
+                          {excluded
+                            ? 'Esclusa dai conteggi'
+                            : 'Inclusa nei conteggi'}
+                        </Badge>
+                        {excluded && !expense.excludedFromCalculations ? (
+                          <p className="text-xs text-muted-foreground">
+                            Esclusione derivata dalla categoria.
+                          </p>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         <Button
@@ -369,7 +413,7 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
               {!rows.length ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="py-12 text-center text-muted-foreground"
                   >
                     {doc.bankExpenses.length

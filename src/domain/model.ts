@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 export interface EntityMeta {
   id: string;
@@ -417,12 +417,14 @@ export interface BankExpense extends EntityMeta {
   description: string;
   amount: DecimalString;
   categoryIds: string[];
+  excludedFromCalculations?: boolean;
 }
 
 export interface BankExpenseCategory extends EntityMeta {
   name: string;
   parentId?: string;
   systemRole?: 'vat_taxes';
+  excludedFromCalculations?: boolean;
 }
 
 export interface BankExpenseRule extends EntityMeta {

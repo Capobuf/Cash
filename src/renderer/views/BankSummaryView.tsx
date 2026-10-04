@@ -141,7 +141,7 @@ export function BankSummaryView({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Spese importate nell’anno
+            Spese incluse nei conteggi nell’anno
           </CardContent>
         </Card>
         <Card>
@@ -177,8 +177,8 @@ export function BankSummaryView({
       </div>
       {!summary.count ? (
         <p className="text-sm text-muted-foreground">
-          Nessuna spesa nell’anno selezionato. Puoi importare un file XLSX o CSV
-          dalla pagina Movimenti.
+          Nessuna spesa inclusa nei conteggi nell’anno selezionato. Puoi gestire
+          le esclusioni o importare un file XLSX o CSV dalla pagina Movimenti.
         </p>
       ) : null}
       <Card

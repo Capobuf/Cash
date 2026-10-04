@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -62,6 +63,7 @@ export function BankCategoriesView({
     id?: string;
     parentId?: string;
     name: string;
+    excludedFromCalculations?: boolean;
   }>();
   const [deleting, setDeleting] = useState<BankExpenseCategory>();
   const [error, setError] = useState<string>();
@@ -81,6 +83,12 @@ export function BankCategoriesView({
     ),
   );
   const systemCategory = editingCategory?.systemRole === 'vat_taxes';
+  const excludedByParent = Boolean(
+    editing?.parentId &&
+    doc.bankExpenseCategories.find(
+      (category) => category.id === editing.parentId,
+    )?.excludedFromCalculations,
+  );
   const openEditor = (value: NonNullable<typeof editing>) => {
     setError(undefined);
     setEditing(value);
@@ -92,6 +100,7 @@ export function BankCategoriesView({
       editing.name,
       editing.parentId,
       editing.id,
+      Boolean(editing.excludedFromCalculations),
     );
     if (!prepared.ok) {
       setError(prepared.error.message);
@@ -139,12 +148,12 @@ export function BankCategoriesView({
         <Button
           variant="ghost"
           size="sm"
-          aria-label={`${category.systemRole ? 'Rinomina' : 'Modifica'} ${category.name}`}
+          aria-label={`Modifica ${category.name}`}
           disabled={readOnly}
           onClick={() => openEditor(category)}
         >
           <Pencil />
-          {category.systemRole ? 'Rinomina' : 'Modifica'}
+          Modifica
         </Button>
         <Button
           variant="ghost"
@@ -212,6 +221,9 @@ export function BankCategoriesView({
               {category.systemRole ? (
                 <Badge variant="secondary">Sistema · Imposte P.IVA</Badge>
               ) : null}
+              {category.excludedFromCalculations ? (
+                <Badge variant="secondary">Esclusa dai conteggi</Badge>
+              ) : null}
             </CardTitle>
             {actions(category)}
           </CardHeader>
@@ -222,9 +234,14 @@ export function BankCategoriesView({
                   key={child.id}
                   className="ml-4 flex flex-wrap items-center justify-between gap-3 border-l-2 py-2 pl-4"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span>{child.name}</span>
                     <Badge variant="outline">Sottocategoria</Badge>
+                    {child.excludedFromCalculations ? (
+                      <Badge variant="secondary">Esclusa dai conteggi</Badge>
+                    ) : category.excludedFromCalculations ? (
+                      <Badge variant="outline">Esclusa dal padre</Badge>
+                    ) : null}
                   </div>
                   {actions(child)}
                 </div>
@@ -381,9 +398,7 @@ export function BankCategoriesView({
             <DialogHeader>
               <DialogTitle>
                 {editing?.id
-                  ? systemCategory
-                    ? 'Rinomina categoria'
-                    : 'Modifica categoria'
+                  ? 'Modifica categoria'
                   : editing?.parentId
                     ? 'Nuova sottocategoria'
                     : 'Nuova categoria'}
@@ -453,6 +468,38 @@ export function BankCategoriesView({
                     ? 'La categoria contiene sottocategorie: spostale prima di cambiare il padre.'
                     : 'Scegli una categoria principale per creare o spostare una sottocategoria.'}
               </p>
+            </div>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox
+                  aria-label="Ignora nei conteggi"
+                  aria-describedby="bank-category-exclusion-help"
+                  checked={Boolean(editing?.excludedFromCalculations)}
+                  disabled={readOnly}
+                  onCheckedChange={(checked) => {
+                    if (editing)
+                      setEditing({
+                        ...editing,
+                        excludedFromCalculations: checked === true,
+                      });
+                  }}
+                />
+                Ignora nei conteggi
+              </label>
+              <p
+                id="bank-category-exclusion-help"
+                className="text-xs text-muted-foreground"
+              >
+                {editing?.parentId
+                  ? 'Esclude dai conteggi le spese assegnate a questa sottocategoria.'
+                  : 'Esclude dai conteggi le spese assegnate a questa categoria e alle sue sottocategorie.'}
+              </p>
+              {excludedByParent ? (
+                <p className="text-sm text-muted-foreground">
+                  Esclusione ereditata dalla categoria principale, anche se
+                  questa opzione è disattivata.
+                </p>
+              ) : null}
             </div>
             {error ? (
               <Alert variant="destructive">

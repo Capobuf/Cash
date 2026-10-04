@@ -40,7 +40,7 @@ const snapshot: FicFinancialSnapshot = {
   receivedDocuments: [],
 };
 
-describe('archivio finanziario v9', () => {
+describe('archivio finanziario corrente', () => {
   it('apre snapshot preesistenti senza entityId e conserva gli ID opzionali al salvataggio e riapertura', async () => {
     const document = createEmptyDocument();
     document.financialSnapshot = structuredClone(snapshot);
@@ -64,7 +64,7 @@ describe('archivio finanziario v9', () => {
       ok: true,
       value: {
         document: {
-          schemaVersion: 10,
+          schemaVersion: 11,
           financialSnapshot: document.financialSnapshot,
         },
       },
@@ -113,19 +113,19 @@ describe('archivio finanziario v9', () => {
     await writeFile(path, JSON.stringify(document));
     expect(await previewMigration(path)).toMatchObject({
       ok: true,
-      value: { fromVersion: 4, toVersion: 10, blockers: [] },
+      value: { fromVersion: 4, toVersion: 11, blockers: [] },
     });
     const migrated = await migrateArchive(path);
     expect(migrated.ok).toBe(true);
     if (!migrated.ok) throw new Error(migrated.error.message);
-    expect(migrated.value.document).toEqual({ ...document, schemaVersion: 10 });
+    expect(migrated.value.document).toEqual({ ...document, schemaVersion: 11 });
     expect(migrated.value.document).not.toHaveProperty('financialSnapshot');
     expect(JSON.parse(await readFile(backupPathFor(path), 'utf8'))).toEqual(
       document,
     );
   });
 
-  it('migra anche v3 non ambiguo fino a v9', async () => {
+  it('migra anche v3 non ambiguo fino allo schema corrente', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'cash-financial-'));
     const path = join(dir, 'v3.json');
     await writeFile(
@@ -138,7 +138,7 @@ describe('archivio finanziario v9', () => {
     );
     expect(await migrateArchive(path)).toMatchObject({
       ok: true,
-      value: { document: { schemaVersion: 10 } },
+      value: { document: { schemaVersion: 11 } },
     });
   });
 

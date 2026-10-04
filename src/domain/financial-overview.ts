@@ -1,4 +1,8 @@
-import { effectiveCategoryIds, summarizeBankExpenses } from './bank-expenses';
+import {
+  effectiveCategoryIds,
+  isBankExpenseExcluded,
+  summarizeBankExpenses,
+} from './bank-expenses';
 import {
   aggregateCollectionsByClient,
   annualPlannedBusinessCosts,
@@ -59,6 +63,11 @@ export function calculateFinancialOverview(
       .filter(
         (expense) =>
           expense.date.slice(0, 4) === String(year) &&
+          !isBankExpenseExcluded(
+            expense,
+            doc.bankExpenseCategories,
+            doc.bankExpenseRules,
+          ) &&
           taxCategoryId !== undefined &&
           effectiveCategoryIds(expense, doc.bankExpenseRules).includes(
             taxCategoryId,

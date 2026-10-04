@@ -166,7 +166,7 @@ export async function previewMigration(
     return err({
       code: 'VALIDATION',
       source: 'archive',
-      message: 'La migrazione supporta soltanto gli schemi da 1 a 9.',
+      message: `La migrazione supporta soltanto gli schemi da 1 a ${CURRENT_SCHEMA_VERSION - 1}.`,
     });
   const changes =
     fromVersion === 1
@@ -200,8 +200,12 @@ export async function previewMigration(
     changes.push(
       'Aggiorna allo schema 9 rimuovendo il saldo bancario manuale e il relativo contenitore annuale, non più utilizzati dalla panoramica finanziaria. Conserva profili, movimenti, categorie, regole, snapshot FIC, preventivi e gli altri dati.',
     );
+  if (fromVersion < 10)
+    changes.push(
+      'Aggiorna allo schema 10 per consentire un totale fiscale annuale facoltativo del commercialista. Non crea correzioni, non ricostruisce F24 e conserva i dati esistenti.',
+    );
   changes.push(
-    'Aggiorna allo schema 10 per consentire un totale fiscale annuale facoltativo del commercialista. Non crea correzioni, non ricostruisce F24 e conserva i dati esistenti.',
+    'Aggiorna allo schema 11 per consentire l’esclusione di spese e categorie dai conteggi. Conserva i dati esistenti e non esclude automaticamente alcun movimento o categoria.',
   );
   const bytes = await readFile(path);
   const raw = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
@@ -405,6 +409,15 @@ function migrateLegacyDocument(
   raw: Record<string, unknown>,
   fromVersion: number,
 ): Result<CashDocument> {
+  if (fromVersion === 10) {
+    const migrated = cashDocumentSchema.safeParse({
+      ...raw,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+    });
+    return migrated.success
+      ? ok(migrated.data)
+      : err(validationErrorFromIssues(migrated.error.issues));
+  }
   const v3 =
     fromVersion === 1
       ? migrateV2Record(migrateV1(raw))

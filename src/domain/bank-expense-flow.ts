@@ -1,4 +1,8 @@
-import { bankCategoryLabel, effectiveCategoryIds } from './bank-expenses';
+import {
+  bankCategoryLabel,
+  effectiveCategoryIds,
+  isBankExpenseExcluded,
+} from './bank-expenses';
 import { d, money, sumMoney } from './decimal';
 import type { CashDocument } from './model';
 
@@ -9,7 +13,13 @@ export function buildBankExpenseFlow(
   const nodes: { key: string; name: string; amount: string }[] = [];
   const links: { source: number; target: number; value: number }[] = [];
   const expenses = doc.bankExpenses.filter(
-    (expense) => expense.date.slice(0, 4) === String(year),
+    (expense) =>
+      expense.date.slice(0, 4) === String(year) &&
+      !isBankExpenseExcluded(
+        expense,
+        doc.bankExpenseCategories,
+        doc.bankExpenseRules,
+      ),
   );
   if (!expenses.length) return { nodes, links };
   const categories = new Map(

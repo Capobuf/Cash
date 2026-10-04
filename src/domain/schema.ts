@@ -642,7 +642,11 @@ const bankExpenseSchema = z.preprocess(
           : row.categoryIds;
     return { ...row, categoryIds };
   },
-  bankExpenseRowSchema.extend({ ...entity, categoryIds: z.array(uuid) }),
+  bankExpenseRowSchema.extend({
+    ...entity,
+    categoryIds: z.array(uuid),
+    excludedFromCalculations: z.boolean().optional(),
+  }),
 );
 
 export const cashDocumentSchema: z.ZodType<CashDocument> = z
@@ -654,6 +658,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
         name: z.string().trim().min(1),
         parentId: uuid.optional(),
         systemRole: z.literal('vat_taxes').optional(),
+        excludedFromCalculations: z.boolean().optional(),
       }),
     ),
     bankExpenseRules: z.array(bankExpenseRuleSchema).default([]),

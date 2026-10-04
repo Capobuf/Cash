@@ -18,7 +18,7 @@ import {
 } from '../../src/native/persistence';
 
 describe('persistenza atomica', () => {
-  it.each([2, 9])(
+  it.each([2, 9, 10])(
     'ripristina il backup legacy v%s dopo la migrazione conservando le copie originali',
     async (schemaVersion) => {
       const dir = await mkdtemp(join(tmpdir(), 'cash-legacy-restore-'));
@@ -50,7 +50,7 @@ describe('persistenza atomica', () => {
       const restored = await restoreBackup(path, migrated.value.token);
       if (!restored.ok) throw new Error(restored.error.message);
       expect(restored.value.document).toMatchObject({
-        schemaVersion: 10,
+        schemaVersion: 11,
         revision: 1,
         profiles: document.profiles,
         settings: { fuelTerritory: 'Lazio' },
@@ -183,7 +183,7 @@ describe('persistenza atomica', () => {
     const migrated = await migrateArchive(path);
     expect(migrated.ok).toBe(true);
     if (!migrated.ok) return;
-    expect(migrated.value.document?.schemaVersion).toBe(10);
+    expect(migrated.value.document?.schemaVersion).toBe(11);
     expect(migrated.value.document?.settings.fic).toEqual({
       enabled: false,
       legacyReferences: { companyId: '10', productId: '20' },
