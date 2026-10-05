@@ -652,6 +652,25 @@ describe('esito delle modifiche ai preventivi', () => {
     ).toMatchObject({ amount: '20.25' });
   });
 
+  it('salva una voce senza nome e una trasferta senza descrizione', async () => {
+    const { controller, item, state } = setup();
+
+    expect(
+      await controller.saveTravel(item.id, {
+        description: '   ',
+        roundTrip: true,
+        occurrences: 1,
+      }),
+    ).toBe(true);
+    expect(state.document!.quotes[0]!.items[0]!.subItems.at(-1)).toMatchObject({
+      kind: 'travel',
+      description: '',
+    });
+
+    expect(controller.addItem('   ')).toBe(true);
+    expect(state.document!.quotes[0]!.items.at(-1)?.name).toBe('');
+  });
+
   it('non segnala aggiornamento o seleziona un nuovo preventivo in sola lettura', () => {
     const test = setup();
     test.state.acceptNativeSession({

@@ -107,6 +107,82 @@ describe('periodi mensili', () => {
 });
 
 describe('schema archivio corrente', () => {
+  it('accetta nomi voce e descrizioni trasferta vuoti, ma non descrizioni di attività o spese', () => {
+    const document = createEmptyDocument();
+    const item = {
+      ...meta(),
+      name: '',
+      subItems: [
+        {
+          ...meta(),
+          kind: 'travel' as const,
+          description: '',
+          roundTrip: true,
+          occurrences: 1,
+        },
+      ],
+      variantGroups: [],
+      variantSelections: [],
+    };
+    document.quotes.push({
+      ...meta(),
+      date: '2026-10-05',
+      items: [item],
+      snapshotRevision: 0,
+      exportAttempts: [],
+    });
+    document.catalog.subItems.push({
+      ...meta(),
+      kind: 'travel',
+      description: '',
+      roundTrip: true,
+      occurrences: 1,
+    });
+    document.catalog.templates.push({
+      ...meta(),
+      name: 'Modello',
+      items: [
+        {
+          ...meta(),
+          name: 'Voce',
+          subItems: [],
+          variantGroups: [
+            {
+              ...meta(),
+              name: 'Modalità',
+              options: [
+                {
+                  ...meta(),
+                  name: 'In presenza',
+                  subItems: [
+                    {
+                      kind: 'travel',
+                      description: '',
+                      roundTrip: true,
+                      occurrences: 1,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(cashDocumentSchema.safeParse(document).success).toBe(true);
+
+    for (const kind of ['time', 'expense'] as const) {
+      const invalid = structuredClone(document);
+      invalid.quotes[0]!.items[0]!.subItems = [
+        kind === 'time'
+          ? { ...meta(), kind, description: '', minutes: 30 }
+          : { ...meta(), kind, description: '', amount: '10.00' },
+      ];
+      expect(cashDocumentSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
   it('richiede una sola categoria di sistema e conserva il significato dopo rename', () => {
     const doc = createEmptyDocument();
     expect(doc.bankExpenseCategories).toHaveLength(1);

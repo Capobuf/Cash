@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   ReceiptText,
+  Trash2,
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { calculateItem } from '../../domain/calculations';
@@ -17,6 +18,16 @@ import type {
   VariantGroup,
 } from '../../domain/model';
 import { WorkItemRow } from '@/components/WorkItemRow';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -86,6 +97,8 @@ export function QuoteItemCard({
   actions: QuoteItemActions;
 }) {
   const analysis = hourly ? calculateItem(item, hourly) : undefined;
+  const displayName = item.name.trim() || 'Voce senza nome';
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(
     Boolean(item.referencePrice),
   );
@@ -117,7 +130,7 @@ export function QuoteItemCard({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`Apri o chiudi ${item.name}`}
+              aria-label={`Apri o chiudi ${displayName}`}
               className="group mt-0.5"
             />
           }
@@ -127,7 +140,7 @@ export function QuoteItemCard({
 
         <div className="min-w-[240px] flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold">{item.name}</h3>
+            <h3 className="font-semibold">{displayName}</h3>
             {analysis?.blockers.length ? (
               <Badge variant="destructive">Da completare</Badge>
             ) : null}
@@ -215,38 +228,28 @@ export function QuoteItemCard({
           </div>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Azioni per ${item.name}`}
-              />
-            }
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Rinomina ${displayName}`}
+            title="Rinomina voce"
+            onClick={() => actions.rename(item)}
           >
-            <MoreHorizontal />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => actions.rename(item)}>
-              <Pencil />
-              Rinomina
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() =>
-                actions.requestDelete({
-                  kind: 'item',
-                  id: item.id,
-                  label: item.name,
-                })
-              }
-            >
-              Elimina voce
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <Pencil />
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="icon-sm"
+            aria-label={`Elimina ${displayName}`}
+            title="Elimina voce"
+            onClick={() => setDeleteConfirmationOpen(true)}
+          >
+            <Trash2 />
+          </Button>
+        </div>
       </div>
 
       <CollapsibleContent>
@@ -308,7 +311,7 @@ export function QuoteItemCard({
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              aria-label={`Azioni per ${sub.description}`}
+                              aria-label={`Azioni per ${sub.description.trim() || 'Trasferta'}`}
                             />
                           }
                         >
@@ -332,7 +335,7 @@ export function QuoteItemCard({
                               actions.requestDelete({
                                 kind: 'sub',
                                 id: `${item.id}:${sub.id}`,
-                                label: sub.description,
+                                label: sub.description.trim() || 'Trasferta',
                               })
                             }
                           >
@@ -420,6 +423,37 @@ export function QuoteItemCard({
           </section>
         </CardContent>
       </CollapsibleContent>
+
+      <AlertDialog
+        open={deleteConfirmationOpen}
+        onOpenChange={setDeleteConfirmationOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare questa voce?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Stai per eliminare “{displayName}” e tutte le sue attività, spese
+              e trasferte. Nel passaggio successivo dovrai confermare di nuovo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setDeleteConfirmationOpen(false);
+                actions.requestDelete({
+                  kind: 'item',
+                  id: item.id,
+                  label: displayName,
+                });
+              }}
+            >
+              Continua
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Collapsible>
   );
 }

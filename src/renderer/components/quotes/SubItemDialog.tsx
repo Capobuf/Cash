@@ -255,13 +255,15 @@ export function SubItemDialog({
             </DialogHeader>
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="sub-description">Descrizione</FieldLabel>
+                <FieldLabel htmlFor="sub-description">
+                  Descrizione{kind === 'travel' ? ' (opzionale)' : ''}
+                </FieldLabel>
                 <Input
                   id="sub-description"
                   name="description"
                   defaultValue={sub?.description}
                   autoFocus
-                  required
+                  required={kind !== 'travel'}
                 />
               </Field>
               {kind === 'time' ? (

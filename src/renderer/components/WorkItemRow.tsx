@@ -35,6 +35,7 @@ export function WorkItemRow({
   className?: string;
 }) {
   const Icon = icons[kind];
+  const displayDescription = description.trim() || labels[kind];
   const content = (
     <>
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -42,7 +43,7 @@ export function WorkItemRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span className="truncate font-medium">{description}</span>
+          <span className="truncate font-medium">{displayDescription}</span>
           {kind !== 'time' ? (
             <Badge variant="outline">{labels[kind]}</Badge>
           ) : null}
@@ -70,7 +71,7 @@ export function WorkItemRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-          title={`Modifica ${description}`}
+          title={`Modifica ${displayDescription}`}
           onClick={onClick}
         >
           {content}

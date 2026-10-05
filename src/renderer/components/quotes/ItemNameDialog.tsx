@@ -37,13 +37,12 @@ export function ItemNameDialog({
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
           <Field>
-            <FieldLabel htmlFor="item-name">Nome voce</FieldLabel>
+            <FieldLabel htmlFor="item-name">Nome voce (opzionale)</FieldLabel>
             <Input
               id="item-name"
               name="name"
               defaultValue={initial}
               autoFocus
-              required
             />
           </Field>
           <DialogFooter>

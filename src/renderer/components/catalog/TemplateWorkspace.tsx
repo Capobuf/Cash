@@ -71,6 +71,7 @@ export function TemplateWorkspace({
   const [baseEditor, setBaseEditor] = useState<BaseEditor>();
   const [definitionEditor, setDefinitionEditor] = useState<DefinitionEditor>();
   const [pickerItemIndex, setPickerItemIndex] = useState<number>();
+  const [focusedItemId, setFocusedItemId] = useState<string>();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initialDraft);
 
@@ -207,7 +208,8 @@ export function TemplateWorkspace({
             autoFocus
           />
           <FieldDescription>
-            Nome con cui lo troverai nel Catalogo.
+            Nome con cui lo troverai nel Catalogo. Le modifiche valgono solo per
+            i preventivi creati successivamente.
           </FieldDescription>
         </Field>
 
@@ -217,6 +219,7 @@ export function TemplateWorkspace({
               key={item.id}
               item={item}
               itemIndex={itemIndex}
+              focusName={focusedItemId === item.id}
               canDelete={draft.items.length > 1}
               hasReusableItems={reusableItems.length > 0}
               onRename={(name) =>
@@ -266,19 +269,21 @@ export function TemplateWorkspace({
 
           <Button
             variant="outline"
-            onClick={() =>
+            onClick={() => {
+              const item = {
+                ...meta(),
+                name: '',
+                subItems: [],
+                variantGroups: [],
+              };
               updateDraft((next) => {
-                next.items.push({
-                  ...meta(),
-                  name: '',
-                  subItems: [],
-                  variantGroups: [],
-                });
-              })
-            }
+                next.items.push(item);
+              });
+              setFocusedItemId(item.id);
+            }}
           >
             <Plus />
-            Aggiungi voce
+            Aggiungi nuova voce
           </Button>
         </div>
       </div>

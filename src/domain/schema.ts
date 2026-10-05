@@ -200,6 +200,7 @@ const baseSub = {
 const quoteTravelSchema = z
   .object({
     ...baseSub,
+    description: z.string(),
     kind: z.literal('travel'),
     departure: siteSnapshotSchema.optional(),
     destination: siteSnapshotSchema.optional(),
@@ -258,7 +259,7 @@ export const quoteSubItemSchema = z.discriminatedUnion('kind', [
 
 const reusableTravelFields = {
   kind: z.literal('travel'),
-  description: nonBlank,
+  description: z.string(),
   roundTrip: z.boolean(),
   occurrences: z.number().int().positive(),
   distanceKmPerOccurrence: distance.optional(),
@@ -441,7 +442,7 @@ const priceReferenceSchema = z.object({
 const quoteItemSchema = z
   .object({
     ...entity,
-    name: nonBlank,
+    name: z.string(),
     subItems: z.array(quoteSubItemSchema),
     variantGroups: variantGroupsSchema,
     variantSelections: z.array(z.object({ groupId: uuid, optionId: uuid })),

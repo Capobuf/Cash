@@ -416,17 +416,23 @@ export function DeleteDialog({
     <AlertDialog open={Boolean(target)} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Eliminare questo elemento?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {target?.kind === 'item'
+              ? 'Confermare definitivamente?'
+              : 'Eliminare questo elemento?'}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            {target?.label
-              ? `“${target.label}” verrà eliminato dall’archivio.`
-              : 'L’operazione aggiornerà l’archivio corrente.'}
+            {target?.kind === 'item'
+              ? `La voce “${target.label ?? 'senza nome'}” verrà eliminata definitivamente dal preventivo.`
+              : target?.label
+                ? `“${target.label}” verrà eliminato dall’archivio.`
+                : 'L’operazione aggiornerà l’archivio corrente.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Annulla</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={onConfirm}>
-            Elimina
+            {target?.kind === 'item' ? 'Elimina definitivamente' : 'Elimina'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

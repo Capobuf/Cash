@@ -5,6 +5,7 @@ import {
   Layers3,
   MapPin,
   MoreHorizontal,
+  Pencil,
   Plus,
   ReceiptText,
   Trash2,
@@ -46,11 +47,12 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { eur, hours } from '@/lib/format';
-import { type Kind, reusableDetail } from './ReusableDialog';
+import { kindLabel, type Kind, reusableDetail } from './ReusableDialog';
 
 export function TemplateItemCard({
   item,
   itemIndex,
+  focusName = false,
   canDelete,
   hasReusableItems,
   onRename,
@@ -64,6 +66,7 @@ export function TemplateItemCard({
 }: {
   item: TemplateItem;
   itemIndex: number;
+  focusName?: boolean;
   canDelete: boolean;
   hasReusableItems: boolean;
   onRename: (name: string) => void;
@@ -98,6 +101,7 @@ export function TemplateItemCard({
               onChange={(event) => onRename(event.target.value)}
               placeholder="es. Configurazione server"
               className="h-9 font-medium"
+              autoFocus={focusName}
             />
           </Field>
         </div>
@@ -117,18 +121,16 @@ export function TemplateItemCard({
         <section className="space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-medium">Sempre incluso</h3>
+              <h3 className="text-sm font-medium">Attività e costi</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Attività e costi presenti indipendentemente dalle varianti.
+                Elementi inseriti ogni volta che usi questo template.
               </p>
             </div>
-            {item.subItems.length ? (
-              <AddContentMenu
-                hasCatalog={hasReusableItems}
-                onAdd={onAddSub}
-                onAddCatalog={onAddReusable}
-              />
-            ) : null}
+            <TemplateContentActions
+              hasCatalog={hasReusableItems}
+              onAdd={onAddSub}
+              onAddCatalog={onAddReusable}
+            />
           </div>
 
           {item.subItems.length ? (
@@ -140,23 +142,28 @@ export function TemplateItemCard({
                   description={sub.description}
                   detail={reusableDetail(sub)}
                   onClick={() => onEditSub(index)}
+                  action={
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Modifica ${sub.description.trim() || kindLabel(sub.kind)}`}
+                      title="Modifica elemento"
+                      onClick={() => onEditSub(index)}
+                    >
+                      <Pencil />
+                    </Button>
+                  }
                 />
               ))}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed px-4 py-4 text-sm">
-              <p className="font-medium">Nessun elemento sempre incluso.</p>
+              <p className="font-medium">Nessuna attività o costo.</p>
               <p className="mt-1 text-muted-foreground">
                 Aggiungi un’attività, una spesa o una trasferta che fa sempre
                 parte di questa voce.
               </p>
-              <div className="mt-3">
-                <AddContentMenu
-                  hasCatalog={hasReusableItems}
-                  onAdd={onAddSub}
-                  onAddCatalog={onAddReusable}
-                />
-              </div>
             </div>
           )}
         </section>
@@ -224,6 +231,32 @@ export function TemplateItemCard({
         </Collapsible>
       </CardContent>
     </Card>
+  );
+}
+
+function TemplateContentActions({
+  onAdd,
+  onAddCatalog,
+  hasCatalog = false,
+}: {
+  onAdd: (kind: Kind) => void;
+  onAddCatalog?: () => void;
+  hasCatalog?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" variant="outline" onClick={() => onAdd('time')}>
+        <Plus />
+        Aggiungi attività
+      </Button>
+      <AddContentMenu
+        label="Aggiungi altro"
+        includeTime={false}
+        hasCatalog={hasCatalog}
+        onAdd={onAdd}
+        onAddCatalog={onAddCatalog}
+      />
+    </div>
   );
 }
 
@@ -467,6 +500,24 @@ function TemplateVariants({
                                     definitionIndex,
                                   )
                                 }
+                                action={
+                                  <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    aria-label={`Modifica ${definition.description.trim() || kindLabel(definition.kind)}`}
+                                    title="Modifica elemento"
+                                    onClick={() =>
+                                      onDefinition(
+                                        groupIndex,
+                                        optionIndex,
+                                        definitionIndex,
+                                      )
+                                    }
+                                  >
+                                    <Pencil />
+                                  </Button>
+                                }
                               />
                             ),
                           )}
@@ -478,7 +529,7 @@ function TemplateVariants({
                         </p>
                       )}
 
-                      <AddContentMenu
+                      <TemplateContentActions
                         onAdd={(kind) =>
                           onDefinition(groupIndex, optionIndex, undefined, kind)
                         }
@@ -519,22 +570,28 @@ function AddContentMenu({
   onAdd,
   onAddCatalog,
   hasCatalog = false,
+  includeTime = true,
+  label = 'Aggiungi',
 }: {
   onAdd: (kind: Kind) => void;
   onAddCatalog?: () => void;
   hasCatalog?: boolean;
+  includeTime?: boolean;
+  label?: string;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button size="sm" />}>
         <Plus />
-        Aggiungi <ChevronDown />
+        {label} <ChevronDown />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => onAdd('time')}>
-          <Clock3 />
-          Attività
-        </DropdownMenuItem>
+        {includeTime ? (
+          <DropdownMenuItem onClick={() => onAdd('time')}>
+            <Clock3 />
+            Attività
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onClick={() => onAdd('expense')}>
           <ReceiptText />
           Spesa

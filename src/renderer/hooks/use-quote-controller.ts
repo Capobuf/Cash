@@ -354,7 +354,7 @@ export function useQuoteController({
   };
 
   const addItem = (name: string) => {
-    if (!quote || !name.trim()) return false;
+    if (!quote) return false;
     return appState.mutate((document) =>
       touch(document.quotes.find((entry) => entry.id === quote.id)!).items.push(
         {
@@ -369,7 +369,7 @@ export function useQuoteController({
   };
 
   const renameItem = (itemId: string, name: string) => {
-    if (!quote || !name.trim()) return false;
+    if (!quote) return false;
     return appState.mutate((document) => {
       const item = touch(
         touch(

@@ -150,14 +150,14 @@ export function DefinitionDialog({
             ) : null}
             <Field>
               <FieldLabel htmlFor="definition-description">
-                Descrizione
+                Descrizione{kind === 'travel' ? ' (opzionale)' : ''}
               </FieldLabel>
               <Input
                 id="definition-description"
                 name="description"
                 defaultValue={value?.description}
                 autoFocus
-                required
+                required={kind !== 'travel'}
               />
             </Field>
             {kind === 'time' ? (

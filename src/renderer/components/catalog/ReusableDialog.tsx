@@ -160,13 +160,15 @@ export function ReusableDialog({
               </Field>
             ) : null}
             <Field>
-              <FieldLabel htmlFor="catalog-description">Descrizione</FieldLabel>
+              <FieldLabel htmlFor="catalog-description">
+                Descrizione{kind === 'travel' ? ' (opzionale)' : ''}
+              </FieldLabel>
               <Input
                 id="catalog-description"
                 name="description"
                 defaultValue={value?.description}
                 autoFocus
-                required
+                required={kind !== 'travel'}
               />
             </Field>
             {kind === 'time' ? (

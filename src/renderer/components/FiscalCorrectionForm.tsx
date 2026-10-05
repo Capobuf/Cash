@@ -37,10 +37,7 @@ export function FiscalCorrectionForm({
     }
   };
   return (
-    <details
-      className="rounded-lg border p-4"
-      open={total !== undefined ? true : undefined}
-    >
+    <details className="rounded-lg border p-4">
       <summary className="cursor-pointer font-medium">
         Correzione con il prospetto del commercialista
       </summary>

@@ -22,6 +22,7 @@ describe('correzione annuale del commercialista', () => {
       'abilita «Ancora da versare» e «Disponibilità stimata»',
     );
     expect(html).toContain('value="0,00"');
+    expect(html).not.toMatch(/<details[^>]*\sopen(?:=|>)/);
   });
 
   it('disabilita il form quando l’archivio non può essere modificato', () => {

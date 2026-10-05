@@ -518,23 +518,20 @@ export function calculateItem(
     if (sub.kind === 'time') minutes += sub.minutes;
     else if (sub.kind === 'expense') expenses.push(money(sub.amount));
     else {
+      const travelLabel = sub.description.trim()
+        ? `Trasferta “${sub.description}”`
+        : 'Trasferta';
       if (!sub.departure)
-        blockers.push(
-          `Trasferta “${sub.description}”: partenza non selezionata.`,
-        );
+        blockers.push(`${travelLabel}: partenza non selezionata.`);
       if (!sub.destination)
-        blockers.push(
-          `Trasferta “${sub.description}”: destinazione non selezionata.`,
-        );
+        blockers.push(`${travelLabel}: destinazione non selezionata.`);
       if (!sub.vehicleId)
-        blockers.push(
-          `Trasferta “${sub.description}”: Veicolo non selezionato.`,
-        );
+        blockers.push(`${travelLabel}: Veicolo non selezionato.`);
       if (sub.totalMinutes === undefined)
-        blockers.push(`Trasferta “${sub.description}”: tempo non disponibile.`);
+        blockers.push(`${travelLabel}: tempo non disponibile.`);
       else minutes += sub.totalMinutes;
       if (sub.totalCost === undefined)
-        blockers.push(`Trasferta “${sub.description}”: costo non disponibile.`);
+        blockers.push(`${travelLabel}: costo non disponibile.`);
       else expenses.push(money(sub.totalCost));
     }
   }
@@ -592,7 +589,7 @@ export function calculateQuote(
     ? analyses.flatMap((analysis, index) =>
         analysis.blockers.length
           ? [
-              `${items[index]?.name ?? `Voce ${index + 1}`}: ${analysis.blockers.join(' ')}`,
+              `${items[index]?.name.trim() || `Voce ${index + 1}`}: ${analysis.blockers.join(' ')}`,
             ]
           : [],
       )

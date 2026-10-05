@@ -206,7 +206,8 @@ export function ExportDialog({
                     }
                   />
                   <FieldLabel htmlFor={`export-select-${item.id}`}>
-                    {item.name} · {eur(item.chosenPrice)}
+                    {item.name.trim() || 'Voce senza nome'} ·{' '}
+                    {eur(item.chosenPrice)}
                   </FieldLabel>
                 </Field>
               ))}
@@ -236,7 +237,8 @@ export function ExportDialog({
                 {selectedItems.map((item) => (
                   <Field key={item.id}>
                     <FieldLabel htmlFor={`export-${item.id}`}>
-                      {item.name} · {eur(item.chosenPrice)}
+                      {item.name.trim() || 'Voce senza nome'} ·{' '}
+                      {eur(item.chosenPrice)}
                     </FieldLabel>
                     <Input
                       id={`export-${item.id}`}
