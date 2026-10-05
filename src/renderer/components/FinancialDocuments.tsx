@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import {
   Sheet,
   SheetContent,
@@ -24,14 +25,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { dateIt, eur } from '@/lib/format';
 
@@ -204,6 +197,155 @@ export function FinancialDocuments({
           ['Totale pagato', eur(detail?.paid)],
           ['Residuo', eur(detail?.outstanding)],
         ];
+  const registeredColumns = (
+    groupId: string,
+  ): DataTableColumn<RegisteredDocument>[] => [
+    {
+      id: 'date',
+      header: 'Data / numero',
+      value: (document) =>
+        `${document.date} ${numberOf(document) ?? ''}`.trim(),
+      cell: (document) => (
+        <>
+          {dateIt(document.date)}
+          <p className="text-xs text-muted-foreground">
+            {numberOf(document) ?? '—'}
+          </p>
+        </>
+      ),
+    },
+    {
+      id: 'entity',
+      header: 'Cliente / fornitore',
+      value: (document) => document.entityName,
+      cell: (document) => (
+        <>
+          {document.entityName ?? '—'}
+          {groupId === 'credits' ? (
+            <p className="text-xs text-muted-foreground">
+              {typeLabels[document.type]}
+            </p>
+          ) : null}
+        </>
+      ),
+      className: 'max-w-60 whitespace-normal',
+    },
+    {
+      id: 'amount',
+      header: 'Importo',
+      value: (document) => Number(document.amountGross),
+      cell: (document) => eur(document.amountGross),
+      className: 'text-right tabular-nums',
+      headClassName: 'text-right',
+    },
+    {
+      id: 'paid',
+      header: 'Pagato',
+      value: (document) =>
+        Number(financialPaymentSummary(document, today).paid),
+      cell: (document) => eur(financialPaymentSummary(document, today).paid),
+      className: 'text-right tabular-nums',
+      headClassName: 'text-right',
+    },
+    {
+      id: 'outstanding',
+      header: 'Residuo',
+      value: (document) =>
+        Number(financialPaymentSummary(document, today).outstanding),
+      cell: (document) =>
+        eur(financialPaymentSummary(document, today).outstanding),
+      className: 'text-right tabular-nums',
+      headClassName: 'text-right',
+    },
+    {
+      id: 'status',
+      header: 'Stato',
+      value: (document) => statusOf(document, today),
+      cell: (document) => {
+        const status = financialPaymentSummary(document, today).status;
+        return (
+          <Badge variant={status === 'Scaduta' ? 'destructive' : 'secondary'}>
+            {statusOf(document, today)}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: 'details',
+      header: 'Dettagli',
+      value: () => 'Dettaglio',
+      cell: (document) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Apri documento ${numberOf(document) ?? dateIt(document.date)}${document.entityName ? ` · ${document.entityName}` : ''}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setSelected({ kind: 'registered', document });
+          }}
+        >
+          Dettaglio
+        </Button>
+      ),
+    },
+  ];
+  const pendingColumns: DataTableColumn<FicPendingReceivedDocument>[] = [
+    {
+      id: 'date',
+      header: 'Data',
+      value: (document) => document.date,
+      cell: (document) => (document.date ? dateIt(document.date) : '—'),
+    },
+    {
+      id: 'supplier',
+      header: 'Fornitore / oggetto',
+      value: (document) =>
+        `${document.supplierName ?? ''} ${document.subject ?? ''}`.trim(),
+      cell: (document) => (
+        <>
+          {document.supplierName ?? '—'}
+          <p className="text-xs text-muted-foreground">{document.subject}</p>
+        </>
+      ),
+      className: 'max-w-80 whitespace-normal',
+    },
+    {
+      id: 'source',
+      header: 'Sorgente',
+      value: (document) => document.source,
+      cell: (document) => <Badge variant="outline">{document.source}</Badge>,
+    },
+    {
+      id: 'amount',
+      header: 'Importo',
+      value: (document) =>
+        document.amountGross === undefined
+          ? undefined
+          : Number(document.amountGross),
+      cell: (document) =>
+        document.amountGross === undefined ? '—' : eur(document.amountGross),
+      className: 'text-right tabular-nums',
+      headClassName: 'text-right',
+    },
+    {
+      id: 'details',
+      header: 'Dettagli',
+      value: () => 'Dettaglio',
+      cell: (document) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Apri documento in ingresso${document.supplierName ? ` · ${document.supplierName}` : ''}${document.subject ? ` · ${document.subject}` : ''}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setSelected({ kind: 'pending', document });
+          }}
+        >
+          Dettaglio
+        </Button>
+      ),
+    },
+  ];
   return (
     <>
       <Card>
@@ -216,7 +358,10 @@ export function FinancialDocuments({
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="invoices">
-            <TabsList className="h-auto max-w-full flex-wrap justify-start">
+            <TabsList
+              variant="line"
+              className="h-auto max-w-full flex-wrap justify-start"
+            >
               {groups.slice(0, 4).map((group) => (
                 <TabsTrigger key={group.id} value={group.id}>
                   {group.label} ({group.documents.length})
@@ -232,88 +377,20 @@ export function FinancialDocuments({
             {groups.map((group) => (
               <TabsContent key={group.id} value={group.id}>
                 {group.documents.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {[
-                          'Data / numero',
-                          'Cliente / fornitore',
-                          'Importo',
-                          'Pagato',
-                          'Residuo',
-                          'Stato',
-                          '',
-                        ].map((label, index) => (
-                          <TableHead key={index}>{label}</TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {group.documents.map((document) => {
-                        const summary = financialPaymentSummary(
-                          document,
-                          today,
-                        );
-                        return (
-                          <TableRow
-                            key={`${document.type}:${document.id}`}
-                            className="cursor-pointer"
-                            onClick={() =>
-                              setSelected({ kind: 'registered', document })
-                            }
-                          >
-                            <TableCell>
-                              {dateIt(document.date)}
-                              <p className="text-xs text-muted-foreground">
-                                {numberOf(document) ?? '—'}
-                              </p>
-                            </TableCell>
-                            <TableCell className="max-w-60 whitespace-normal">
-                              {document.entityName ?? '—'}
-                              {group.id === 'credits' ? (
-                                <p className="text-xs text-muted-foreground">
-                                  {typeLabels[document.type]}
-                                </p>
-                              ) : null}
-                            </TableCell>
-                            <TableCell className="tabular-nums">
-                              {eur(document.amountGross)}
-                            </TableCell>
-                            <TableCell className="tabular-nums">
-                              {eur(summary.paid)}
-                            </TableCell>
-                            <TableCell className="tabular-nums">
-                              {eur(summary.outstanding)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  summary.status === 'Scaduta'
-                                    ? 'destructive'
-                                    : 'secondary'
-                                }
-                              >
-                                {statusOf(document, today)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Apri documento ${numberOf(document) ?? dateIt(document.date)}${document.entityName ? ` · ${document.entityName}` : ''}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setSelected({ kind: 'registered', document });
-                                }}
-                              >
-                                Dettaglio
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                  <DataTable
+                    data={group.documents}
+                    columns={registeredColumns(group.id)}
+                    getRowKey={(document) => `${document.type}:${document.id}`}
+                    emptyMessage="Nessun documento in questa sezione per l’anno selezionato."
+                    searchPlaceholder="Cerca documenti…"
+                    initialSort={{ id: 'date', direction: 'desc' }}
+                    onRowClick={(document) =>
+                      setSelected({ kind: 'registered', document })
+                    }
+                    getRowAriaLabel={(document) =>
+                      `Apri documento ${numberOf(document) ?? dateIt(document.date)}`
+                    }
+                  />
                 ) : (
                   <p className="py-6 text-sm text-muted-foreground">
                     Nessun documento in questa sezione per l’anno selezionato.
@@ -344,63 +421,20 @@ export function FinancialDocuments({
                 ) : null}
               </div>
               {pending.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {[
-                        'Data',
-                        'Fornitore / oggetto',
-                        'Sorgente',
-                        'Importo',
-                        '',
-                      ].map((label, index) => (
-                        <TableHead key={index}>{label}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pending.map((document) => (
-                      <TableRow
-                        key={`${document.source}:${document.id}`}
-                        className="cursor-pointer"
-                        onClick={() =>
-                          setSelected({ kind: 'pending', document })
-                        }
-                      >
-                        <TableCell>
-                          {document.date ? dateIt(document.date) : '—'}
-                        </TableCell>
-                        <TableCell className="max-w-80 whitespace-normal">
-                          {document.supplierName ?? '—'}
-                          <p className="text-xs text-muted-foreground">
-                            {document.subject}
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{document.source}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {document.amountGross === undefined
-                            ? '—'
-                            : eur(document.amountGross)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Apri documento in ingresso${document.supplierName ? ` · ${document.supplierName}` : ''}${document.subject ? ` · ${document.subject}` : ''}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelected({ kind: 'pending', document });
-                            }}
-                          >
-                            Dettaglio
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <DataTable
+                  data={pending}
+                  columns={pendingColumns}
+                  getRowKey={(document) => `${document.source}:${document.id}`}
+                  emptyMessage="Nessun documento in ingresso nello snapshot."
+                  searchPlaceholder="Cerca documenti in ingresso…"
+                  initialSort={{ id: 'date', direction: 'desc' }}
+                  onRowClick={(document) =>
+                    setSelected({ kind: 'pending', document })
+                  }
+                  getRowAriaLabel={(document) =>
+                    `Apri documento in ingresso ${document.supplierName ?? document.subject ?? document.id}`
+                  }
+                />
               ) : (
                 <p className="pb-4 text-sm text-muted-foreground">
                   Nessun documento in ingresso nello snapshot.
@@ -438,40 +472,46 @@ export function FinancialDocuments({
                 <section>
                   <h3 className="mb-2 font-medium">Pagamenti e scadenze</h3>
                   {selected.document.payments.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {[
-                            'Importo',
-                            'Stato FIC',
-                            'Scadenza',
-                            'Pagamento',
-                          ].map((label) => (
-                            <TableHead key={label}>{label}</TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selected.document.payments.map((payment, index) => (
-                          <TableRow key={index}>
-                            <TableCell>{eur(payment.amount)}</TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">
-                                {payment.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {payment.dueDate ? dateIt(payment.dueDate) : '—'}
-                            </TableCell>
-                            <TableCell>
-                              {payment.paidDate
-                                ? dateIt(payment.paidDate)
-                                : '—'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <DataTable
+                      data={selected.document.payments}
+                      columns={[
+                        {
+                          id: 'amount',
+                          header: 'Importo',
+                          value: (payment) => Number(payment.amount),
+                          cell: (payment) => eur(payment.amount),
+                          className: 'text-right tabular-nums',
+                          headClassName: 'text-right',
+                        },
+                        {
+                          id: 'status',
+                          header: 'Stato FIC',
+                          value: (payment) => payment.status,
+                          cell: (payment) => (
+                            <Badge variant="secondary">{payment.status}</Badge>
+                          ),
+                        },
+                        {
+                          id: 'dueDate',
+                          header: 'Scadenza',
+                          value: (payment) => payment.dueDate,
+                          cell: (payment) =>
+                            payment.dueDate ? dateIt(payment.dueDate) : '—',
+                        },
+                        {
+                          id: 'paidDate',
+                          header: 'Pagamento',
+                          value: (payment) => payment.paidDate,
+                          cell: (payment) =>
+                            payment.paidDate ? dateIt(payment.paidDate) : '—',
+                        },
+                      ]}
+                      getRowKey={(payment, index) =>
+                        `${payment.amount}:${payment.status}:${payment.dueDate ?? ''}:${payment.paidDate ?? ''}:${index}`
+                      }
+                      emptyMessage="Nessun pagamento o scadenza disponibile."
+                      initialSort={{ id: 'dueDate', direction: 'asc' }}
+                    />
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       Nessun pagamento o scadenza disponibile.

@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { FiscalCorrectionForm } from '../../src/renderer/components/FiscalCorrectionForm';
+import { FiscalCorrectionDialog } from '../../src/renderer/components/FiscalCorrectionDialog';
 
 describe('correzione annuale del commercialista', () => {
   it('spiega il perimetro annuale e consente di rimuovere il totale anche con zero', () => {
@@ -22,7 +23,8 @@ describe('correzione annuale del commercialista', () => {
       'abilita «Ancora da versare» e «Disponibilità stimata»',
     );
     expect(html).toContain('value="0,00"');
-    expect(html).not.toMatch(/<details[^>]*\sopen(?:=|>)/);
+    expect(html).not.toContain('<details');
+    expect(html).toContain('<form');
   });
 
   it('disabilita il form quando l’archivio non può essere modificato', () => {
@@ -34,5 +36,18 @@ describe('correzione annuale del commercialista', () => {
       }),
     );
     expect(html).toContain('<fieldset disabled=""');
+  });
+
+  it('usa il trigger Imposta o Modifica in base al totale annuale', () => {
+    const render = (total?: string) =>
+      renderToStaticMarkup(
+        createElement(FiscalCorrectionDialog, {
+          year: 2026,
+          total,
+          onSave: () => true,
+        }),
+      );
+    expect(render()).toContain('Imposta');
+    expect(render('0.00')).toContain('Modifica');
   });
 });

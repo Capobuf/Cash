@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
+import { FinancialCharts } from '../../src/renderer/components/FinancialDashboard';
+import { DataTable } from '../../src/renderer/components/ui/data-table';
 import { aggregateCollectionsByClient } from '../../src/domain/financial-analysis';
 import {
   buildFinancialOverviewFlow,
@@ -109,11 +111,11 @@ describe('panoramica finanziaria unificata', () => {
     expect(result.analysis?.fiscalProjection).toEqual(automatic);
     expectConservativeFlow(buildFinancialOverviewFlow(result));
     const html = htmlFor(result);
-    expect(html).toContain('Totale annuale del commercialista');
-    expect(html).toContain('Totale anno e totale acconti sono stime separate');
-    const hero = html.split('Fatturato emesso')[0]!;
-    expect(hero).toContain('Disponibilità stimata');
-    expect(hero).toContain('17.417,34');
+    expect(html).toContain('Totale commercialista');
+    expect(html).toContain('Stima anno e acconti sono distinti');
+    expect(html).toContain('Disponibilità stimata');
+    expect(html).toContain('17.417,34');
+    expect(html).toContain('Margine dopo le uscite');
     expect(overview(doc, 2027).fiscalPaymentOverride).toBeUndefined();
     delete doc.fiscalPaymentOverrides;
     expect(overview(doc)).toMatchObject({
@@ -176,7 +178,7 @@ describe('panoramica finanziaria unificata', () => {
       createElement(FinancialOverviewDashboard, { overview: overview(doc) }),
     );
     for (const label of [
-      'Previsione fiscale automatica',
+      'Previsione fiscale',
       'Imposte P.IVA già pagate',
       'Ancora da versare',
       'Pagato oltre il totale previsto',
@@ -195,11 +197,13 @@ describe('panoramica finanziaria unificata', () => {
     expect(html).not.toMatch(
       /Saldo bancario di riferimento|Modifica saldo bancario|Disponibilità effettiva|Inserisci il saldo reale|Spese bancarie/,
     );
-    expect(html).not.toContain('<button');
+    expect(html).toContain('Ordina per Voce');
+    expect(html).toContain('Colonne');
+    expect(html).not.toContain('<details');
     for (const label of [
       'Uscite dal conto',
       'Margine dopo le uscite',
-      'Uscite per categoria',
+      'Uscite bancarie per categoria',
       'Uscite / Incassato',
     ])
       expect(html).toContain(label);
@@ -344,10 +348,10 @@ describe('panoramica finanziaria unificata', () => {
       totalAdvances: '5600.00',
     });
     const html = htmlFor(result);
-    const hero = html.slice(0, html.indexOf('Fatturato emesso'));
-    expect(hero).toContain('Margine dopo le uscite');
-    expect(hero).toContain('30.000,00');
-    expect(hero).not.toContain('Disponibilità stimata');
+    expect(html).toContain('Disponibilità stimata');
+    expect(html).toContain('Non disponibile');
+    expect(html).toContain('Margine dopo le uscite');
+    expect(html).toContain('30.000,00');
     expect(html).toContain('Totale anno');
     expect(html).toContain('6.400,00');
     expect(html).toContain('Totale acconti');
@@ -436,7 +440,9 @@ describe('panoramica finanziaria unificata', () => {
     const result = overview(doc);
     expect(result.marginAfterOutflows).toBe('-2000.00');
     expect(result.estimatedAvailability).toBe('-5000.00');
-    expect(htmlFor(result)).toContain('Disavanzo stimato');
+    expect(htmlFor(result)).toContain('Disponibilità stimata');
+    expect(htmlFor(result)).toContain('Disavanzo');
+    expect(htmlFor(result)).toContain('-5.000,00');
     expect(buildFinancialOverviewFlow(result)).toMatchObject({
       nodes: [],
       links: [],
@@ -448,10 +454,11 @@ describe('panoramica finanziaria unificata', () => {
     const result = overview(fixture('10000.00', '12000.00'));
     expect(result.marginAfterOutflows).toBe('-2000.00');
     expect(result.estimatedAvailability).toBeUndefined();
-    const hero = htmlFor(result).split('Fatturato emesso')[0]!;
-    expect(hero).toContain('Margine dopo le uscite');
-    expect(hero).toContain('-2.000,00');
-    expect(hero).not.toContain('Disavanzo stimato');
+    const html = htmlFor(result);
+    expect(html).toContain('Disponibilità stimata');
+    expect(html).toContain('Non disponibile');
+    expect(html).toContain('Margine dopo le uscite');
+    expect(html).toContain('-2.000,00');
     expect(buildFinancialOverviewFlow(result)).toMatchObject({
       nodes: [],
       links: [],
@@ -699,7 +706,7 @@ describe('panoramica finanziaria unificata', () => {
           ),
         ).toBe(false);
         expect(flow.message).toContain('disavanzo');
-        expect(htmlFor(result)).toContain('Disavanzo stimato');
+        expect(htmlFor(result)).toContain('Disavanzo');
       }
       expectConservativeFlow(flow);
     },
@@ -763,23 +770,17 @@ describe('panoramica finanziaria unificata', () => {
         outstandingRevenue: '1234.56',
       });
       const html = htmlFor(result);
-      const context = html.slice(
-        html.indexOf('aria-label="Contesto economico"'),
-        html.indexOf(
-          '</section>',
-          html.indexOf('aria-label="Contesto economico"'),
-        ),
-      );
+      expect(html).not.toContain('Contesto economico');
+      expect(html).not.toContain('Margine dei flussi annuali');
       for (const value of [
         'Fatturato emesso',
-        'Incassato nell’anno',
+        'Incassato',
         'Da incassare',
         issued === '40000.00' ? '40.000,00' : '20.000,00',
         '30.000,00',
         '1.234,56',
-        'perimetri diversi',
       ])
-        expect(context).toContain(value);
+        expect(html).toContain(value);
       expect(html).not.toMatch(/Incassato \/ Fatturato/);
       const flow = buildFinancialOverviewFlow(result);
       expect(flow.message).toContain('totale annuale');
@@ -789,4 +790,53 @@ describe('panoramica finanziaria unificata', () => {
       expectConservativeFlow(flow);
     },
   );
+
+  it('mostra lo stato vuoto dei costi quando i dodici mesi sono a zero', () => {
+    const analysis = overview().analysis!;
+    expect(analysis.monthly).toHaveLength(12);
+    const html = renderToStaticMarkup(
+      createElement(FinancialCharts, {
+        analysis,
+        bankCategories: [],
+      }),
+    );
+    expect(html).toContain('Nessun costo FIC registrato');
+    expect(html).toContain(
+      'Non risultano costi documentati o pagati nell’anno selezionato.',
+    );
+  });
+
+  it('non ripete riepiloghi numerici né controlli mostra/nascondi', () => {
+    const html = htmlFor(overview());
+    expect(html).not.toContain('Contesto economico');
+    expect(html).not.toContain('Margine dei flussi annuali');
+    expect(html).not.toMatch(/mostra \/ nascondi/i);
+  });
+
+  it('abilita ricerca, filtro e paginazione configurabile oltre venti righe', () => {
+    type Row = { id: string; name: string; amount: number };
+    const rows: Row[] = Array.from({ length: 21 }, (_, index) => ({
+      id: String(index),
+      name: `Voce ${index + 1}`,
+      amount: index + 1,
+    }));
+    const html = renderToStaticMarkup(
+      createElement(DataTable<Row>, {
+        data: rows,
+        columns: [
+          { id: 'name', header: 'Nome', value: (row) => row.name },
+          { id: 'amount', header: 'Importo', value: (row) => row.amount },
+        ],
+        getRowKey: (row) => row.id,
+        emptyMessage: 'Nessuna riga.',
+      }),
+    );
+    expect(html).toContain('aria-label="Ordina per Nome"');
+    expect(html).toContain('Colonne');
+    expect(html).toContain('Cerca nella tabella');
+    expect(html).toContain('Filtra la ricerca per colonna');
+    expect(html).toContain('Righe per pagina');
+    for (const size of ['20', '50', '100'])
+      expect(html).toContain(`value="${size}"`);
+  });
 });

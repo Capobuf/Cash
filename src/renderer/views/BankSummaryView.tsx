@@ -270,7 +270,7 @@ export function BankSummaryView({
         </Card>
         <ExpenseCategoryChart
           title="Spese per categoria"
-          description="Totali delle categorie principali, incluse le sottocategorie. Le fette rappresentano il peso relativo degli importi per categoria, che possono sovrapporsi."
+          description="Totali delle categorie principali, incluse le sottocategorie. I valori possono sovrapporsi e non formano una ripartizione esclusiva."
           rows={categories}
           empty="Nessuna spesa da rappresentare"
         />

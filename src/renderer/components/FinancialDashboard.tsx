@@ -9,6 +9,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import {
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
@@ -16,15 +22,9 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ExpenseCategoryChart } from '@/components/ExpenseCategoryChart';
 import { eur, formatNumber } from '@/lib/format';
 
 const percentage = (value: string | undefined) =>
@@ -48,12 +48,20 @@ function AnalysisChart({
   description,
   data,
   config,
+  emptyTitle,
+  emptyDescription,
 }: {
   title: string;
   description: string;
   data: ChartRow[];
   config: ChartConfig;
+  emptyTitle: string;
+  emptyDescription: string;
 }) {
+  const series = Object.keys(config);
+  const hasData = data.some((row) =>
+    series.some((key) => Number(row[key] ?? 0) !== 0),
+  );
   return (
     <Card className="min-w-0">
       <CardHeader className="min-h-18">
@@ -61,7 +69,7 @@ function AnalysisChart({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        {data.length ? (
+        {hasData ? (
           <ChartContainer className="h-80 w-full aspect-auto" config={config}>
             <BarChart
               accessibilityLayer
@@ -116,9 +124,12 @@ function AnalysisChart({
             </BarChart>
           </ChartContainer>
         ) : (
-          <div className="flex h-80 items-center justify-center text-sm text-muted-foreground">
-            Nessun documento per l’anno selezionato.
-          </div>
+          <Empty className="py-8">
+            <EmptyHeader>
+              <EmptyTitle>{emptyTitle}</EmptyTitle>
+              <EmptyDescription>{emptyDescription}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
       </CardContent>
     </Card>
@@ -143,11 +154,14 @@ function RankingChart({
   series: { key: string; label: string; color: string }[];
   dayValues?: boolean;
 }) {
-  // Every bar in the card shares one scale; HTML labels determine row height naturally.
-  const maximum = Math.max(
-    0,
-    ...data.flatMap((row) => series.map((item) => row.values[item.key] ?? 0)),
-  );
+  const chartData = data.map((row) => ({
+    key: row.key,
+    label: row.label,
+    ...row.values,
+  }));
+  const config = Object.fromEntries(
+    series.map((item) => [item.key, { label: item.label, color: item.color }]),
+  ) satisfies ChartConfig;
   return (
     <Card className="min-w-0">
       <CardHeader>
@@ -156,58 +170,77 @@ function RankingChart({
       </CardHeader>
       <CardContent>
         {data.length ? (
-          <>
-            <div
-              aria-hidden="true"
-              className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground"
+          <ChartContainer
+            config={config}
+            className="w-full aspect-auto"
+            style={{ height: Math.max(240, data.length * 52 + 44) }}
+          >
+            <BarChart
+              accessibilityLayer
+              layout="vertical"
+              data={chartData}
+              margin={{ left: 0, right: 12, top: 0, bottom: 0 }}
             >
-              {series.map((item) => (
-                <span key={item.key} className="flex items-center gap-1.5">
-                  <span
-                    className="size-2 shrink-0 rounded-sm"
-                    style={{ backgroundColor: item.color }}
+              <CartesianGrid horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={(value) =>
+                  dayValues
+                    ? `${formatNumber(String(value), 0)} gg`
+                    : compactEuro(value)
+                }
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                dataKey="key"
+                type="category"
+                width={135}
+                interval={0}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(key) => {
+                  const label =
+                    data.find((row) => row.key === key)?.label ?? '';
+                  return label.length > 20 ? `${label.slice(0, 19)}…` : label;
+                }}
+              />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    className="max-w-80 [&>div:first-child]:whitespace-normal"
+                    labelFormatter={(_label, payload) =>
+                      payload[0]?.payload?.label
+                    }
+                    formatter={(value, name) => (
+                      <>
+                        <span className="text-muted-foreground">
+                          {config[String(name)]?.label}
+                        </span>
+                        <span className="ml-auto tabular-nums">
+                          {dayValues ? days(Number(value)) : eur(String(value))}
+                        </span>
+                      </>
+                    )}
                   />
-                  {item.label}
-                </span>
+                }
+              />
+              {series.length > 1 ? (
+                <ChartLegend
+                  content={<ChartLegendContent className="flex-wrap" />}
+                />
+              ) : null}
+              {series.map((item) => (
+                <Bar
+                  key={item.key}
+                  dataKey={item.key}
+                  fill={`var(--color-${item.key})`}
+                  radius={3}
+                  maxBarSize={18}
+                />
               ))}
-            </div>
-            <ol aria-label={title} className="space-y-5">
-              {data.map((row) => (
-                <li key={row.key} className="min-w-0 space-y-1.5">
-                  <p className="text-sm leading-snug font-medium [overflow-wrap:anywhere]">
-                    {row.label}
-                  </p>
-                  <dl className="space-y-1.5">
-                    {series.map((item) => {
-                      const value = row.values[item.key] ?? 0;
-                      return (
-                        <div key={item.key}>
-                          <dt className="sr-only">{item.label}</dt>
-                          <dd className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3">
-                            <div
-                              aria-hidden="true"
-                              className="h-2.5 rounded-sm bg-muted"
-                            >
-                              <div
-                                className="h-full rounded-sm"
-                                style={{
-                                  width: `${maximum > 0 ? (value / maximum) * 100 : 0}%`,
-                                  backgroundColor: item.color,
-                                }}
-                              />
-                            </div>
-                            <span className="text-right text-xs tabular-nums [overflow-wrap:anywhere]">
-                              {dayValues ? days(value) : eur(String(value))}
-                            </span>
-                          </dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
-                </li>
-              ))}
-            </ol>
-          </>
+            </BarChart>
+          </ChartContainer>
         ) : (
           <p className="py-8 text-sm text-muted-foreground">
             {dayValues
@@ -222,8 +255,10 @@ function RankingChart({
 
 export function FinancialCharts({
   analysis: a,
+  bankCategories,
 }: {
   analysis: FinancialAnalysis;
+  bankCategories: { key: string; name: string; amount: string }[];
 }) {
   const monthly = a.monthly.map((row) => ({
     label: [
@@ -246,83 +281,105 @@ export function FinancialCharts({
     paid: Number(row.paidCosts),
   }));
   return (
-    <section
-      aria-label="Grafici finanziari"
-      className="grid min-w-0 gap-4 xl:grid-cols-2"
-    >
-      <AnalysisChart
-        title="Ricavi mensili FIC"
-        description="Emesso per data fattura; incassato per data pagamento, anche su fatture di anni precedenti."
-        data={monthly}
-        config={{
-          issued: { label: 'Fatturato emesso', color: 'var(--chart-1)' },
-          collected: { label: 'Incassato', color: 'var(--chart-2)' },
-        }}
-      />
-      <AnalysisChart
-        title="Costi mensili FIC"
-        description="Spese FIC: documentati per data documento; pagati per data pagamento, anche su documenti di anni precedenti."
-        data={monthly}
-        config={{
-          documented: { label: 'Costi documentati', color: 'var(--chart-1)' },
-          paid: { label: 'Costi pagati', color: 'var(--chart-2)' },
-        }}
-      />
-      <RankingChart
-        title="Top 10 clienti per fatturato"
-        description="Fatture dell’anno selezionato e relativi incassi presenti nello snapshot."
-        data={a.clientAnalysis.slice(0, 10).map((row) => ({
-          key: row.key,
-          label: row.name,
-          values: {
-            issued: Number(row.issuedRevenue),
-            collected: Number(row.collectedRevenue),
-          },
-        }))}
-        series={[
-          { key: 'issued', label: 'Fatturato', color: 'var(--chart-1)' },
-          { key: 'collected', label: 'Incassato', color: 'var(--chart-2)' },
-        ]}
-      />
-      <RankingChart
-        title="Clienti con maggior ritardo medio"
-        description="Top 10 · pagamenti conclusi delle fatture dell’anno. Insoluti attuali separati nella tabella Pagamenti."
-        dayValues
-        data={a.clientPaymentAnalysis
-          .filter((row) => row.analyzedPaymentCount > 0)
-          .slice(0, 10)
-          .map((row) => ({
-            key: row.key,
-            label: row.name,
-            values: { delay: row.averageDelayDays! },
-          }))}
-        series={[
-          {
-            key: 'delay',
-            label: 'Giorni medi di ritardo',
-            color: 'var(--chart-1)',
-          },
-        ]}
-      />
-      <div className="min-w-0 xl:col-span-2">
-        <RankingChart
-          title="Costi per categoria FIC"
-          description="Prime 10 categorie FIC per costo documentato. Tutte le categorie sono consultabili nella tabella Costi."
-          data={a.costCategoryAnalysis.slice(0, 10).map((row) => ({
-            key: row.key,
-            label: row.category,
-            values: { documented: Number(row.documentedCosts) },
-          }))}
-          series={[
-            {
-              key: 'documented',
-              label: 'Costi documentati',
-              color: 'var(--chart-1)',
-            },
-          ]}
-        />
-      </div>
-    </section>
+    <div className="min-w-0 space-y-6">
+      <section aria-label="Andamento" className="min-w-0 space-y-4">
+        <h2 className="text-lg font-semibold">Andamento</h2>
+        <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+          <AnalysisChart
+            title="Ricavi mensili FIC"
+            description="Emesso per data fattura · Incassato per data pagamento FIC"
+            data={monthly}
+            config={{
+              issued: { label: 'Fatturato emesso', color: 'var(--chart-1)' },
+              collected: { label: 'Incassato', color: 'var(--chart-2)' },
+            }}
+            emptyTitle="Nessun ricavo FIC registrato"
+            emptyDescription="Non risultano fatture emesse o pagamenti incassati nell’anno selezionato."
+          />
+          <AnalysisChart
+            title="Costi mensili FIC"
+            description="Documentati per data documento · Pagati per data pagamento FIC"
+            data={monthly}
+            config={{
+              documented: {
+                label: 'Costi documentati',
+                color: 'var(--chart-4)',
+              },
+              paid: { label: 'Costi pagati', color: 'var(--chart-5)' },
+            }}
+            emptyTitle="Nessun costo FIC registrato"
+            emptyDescription="Non risultano costi documentati o pagati nell’anno selezionato."
+          />
+        </div>
+      </section>
+      <section aria-label="Clienti e uscite" className="min-w-0 space-y-4">
+        <h2 className="text-lg font-semibold">Clienti e uscite</h2>
+        <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+          <RankingChart
+            title="Top 10 clienti per fatturato"
+            description="Fatture dell’anno e relativi incassi presenti nello snapshot."
+            data={a.clientAnalysis.slice(0, 10).map((row) => ({
+              key: row.key,
+              label: row.name,
+              values: {
+                issued: Number(row.issuedRevenue),
+                collected: Number(row.collectedRevenue),
+              },
+            }))}
+            series={[
+              {
+                key: 'issued',
+                label: 'Fatturato emesso',
+                color: 'var(--chart-1)',
+              },
+              { key: 'collected', label: 'Incassato', color: 'var(--chart-2)' },
+            ]}
+          />
+          <RankingChart
+            title="Clienti con maggior ritardo medio"
+            description="Top 10 · pagamenti conclusi delle fatture dell’anno."
+            dayValues
+            data={a.clientPaymentAnalysis
+              .filter((row) => row.analyzedPaymentCount > 0)
+              .slice(0, 10)
+              .map((row) => ({
+                key: row.key,
+                label: row.name,
+                values: { delay: row.averageDelayDays! },
+              }))}
+            series={[
+              {
+                key: 'delay',
+                label: 'Giorni medi di ritardo',
+                color: 'var(--chart-5)',
+              },
+            ]}
+          />
+          <ExpenseCategoryChart
+            title="Uscite bancarie per categoria"
+            description="Prime 10 categorie. I valori possono sovrapporsi e non formano una ripartizione esclusiva."
+            rows={bankCategories}
+            empty="Nessuna uscita dal conto nell’anno selezionato."
+          />
+          <RankingChart
+            title="Costi per categoria FIC"
+            description="Prime 10 categorie FIC per costo documentato. Tutte le categorie sono consultabili nella tabella Costi."
+            data={a.costCategoryAnalysis.slice(0, 10).map((row) => ({
+              key: row.key,
+              label: row.category,
+              values: { documented: Number(row.documentedCosts) },
+            }))}
+            series={[
+              {
+                key: 'documented',
+                label: 'Costi documentati',
+                color: 'var(--chart-4)',
+              },
+            ]}
+          />
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -334,44 +391,35 @@ function Counterparty({ row }: { row: { name: string } }) {
   );
 }
 
+interface AggregateRow {
+  key: string;
+  cells: ReactNode[];
+  sortValues: (string | number | undefined)[];
+}
+
 function AggregateTable({
   headers,
   rows,
 }: {
   headers: string[];
-  rows: { key: string; cells: ReactNode[] }[];
+  rows: AggregateRow[];
 }) {
   return rows.length ? (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          {headers.map((header, index) => (
-            <TableHead
-              key={header}
-              className={
-                index ? 'max-w-32 whitespace-normal text-right' : undefined
-              }
-            >
-              {header}
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.key}>
-            {row.cells.map((cell, index) => (
-              <TableCell
-                key={index}
-                className={index ? 'text-right tabular-nums' : undefined}
-              >
-                {cell}
-              </TableCell>
-            ))}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <DataTable<AggregateRow>
+      data={rows}
+      columns={headers.map((header, index) => ({
+        id: `column-${index}`,
+        header,
+        value: (row) => row.sortValues[index],
+        cell: (row) => row.cells[index],
+        className: index ? 'text-right tabular-nums' : undefined,
+        headClassName: index
+          ? 'max-w-32 whitespace-normal text-right'
+          : undefined,
+      }))}
+      getRowKey={(row) => row.key}
+      emptyMessage="Nessun documento per l’anno selezionato."
+    />
   ) : (
     <p className="py-6 text-sm text-muted-foreground">
       Nessun documento per l’anno selezionato.
@@ -398,7 +446,10 @@ export function FinancialAggregates({
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="clients">
-          <TabsList className="h-auto max-w-full flex-wrap justify-start">
+          <TabsList
+            variant="line"
+            className="h-auto max-w-full flex-wrap justify-start"
+          >
             <TabsTrigger value="clients">Clienti</TabsTrigger>
             <TabsTrigger value="payments">Pagamenti</TabsTrigger>
             <TabsTrigger value="costs">Costi</TabsTrigger>
@@ -425,6 +476,15 @@ export function FinancialAggregates({
                   eur(row.outstandingRevenue),
                   eur(row.overdueRevenue),
                   percentage(row.revenueShare),
+                ],
+                sortValues: [
+                  row.name,
+                  row.invoiceCount,
+                  Number(row.issuedRevenue),
+                  Number(row.collectedRevenue),
+                  Number(row.outstandingRevenue),
+                  Number(row.overdueRevenue),
+                  Number(row.revenueShare),
                 ],
               }))}
             />
@@ -459,6 +519,16 @@ export function FinancialAggregates({
                   row.oldestOpenDueDays === undefined
                     ? '—'
                     : days(row.oldestOpenDueDays),
+                ],
+                sortValues: [
+                  row.name,
+                  row.analyzedPaymentCount,
+                  row.averageDelayDays,
+                  row.maxDelayDays,
+                  Number(row.onTimePercentage),
+                  Number(row.overdueRevenue),
+                  row.overdueInvoiceCount,
+                  row.oldestOpenDueDays,
                 ],
               }))}
             />
@@ -502,6 +572,14 @@ export function FinancialAggregates({
                   eur(row.outstandingCosts),
                   percentage(row.costShare),
                 ],
+                sortValues: [
+                  row.category,
+                  row.documentCount,
+                  Number(row.documentedCosts),
+                  Number(row.paidCosts),
+                  Number(row.outstandingCosts),
+                  Number(row.costShare),
+                ],
               }))}
             />
           </TabsContent>
@@ -522,6 +600,13 @@ export function FinancialAggregates({
                   eur(row.documentedCosts),
                   eur(row.paidCosts),
                   eur(row.outstandingCosts),
+                ],
+                sortValues: [
+                  row.name,
+                  row.documentCount,
+                  Number(row.documentedCosts),
+                  Number(row.paidCosts),
+                  Number(row.outstandingCosts),
                 ],
               }))}
             />

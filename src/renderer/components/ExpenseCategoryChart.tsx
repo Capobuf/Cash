@@ -1,4 +1,4 @@
-import { Pie, PieChart } from 'recharts';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import {
   Card,
   CardContent,
@@ -10,9 +10,22 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from '@/components/ui/chart';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { eur } from '@/lib/format';
+
+const compactEuro = (value: number) =>
+  new Intl.NumberFormat('it-IT', {
+    style: 'currency',
+    currency: 'EUR',
+    notation: 'compact',
+    maximumFractionDigits: 0,
+  }).format(value);
 
 export function ExpenseCategoryChart({
   title,
@@ -27,19 +40,11 @@ export function ExpenseCategoryChart({
 }) {
   const data = rows
     .filter((row) => Number(row.amount) > 0)
-    .map((row, index) => ({
+    .sort((a, b) => Number(b.amount) - Number(a.amount))
+    .map((row) => ({
       ...row,
-      category: `category${index}`,
       value: Number(row.amount),
-      fill: `var(--color-category${index})`,
-      color:
-        index < 5
-          ? `var(--chart-${index + 1})`
-          : `color-mix(in oklch, var(--chart-${(index % 5) + 1}) 65%, var(--foreground))`,
     }));
-  const config: ChartConfig = Object.fromEntries(
-    data.map((row) => [row.category, { label: row.name, color: row.color }]),
-  );
 
   return (
     <Card className="min-w-0">
@@ -49,61 +54,64 @@ export function ExpenseCategoryChart({
       </CardHeader>
       <CardContent>
         {data.length ? (
-          <div className="space-y-4">
-            <ChartContainer
-              config={config}
-              className="mx-auto h-72 w-full max-w-96 aspect-auto"
+          <ChartContainer
+            config={{ value: { label: 'Importo', color: 'var(--chart-4)' } }}
+            className="w-full aspect-auto"
+            style={{ height: Math.max(220, data.length * 46 + 36) }}
+          >
+            <BarChart
+              accessibilityLayer
+              layout="vertical"
+              data={data}
+              margin={{ left: 0, right: 12, top: 0, bottom: 0 }}
             >
-              <PieChart accessibilityLayer>
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelKey="category"
-                      className="max-w-80 [&>div:first-child]:break-words"
-                      formatter={(value) => (
-                        <span className="font-mono tabular-nums">
-                          {eur(String(value))}
-                        </span>
-                      )}
-                    />
-                  }
-                />
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  nameKey="category"
-                  outerRadius="90%"
-                  stroke="var(--card)"
-                  strokeWidth={2}
-                />
-              </PieChart>
-            </ChartContainer>
-            <ul
-              aria-label="Importi per categoria"
-              className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2"
-            >
-              {data.map((row) => (
-                <li key={row.key} className="flex min-w-0 items-baseline gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="size-2.5 shrink-0 rounded-sm"
-                    style={{ backgroundColor: row.color }}
+              <CartesianGrid horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={compactEuro}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                dataKey="key"
+                type="category"
+                width={135}
+                interval={0}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(key) => {
+                  const name = data.find((row) => row.key === key)?.name ?? '';
+                  return name.length > 20 ? `${name.slice(0, 19)}…` : name;
+                }}
+              />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    className="max-w-80 [&>div:first-child]:whitespace-normal"
+                    labelFormatter={(_label, payload) =>
+                      payload[0]?.payload?.name
+                    }
+                    formatter={(value) => (
+                      <span className="tabular-nums">{eur(String(value))}</span>
+                    )}
                   />
-                  <span className="min-w-0 flex-1 break-words text-muted-foreground">
-                    {row.name}
-                  </span>
-                  <span className="shrink-0 tabular-nums">
-                    {eur(row.amount)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+                }
+              />
+              <Bar
+                dataKey="value"
+                fill="var(--color-value)"
+                radius={3}
+                maxBarSize={22}
+              />
+            </BarChart>
+          </ChartContainer>
         ) : (
-          <p className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-            {empty}
-          </p>
+          <Empty className="py-8">
+            <EmptyHeader>
+              <EmptyTitle>Nessuna uscita da rappresentare</EmptyTitle>
+              <EmptyDescription>{empty}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
       </CardContent>
     </Card>

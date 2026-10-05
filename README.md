@@ -114,6 +114,12 @@ snapshot necessari a Sedi e Preventivi; non mantiene un’anagrafica Cliente loc
 La sezione **Analisi finanziaria → Panoramica** confronta Fatturato obiettivo e Costi pianificati Cash con fatture, spese registrate
 e pagamenti FIC. Fatture in Cloud resta la source of truth: i documenti amministrativi sono in sola lettura.
 La Panoramica nell’area Preventivazione resta distinta dalla Panoramica finanziaria.
+La Panoramica finanziaria presenta tutti gli indicatori principali in un’unica area KPI iniziale; dopo i KPI, grafici e tabelle
+sono direttamente raggiungibili con lo scorrimento e non sono nascosti da controlli mostra/nascondi. Le operazioni occasionali,
+come la modifica del totale annuale del commercialista, sono raccolte in un Dialog.
+I valori degli otto KPI hanno gerarchia tipografica ad alta leggibilità. Tutte le tabelle finanziarie consentono ordinamento per
+colonna e personalizzazione delle colonne visibili; quando una tabella supera 20 righe abilita ricerca, filtro per colonna e
+paginazione con selettore da 20, 50 o 100 righe.
 
 **Spese → Movimenti** importa un file XLSX o CSV della banca tramite dialog nativo. Per gli XLSX il parser legge il primo
 foglio e cerca l’intestazione `Data_Operazione`, `Data_Valuta`, `Entrate`, `Uscite`, `Descrizione`,
@@ -195,8 +201,8 @@ Non è un calcolo dichiarativo: la base sostitutiva usa contributi stimati anzic
 fiscali effettivi. Il bollo viene calcolato indipendentemente dall’incasso e dal campo
 stamp_duty importato, anche se assente o pari a zero.
 
-Il box **Correzione con il prospetto del commercialista** permette di inserire un
-solo totale annuale facoltativo, riferito ai versamenti dell’anno selezionato. La guida spiega
+Il Dialog **Totale annuale del commercialista** permette di inserire un
+solo totale annuale facoltativo, riferito ai versamenti dell’anno selezionato. La guida nel Dialog spiega
 quali saldi e acconti includere, come evitare duplicazioni tra totale e rate, e come trattare
 bollo, compensazioni e importi già pagati. Non è un’aggiunta alla stima e non modifica i movimenti.
 `Ancora da versare N = max(0, totale del commercialista N − pagamenti bancari Imposte P.IVA nell’anno N)`,
@@ -215,8 +221,9 @@ senza crediti o riporti. La dashboard distingue anno corrente e acconti successi
 
 `Margine dopo le uscite = Incassato − Uscite dal conto`.
 `Disponibilità stimata = Margine dopo le uscite − Ancora da versare N`, solo con totale annuale del commercialista.
-Con quel totale la Card principale mostra **Disponibilità stimata** o **Disavanzo stimato** se negativa;
-senza quel totale mostra **Margine dopo le uscite** e spiega che il residuo annuale non è determinabile.
+**Disponibilità stimata** e **Margine dopo le uscite** sono KPI distinti e mantengono sempre il proprio significato.
+Senza il totale del commercialista Disponibilità stimata mostra **Non disponibile**; se negativa conserva il valore e mostra
+lo stato testuale **Disavanzo**. Margine dopo le uscite resta visibile indipendentemente dalla disponibilità del totale.
 Stima fiscale N e acconti N+1 restano indipendenti e non vengono sottratti dai pagamenti bancari N.
 Le imposte già pagate sono comprese nelle uscite e riducono il residuo fiscale: non si sottraggono due volte.
 Il Sankey Recharts rappresenta Top 5 clienti + Altri clienti → Incassato → Uscite dal conto / Margine.
@@ -224,8 +231,8 @@ Le uscite si dividono in Imposte P.IVA già pagate / Altre uscite. Senza totale 
 con quel totale il margine si divide in Ancora da versare nell’anno / Disponibilità stimata, quando non negativa.
 Le stime automatiche non entrano nel Sankey o nel grafico mensile. Le normali categorie, potenzialmente sovrapposte,
 restano nel grafico separato.
-Nella stessa Card, Fatturato emesso, Incassato nell’anno e Da incassare forniscono il contesto:
-fatturato e incassato hanno perimetri temporali diversi e non sono collegati nel Sankey.
+Fatturato emesso, Incassato e Da incassare sono già presenti nell’area KPI e non vengono ripetuti nella Card del Sankey;
+fatturato e incassato hanno perimetri temporali diversi e non sono collegati nel grafico.
 Costi pianificati, costi FIC e preventivazione mantengono le loro logiche precedenti.
 
 ## OpenRouteService
