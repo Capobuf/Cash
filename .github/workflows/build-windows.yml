@@ -40,6 +40,12 @@ jobs:
       - name: Package Windows portable
         run: npm run package:win
 
+      - name: SQLite smoke in Electron
+        run: npm run test:sqlite:electron
+
+      - name: SQLite smoke in portable Cash.exe
+        run: npm run test:sqlite:portable
+
       - name: Upload Windows portable
         uses: actions/upload-artifact@v7
         with:

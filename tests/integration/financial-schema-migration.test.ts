@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   createEmptyDocument,
   createFiscalPreset2026,
@@ -10,12 +10,12 @@ import {
 import { cashDocumentSchema, parseDocument } from '../../src/domain/schema';
 import { bankCategoryDeletionBlocker } from '../../src/domain/bank-expenses';
 import {
-  backupPathFor,
-  migrateArchive,
+  importJsonArchive,
+  closeAllArchives,
   openArchive,
-  previewMigration,
   saveArchive,
 } from '../../src/native/persistence';
+import { previewMigration } from '../../src/native/legacy-import';
 
 describe('migrazione fiscale allo schema corrente', () => {
   it('migra v9 senza correzioni implicite e conserva correzioni annuali e zero dopo riapertura', async () => {
@@ -31,19 +31,21 @@ describe('migrazione fiscale allo schema corrente', () => {
       ok: true,
       value: { fromVersion: 9, toVersion: 11 },
     });
-    const migrated = await migrateArchive(path);
+    const migrated = await importJsonArchive(path, `${path}.sqlite`);
     if (!migrated.ok) throw new Error(migrated.error.message);
     expect(migrated.value.document).toEqual(document);
-    expect(JSON.parse(await readFile(backupPathFor(path), 'utf8'))).toEqual(
-      legacy,
-    );
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(legacy);
     document.fiscalPaymentOverrides = [
       { year: 2026, total: '12582.66' },
       { year: 2027, total: '0.00' },
     ];
-    const saved = await saveArchive(path, document, migrated.value.token);
+    const saved = await saveArchive(
+      `${path}.sqlite`,
+      document,
+      migrated.value.token,
+    );
     if (!saved.ok) throw new Error(saved.error.message);
-    expect(await openArchive(path)).toMatchObject({
+    expect(await openArchive(`${path}.sqlite`)).toMatchObject({
       ok: true,
       value: {
         document: { fiscalPaymentOverrides: document.fiscalPaymentOverrides },
@@ -165,17 +167,17 @@ describe('migrazione fiscale allo schema corrente', () => {
       'rimuovendo il saldo bancario manuale',
     );
     expect(await readFile(path, 'utf8')).toBe(bytes);
-    const migrated = await migrateArchive(path);
+    const migrated = await importJsonArchive(path, `${path}.sqlite`);
     if (!migrated.ok) throw new Error(migrated.error.message);
     expect(migrated.value.document).toEqual(document);
-    expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
+    expect(await readFile(path, 'utf8')).toBe(bytes);
     const saved = await saveArchive(
-      path,
+      `${path}.sqlite`,
       migrated.value.document!,
       migrated.value.token,
     );
     if (!saved.ok) throw new Error(saved.error.message);
-    expect(await openArchive(path)).toMatchObject({
+    expect(await openArchive(`${path}.sqlite`)).toMatchObject({
       ok: true,
       value: { document: saved.value.document },
     });
@@ -184,7 +186,7 @@ describe('migrazione fiscale allo schema corrente', () => {
       revision: 2,
       updatedAt: saved.value.document!.updatedAt,
     });
-    expect(await readFile(path, 'utf8')).not.toMatch(
+    expect(JSON.stringify(saved.value.document)).not.toMatch(
       /financialProvisions|bankBalance|12345\.67/,
     );
   });
@@ -271,7 +273,7 @@ describe('migrazione fiscale allo schema corrente', () => {
         value: { fromVersion: version, toVersion: 11, blockers: [] },
       });
       expect(await readFile(path, 'utf8')).toBe(bytes);
-      const migrated = await migrateArchive(path);
+      const migrated = await importJsonArchive(path, `${path}.sqlite`);
       if (!migrated.ok) throw new Error(JSON.stringify(migrated.error));
       const doc = migrated.value.document!;
       expect(doc).toMatchObject({
@@ -290,23 +292,29 @@ describe('migrazione fiscale allo schema corrente', () => {
         bankCategoryDeletionBlocker(doc.bankExpenseCategories, [], system.id),
       ).toContain('sistema');
       expect(doc).not.toHaveProperty('financialProvisions');
-      expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
+      expect(await readFile(path, 'utf8')).toBe(bytes);
       system.name = 'Tributi rinominati';
-      const saved = await saveArchive(path, doc, migrated.value.token);
+      const saved = await saveArchive(
+        `${path}.sqlite`,
+        doc,
+        migrated.value.token,
+      );
       if (!saved.ok) throw new Error(JSON.stringify(saved.error));
-      expect(await openArchive(path)).toMatchObject({
+      expect(await openArchive(`${path}.sqlite`)).toMatchObject({
         ok: true,
         value: { document: saved.value.document },
       });
-      expect((await migrateArchive(path)).ok).toBe(false);
-      const reopened = await openArchive(path);
+      expect((await importJsonArchive(path, `${path}.sqlite`)).ok).toBe(false);
+      const reopened = await openArchive(`${path}.sqlite`);
       if (!reopened.ok) throw new Error(reopened.error.message);
       expect(
         reopened.value.document!.bankExpenseCategories.filter(
           (entry) => entry.systemRole === 'vat_taxes',
         ),
       ).toEqual([system]);
-      expect(await readFile(path, 'utf8')).not.toMatch(/"covered"|"additions"/);
+      expect(JSON.stringify(saved.value.document)).not.toMatch(
+        /"covered"|"additions"/,
+      );
     },
   );
 
@@ -318,9 +326,11 @@ describe('migrazione fiscale allo schema corrente', () => {
       'Cash.json',
     );
     await writeFile(path, JSON.stringify({ ...document, schemaVersion: 7 }));
-    expect(await migrateArchive(path)).toMatchObject({
+    expect(await importJsonArchive(path, `${path}.sqlite`)).toMatchObject({
       ok: true,
       value: { document },
     });
   });
 });
+
+afterEach(() => closeAllArchives());

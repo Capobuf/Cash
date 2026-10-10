@@ -134,7 +134,7 @@ it.each([true, false])(
       path: 'Cash.json',
       document: doc,
       readOnly: false,
-      token: { documentId: doc.documentId, revision: 1, fingerprint: 'hash' },
+      token: { documentId: doc.documentId, revision: 1 },
     };
     state.status = 'Salvato';
     const save = vi.spyOn(state, 'save').mockResolvedValue();

@@ -74,7 +74,6 @@ it('imposta la partenza dalla scheda cliente senza aprire o modificare la sede',
     token: {
       documentId: document.documentId,
       revision: document.revision,
-      fingerprint: 'hash',
     },
   });
   const onEditSite = vi.fn();

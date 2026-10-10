@@ -11,7 +11,7 @@ import {
   cashDocumentSchema,
   validationErrorFromIssues,
 } from '../domain/schema';
-import type { ArchiveSession } from '../native/persistence';
+import type { ArchiveSession } from '../shared/archive';
 import { deduplicateBankExpenses } from '../domain/bank-expenses';
 
 export type SaveStatus =
@@ -118,7 +118,7 @@ export class AppState {
       ? {
           code: 'SCHEMA_NEWER',
           source: 'archive',
-          message: `L’archivio usa uno schema più recente${session.schemaVersion ? ` (${session.schemaVersion})` : ''} di quello supportato da questa versione di Cash (${CURRENT_SCHEMA_VERSION}).`,
+          message: `L’archivio usa uno schema più recente${session.schemaVersion ? ` (${session.schemaVersion})` : ''} di quello supportato da questa versione di Cash (${CURRENT_SCHEMA_VERSION}).${session.storageVersion ? ` Versione archivio SQLite: ${session.storageVersion}.` : ''}`,
           action:
             'Apri il file con una versione di Cash compatibile. I dati non sono stati modificati.',
           details: [

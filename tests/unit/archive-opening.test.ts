@@ -4,7 +4,7 @@ import {
   createEmptyDocument,
   ok,
 } from '../../src/domain/model';
-import type { ArchiveSession } from '../../src/native/persistence';
+import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState } from '../../src/renderer/state';
 
 describe('apertura archivio con schema più recente', () => {
@@ -22,7 +22,6 @@ describe('apertura archivio con schema più recente', () => {
         token: {
           documentId: document.documentId,
           revision: 113,
-          fingerprint: 'future',
         },
       };
       const supported: ArchiveSession = {

@@ -1,21 +1,21 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   createEmptyDocument,
   createFiscalPreset2026,
   meta,
 } from '../../src/domain/model';
 import {
-  backupPathFor,
   createArchive,
-  migrateArchive,
+  importJsonArchive,
+  closeAllArchives,
   openArchive,
-  previewMigration,
   restoreBackup,
   saveArchive,
 } from '../../src/native/persistence';
+import { previewMigration } from '../../src/native/legacy-import';
 import { isBankExpenseExcluded } from '../../src/domain/bank-expenses';
 
 function fixture() {
@@ -70,11 +70,11 @@ describe('migrazione e persistenza delle esclusioni nello schema 11', () => {
       expect.stringContaining('non esclude automaticamente'),
     ]);
     expect(await readFile(path, 'utf8')).toBe(bytes);
-    const migrated = await migrateArchive(path);
+    const migrated = await importJsonArchive(path, `${path}.sqlite`);
     if (!migrated.ok) throw new Error(migrated.error.message);
     expect(migrated.value.document).toEqual(document);
-    expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
-    expect(await openArchive(path)).toEqual(migrated);
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+    expect(await openArchive(`${path}.sqlite`)).toEqual(migrated);
     expect(
       migrated.value.document!.bankExpenses.every(
         (row) =>
@@ -101,7 +101,7 @@ describe('migrazione e persistenza delle esclusioni nello schema 11', () => {
     doc.bankExpenseCategories[1]!.excludedFromCalculations = true;
     const path = join(
       await mkdtemp(join(tmpdir(), 'cash-exclusions-')),
-      'Cash.json',
+      'Cash.sqlite',
     );
     const created = await createArchive(path, doc);
     if (!created.ok) throw new Error(created.error.message);
@@ -131,3 +131,5 @@ describe('migrazione e persistenza delle esclusioni nello schema 11', () => {
     expect(await openArchive(path)).toEqual(restored);
   });
 });
+
+afterEach(() => closeAllArchives());

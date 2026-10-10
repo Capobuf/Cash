@@ -57,7 +57,6 @@ function setup() {
     token: {
       documentId: doc.documentId,
       revision: doc.revision,
-      fingerprint: 'hash',
     },
   });
   vi.stubGlobal('window', {

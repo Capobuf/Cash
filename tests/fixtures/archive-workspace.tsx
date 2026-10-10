@@ -64,7 +64,6 @@ export async function runWorkspaceChecks() {
     token: {
       documentId: document.documentId,
       revision: document.revision,
-      fingerprint: 'hash',
     },
   });
   Object.assign(window, {

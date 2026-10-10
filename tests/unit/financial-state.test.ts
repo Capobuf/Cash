@@ -7,7 +7,7 @@ import {
   type FicFinancialSnapshot,
 } from '../../src/domain/model';
 import { AppState } from '../../src/renderer/state';
-import type { ArchiveSession } from '../../src/native/persistence';
+import type { ArchiveSession } from '../../src/shared/archive';
 import { syncFinancialData } from '../../src/native/integrations/fatture-in-cloud';
 import { financialPaymentSummary } from '../../src/domain/financial-analysis';
 
@@ -35,7 +35,6 @@ const session = (document: CashDocument): ArchiveSession => ({
   token: {
     documentId: document.documentId,
     revision: document.revision,
-    fingerprint: 'hash',
   },
 });
 

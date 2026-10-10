@@ -10,18 +10,10 @@ import {
   type Fuel,
   type Result,
 } from '../domain/model';
-import {
-  createArchive,
-  inspectArchive,
-  migrateArchive,
-  openArchive,
-  previewMigration,
-  restoreBackup,
-  saveArchive,
-  saveRecoveryCopy,
-  type ArchiveSession,
-  type ConcurrencyToken,
-} from './persistence';
+import { archiveStorage, closeAllArchives } from './persistence';
+import { previewMigration } from './legacy-import';
+import type { ArchiveSession, ConcurrencyToken } from '../shared/archive';
+import { runSqliteSmoke } from './sqlite-smoke';
 import {
   deleteFicToken,
   hasFicToken,
@@ -63,12 +55,33 @@ import {
   verifyConnection,
 } from './integrations/openrouteservice';
 
+const {
+  create: createArchive,
+  open: openArchive,
+  save: saveArchive,
+  inspect: inspectArchive,
+  recovery: saveRecoveryCopy,
+  restore: restoreBackup,
+  importJson: importJsonArchive,
+  close: closeArchive,
+} = archiveStorage;
+
 let window: BrowserWindow | null = null;
 let current: ArchiveSession | null = null;
 let dirty = false;
 let closingApproved = false;
 let closePromptOpen = false;
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const smokeArgument = process.argv.find((argument) =>
+  argument.startsWith('--cash-storage-smoke='),
+);
+const hasSingleInstanceLock = smokeArgument
+  ? true
+  : app.requestSingleInstanceLock();
+
+function replaceCurrent(next: ArchiveSession): void {
+  if (current && current.path !== next.path) closeArchive(current.path);
+  current = next;
+}
 
 if (process.platform === 'win32') app.setAppUserModelId('it.cash.desktop');
 
@@ -86,7 +99,16 @@ const ficLinkServices: FicLinkServices = {
   readToken: requireFicToken,
   writeToken: setFicToken,
   deleteToken: deleteFicToken,
-  save: saveArchive,
+  save: (path, document, token) =>
+    selectedPathValid(path) && !current?.readOnly
+      ? saveArchive(path, document, token)
+      : Promise.resolve(
+          err({
+            code: 'CONFLICT',
+            source: 'archive',
+            message: 'Archivio cambiato durante il collegamento.',
+          }),
+        ),
 };
 async function observedOrs<T>(
   operation: string,
@@ -107,7 +129,7 @@ async function selectOpen() {
   const choice = await dialog.showOpenDialog({
     title: 'Apri archivio Cash',
     properties: ['openFile'],
-    filters: [{ name: 'Archivio Cash', extensions: ['json'] }],
+    filters: [{ name: 'Archivio Cash', extensions: ['sqlite', 'json'] }],
   });
   if (choice.canceled || !choice.filePaths[0])
     return err({ code: 'CANCELLED', message: 'Apertura annullata.' });
@@ -131,9 +153,9 @@ async function openWithMigration(path: string) {
     const confirmation = await dialog.showMessageBox({
       type: 'warning',
       title: 'Migrazione archivio Cash',
-      message: `Migrare lo schema ${preview.value.fromVersion} allo schema ${preview.value.toVersion}?`,
-      detail: `${preview.value.changes.join('\n')}\n\nBackup: ${preview.value.backupPath}`,
-      buttons: ['Annulla', 'Crea backup e migra'],
+      message: `Importare l’archivio JSON (schema ${preview.value.fromVersion}) in SQLite?`,
+      detail: `${preview.value.changes.join('\n')}\n\nL’originale JSON e i suoi backup resteranno invariati. Scegli un nuovo file .sqlite su disco locale, fuori da Google Drive/OneDrive.`,
+      buttons: ['Annulla', 'Scegli destinazione e importa'],
       defaultId: 0,
       cancelId: 0,
     });
@@ -143,18 +165,32 @@ async function openWithMigration(path: string) {
         source: 'archive',
         message: 'Migrazione annullata.',
       });
-    const migrated = await migrateArchive(path);
+    const destination = await dialog.showSaveDialog({
+      title: 'Importa archivio JSON in SQLite',
+      defaultPath: join(app.getPath('userData'), 'Cash.sqlite'),
+      filters: [{ name: 'Archivio Cash SQLite', extensions: ['sqlite'] }],
+    });
+    if (destination.canceled || !destination.filePath)
+      return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
+    const migrated = await importJsonArchive(path, destination.filePath);
     if (migrated.ok) {
       const remembered = await rememberArchive(migrated.value.path);
-      if (!remembered.ok) return remembered;
-      current = migrated.value;
+      if (!remembered.ok) {
+        if (current?.path !== migrated.value.path)
+          closeArchive(migrated.value.path);
+        return remembered;
+      }
+      replaceCurrent(migrated.value);
     }
     return migrated;
   }
   if (result.ok) {
     const remembered = await rememberArchive(result.value.path);
-    if (!remembered.ok) return remembered;
-    current = result.value;
+    if (!remembered.ok) {
+      if (current?.path !== result.value.path) closeArchive(result.value.path);
+      return remembered;
+    }
+    replaceCurrent(result.value);
   }
   return result;
 }
@@ -190,8 +226,8 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.archiveCreate, async (_event, document: CashDocument) => {
     const choice = await dialog.showSaveDialog({
       title: 'Crea archivio Cash',
-      defaultPath: 'Cash.data.json',
-      filters: [{ name: 'Archivio Cash', extensions: ['json'] }],
+      defaultPath: join(app.getPath('userData'), 'Cash.sqlite'),
+      filters: [{ name: 'Archivio Cash', extensions: ['sqlite'] }],
     });
     if (choice.canceled || !choice.filePath)
       return err({ code: 'CANCELLED', message: 'Creazione annullata.' });
@@ -201,8 +237,12 @@ function registerHandlers(): void {
     );
     if (result.ok) {
       const remembered = await rememberArchive(result.value.path);
-      if (!remembered.ok) return remembered;
-      current = result.value;
+      if (!remembered.ok) {
+        if (current?.path !== result.value.path)
+          closeArchive(result.value.path);
+        return remembered;
+      }
+      replaceCurrent(result.value);
     }
     return result;
   });
@@ -223,7 +263,7 @@ function registerHandlers(): void {
       const savingSession = current;
       const result = await saveArchive(path, document, token);
       if (result.ok && current === savingSession) {
-        current = result.value;
+        replaceCurrent(result.value);
       }
       return result;
     },
@@ -233,8 +273,8 @@ function registerHandlers(): void {
     async (_event, document: CashDocument) => {
       const choice = await dialog.showSaveDialog({
         title: 'Salva copia di recupero',
-        defaultPath: 'Cash.recovery.json',
-        filters: [{ name: 'Archivio Cash', extensions: ['json'] }],
+        defaultPath: 'Cash.recovery.sqlite',
+        filters: [{ name: 'Archivio Cash', extensions: ['sqlite'] }],
       });
       if (choice.canceled || !choice.filePath)
         return err({
@@ -253,6 +293,7 @@ function registerHandlers(): void {
           source: 'archive',
           message: 'Sessione archivio non valida o in sola lettura.',
         });
+      const restoringSession = current;
       const choice = await dialog.showMessageBox({
         type: 'warning',
         title: 'Ripristina copia di sicurezza',
@@ -269,11 +310,13 @@ function registerHandlers(): void {
           source: 'archive',
           message: 'Ripristino annullato.',
         });
+      if (current !== restoringSession)
+        return err({
+          code: 'CONFLICT',
+          message: 'Archivio cambiato durante la conferma del ripristino.',
+        });
       const result = await restoreBackup(path, token);
-      if (result.ok) {
-        current = result.value;
-        dirty = false;
-      }
+      if (result.ok && current === restoringSession) current = result.value;
       return result;
     },
   );
@@ -395,10 +438,21 @@ function registerHandlers(): void {
           source: 'archive',
           message: 'Sessione archivio non valida o in sola lettura.',
         });
-      const saved = await commitFicActivation(input, ficLinkServices);
+      const linkingSession = current;
+      const saved = await commitFicActivation(input, {
+        ...ficLinkServices,
+        save: (path, document, token) =>
+          current === linkingSession
+            ? saveArchive(path, document, token)
+            : Promise.resolve(
+                err({
+                  code: 'CONFLICT',
+                  message: 'Archivio cambiato durante il collegamento.',
+                }),
+              ),
+      });
       if (!saved.ok) return saved;
-      current = saved.value;
-      dirty = false;
+      if (current === linkingSession) current = saved.value;
       return saved;
     },
   );
@@ -418,10 +472,21 @@ function registerHandlers(): void {
           source: 'archive',
           message: 'Sessione archivio non valida o in sola lettura.',
         });
-      const saved = await removeFicLinkAtomically(input, ficLinkServices);
+      const linkingSession = current;
+      const saved = await removeFicLinkAtomically(input, {
+        ...ficLinkServices,
+        save: (path, document, token) =>
+          current === linkingSession
+            ? saveArchive(path, document, token)
+            : Promise.resolve(
+                err({
+                  code: 'CONFLICT',
+                  message: 'Archivio cambiato durante il collegamento.',
+                }),
+              ),
+      });
       if (!saved.ok) return saved;
-      current = saved.value;
-      dirty = false;
+      if (current === linkingSession) current = saved.value;
       return saved;
     },
   );
@@ -576,7 +641,9 @@ function registerHandlers(): void {
 
 async function detectExternalChange(): Promise<void> {
   if (!current || !window) return;
-  const disk = await inspectArchive(current.path);
+  const observed = current;
+  const disk = await inspectArchive(observed.path);
+  if (current !== observed) return;
   if (!disk.ok) {
     window.webContents.send(IPC.appExternal, disk.error);
     return;
@@ -587,6 +654,7 @@ async function detectExternalChange(): Promise<void> {
     disk.value.header.revision > current.token.revision
   ) {
     const reloaded = await openArchive(current.path);
+    if (current !== observed) return;
     if (reloaded.ok && reloaded.value.document) {
       current = reloaded.value;
       window.webContents.send(IPC.appArchiveReloaded, reloaded.value);
@@ -595,8 +663,7 @@ async function detectExternalChange(): Promise<void> {
   }
   const mismatch =
     disk.value.header.documentId !== current.token.documentId ||
-    disk.value.header.revision !== current.token.revision ||
-    disk.value.fingerprint !== current.token.fingerprint;
+    disk.value.header.revision !== current.token.revision;
   if (mismatch)
     window.webContents.send(IPC.appExternal, {
       code: 'CONFLICT',
@@ -649,7 +716,17 @@ async function createWindow(): Promise<void> {
   });
 }
 
-if (!hasSingleInstanceLock) app.quit();
+if (smokeArgument) {
+  app.whenReady().then(async () => {
+    try {
+      await runSqliteSmoke(smokeArgument.slice('--cash-storage-smoke='.length));
+      app.exit(0);
+    } catch (cause) {
+      console.error(cause);
+      app.exit(1);
+    }
+  });
+} else if (!hasSingleInstanceLock) app.quit();
 else {
   app.on('second-instance', () => {
     if (!window) return;
@@ -662,6 +739,7 @@ else {
     void createWindow();
     setInterval(() => void detectExternalChange(), 30_000);
   });
+  app.on('before-quit', () => closeAllArchives());
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });

@@ -175,8 +175,9 @@ export function Onboarding({ appState }: { appState: AppState }) {
         </CardContent>
         <CardFooter className="justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            Per Google Drive scegli una cartella “Il mio Drive” in modalità
-            Duplica file.
+            Crea un archivio SQLite su disco locale, fuori da cartelle
+            sincronizzate. Apri archivio permette anche di importare un JSON
+            storico.
           </p>
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" onClick={() => void appState.open()}>
@@ -324,7 +325,7 @@ export function AppShell({
                 Archivio locale
               </strong>
               <p className="mt-1">
-                Attendi “Salvato” prima di cambiare postazione.
+                SQLite locale. Sincronizza soltanto copie di recupero chiuse.
               </p>
             </div>
           </div>

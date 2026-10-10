@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createEmptyDocument,
   createFiscalPreset2026,
@@ -13,14 +13,14 @@ import { parseDocument } from '../../src/domain/schema';
 import { disableFic } from '../../src/domain/integration';
 import { removeFicLinkAtomically } from '../../src/native/fic-link';
 import {
-  backupPathFor,
   createArchive,
-  migrateArchive,
+  importJsonArchive,
+  closeAllArchives,
   openArchive,
-  previewMigration,
   restoreBackup,
   saveArchive,
 } from '../../src/native/persistence';
+import { previewMigration } from '../../src/native/legacy-import';
 
 const snapshot: FicFinancialSnapshot = {
   source: 'fatture_in_cloud',
@@ -57,7 +57,7 @@ describe('archivio finanziario corrente', () => {
       payments: [],
     });
     const dir = await mkdtemp(join(tmpdir(), 'cash-entity-id-'));
-    const path = join(dir, 'Cash.json');
+    const path = join(dir, 'Cash.sqlite');
     const created = await createArchive(path, document);
     if (!created.ok) throw new Error(created.error.message);
     expect(await openArchive(path)).toMatchObject({
@@ -115,14 +115,12 @@ describe('archivio finanziario corrente', () => {
       ok: true,
       value: { fromVersion: 4, toVersion: 11, blockers: [] },
     });
-    const migrated = await migrateArchive(path);
+    const migrated = await importJsonArchive(path, `${path}.sqlite`);
     expect(migrated.ok).toBe(true);
     if (!migrated.ok) throw new Error(migrated.error.message);
     expect(migrated.value.document).toEqual({ ...document, schemaVersion: 11 });
     expect(migrated.value.document).not.toHaveProperty('financialSnapshot');
-    expect(JSON.parse(await readFile(backupPathFor(path), 'utf8'))).toEqual(
-      document,
-    );
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(document);
   });
 
   it('migra anche v3 non ambiguo fino allo schema corrente', async () => {
@@ -136,7 +134,7 @@ describe('archivio finanziario corrente', () => {
         localClients: [],
       }),
     );
-    expect(await migrateArchive(path)).toMatchObject({
+    expect(await importJsonArchive(path, `${path}.sqlite`)).toMatchObject({
       ok: true,
       value: { document: { schemaVersion: 11 } },
     });
@@ -144,7 +142,7 @@ describe('archivio finanziario corrente', () => {
 
   it('salva, riapre, conserva offline/rimozione e ripristina lo snapshot tramite backup', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'cash-financial-'));
-    const path = join(dir, 'Cash.json');
+    const path = join(dir, 'Cash.sqlite');
     const document = createEmptyDocument();
     document.financialSnapshot = snapshot;
     document.settings.fic = {
@@ -190,3 +188,5 @@ describe('archivio finanziario corrente', () => {
     expect(() => parseDocument(invalid)).toThrow();
   });
 });
+
+afterEach(() => closeAllArchives());

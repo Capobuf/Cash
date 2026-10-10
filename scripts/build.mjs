@@ -19,8 +19,8 @@ await Promise.all([
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    target: 'node22',
-    external: ['electron', '@zowe/secrets-for-zowe-sdk'],
+    target: 'node24',
+    external: ['electron', 'node:sqlite', '@zowe/secrets-for-zowe-sdk'],
     ...optimization,
   }),
   build({
