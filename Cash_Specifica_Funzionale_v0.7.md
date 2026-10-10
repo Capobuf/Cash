@@ -1157,7 +1157,7 @@ Il frontend può essere sviluppato come un'unica applicazione HTML/JavaScript se
 
 ### 24.2 Rete e funzionamento offline
 
-L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT, OpenRouteService e, se l'integrazione è attiva, Fatture in Cloud; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Soltanto copie chiuse possono essere trasportate tramite cartelle sincronizzate; il database attivo resta locale. Cash non richiede Google Drive API né OAuth Google.
+L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT, OpenRouteService e, se l'integrazione è attiva, Fatture in Cloud, oltre a GitHub Releases per verificare e scaricare gli aggiornamenti dell'applicazione; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Soltanto copie chiuse possono essere trasportate tramite cartelle sincronizzate; il database attivo resta locale. Cash non richiede Google Drive API né OAuth Google.
 
 Senza connessione internet l'utente può aprire e modificare profili, Sedi, catalogo e preventivi già salvati. Sono bloccate, con errore esplicito, le sole operazioni che richiedono dati live: acquisizione di nuovi indici FOI o prezzi carburante, ricerca/geocodifica di Sedi e Calcola/Ricalcola percorso tramite OpenRouteService e, quando il modulo è attivo, caricamento/ricerca clienti, verifica prodotto, esportazione preventivi e aggiornamento dello snapshot finanziario Fatture in Cloud. Gli snapshot esistenti restano consultabili e ricalcolabili con i propri dati storici; distanza e tempo possono essere inseriti manualmente su scelta esplicita dell'utente.
 
@@ -1166,6 +1166,19 @@ Senza connessione internet l'utente può aprire e modificare profili, Sedi, cata
 Cash usa `node:sqlite` del runtime Electron Windows x64 nel solo processo nativo. SQL,
 filesystem e driver non sono esposti al renderer; sandbox e preload isolato restano invariati.
 La distribuzione portable include il runtime, senza installazioni esterne.
+Per Windows x64 è disponibile anche un installer per utente. L'installazione, l'aggiornamento e
+la disinstallazione del programma non eliminano né spostano gli archivi SQLite, le copie
+di sicurezza, le preferenze locali e le credenziali custodite da Windows.
+
+L'app installata verifica all'avvio la disponibilità di versioni nuove, e permette una
+verifica manuale in Impostazioni. Usa esclusivamente versioni pubblicate come GitHub Releases
+sulla base di commit contenuti in `main`, dopo i controlli Windows della CI: un commit
+su `main` senza Release non è un aggiornamento installabile. La verifica può avvenire
+senza interrompere il lavoro, ma download e installazione richiedono azioni esplicite
+dell'utente. L'installazione è bloccata se esistono modifiche non salvate; il riavvio
+avviene soltanto su richiesta. Mancanza di rete o controllo fallito non blocca Cash.
+Il portable continua a essere aggiornato sostituendo manualmente l'eseguibile.
+
 
 Lo schema applicativo è 11; lo schema SQLite usa un contatore distinto, `PRAGMA user_version`,
 attualmente 1. Gli schemi futuri sono aperti al più come intestazione in sola lettura.
