@@ -87,7 +87,6 @@ describe('salvataggio dal dialogo veicolo', () => {
       token: {
         documentId: document.documentId,
         revision: document.revision,
-        fingerprint: 'hash',
       },
     });
     const onOpenChange = vi.fn();
@@ -126,7 +125,6 @@ describe('salvataggio dal dialogo veicolo', () => {
       token: {
         documentId: document.documentId,
         revision: document.revision,
-        fingerprint: 'hash',
       },
     });
     const onOpenChange = vi.fn();
@@ -161,7 +159,6 @@ describe('salvataggio dal dialogo veicolo', () => {
         token: {
           documentId: document.documentId,
           revision: document.revision,
-          fingerprint: 'hash',
         },
       });
       const onSaved = vi.fn();

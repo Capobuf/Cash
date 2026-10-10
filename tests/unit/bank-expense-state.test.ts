@@ -8,7 +8,7 @@ import {
   type CashDocument,
   type Result,
 } from '../../src/domain/model';
-import type { ArchiveSession } from '../../src/native/persistence';
+import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState } from '../../src/renderer/state';
 import {
   changeBankManualCategories,
@@ -25,7 +25,6 @@ const session = (
   token: {
     documentId: document.documentId,
     revision: document.revision,
-    fingerprint: 'hash',
   },
 });
 const imported: BankExpenseImport = {

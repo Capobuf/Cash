@@ -4,7 +4,7 @@ import {
   ok,
   type CashDocument,
 } from '../../src/domain/model';
-import type { ArchiveSession } from '../../src/native/persistence';
+import type { ArchiveSession } from '../../src/shared/archive';
 import { IPC } from '../../src/shared/ipc';
 
 const native = vi.hoisted(() => ({
@@ -14,9 +14,10 @@ const native = vi.hoisted(() => ({
   send: vi.fn(),
   openArchive: vi.fn(),
   previewMigration: vi.fn(),
-  migrateArchive: vi.fn(),
+  importJsonArchive: vi.fn(),
   showMessageBox: vi.fn(),
   saveArchive: vi.fn(),
+  restoreBackup: vi.fn(),
   inspectArchive: vi.fn(),
   readPreferences: vi.fn(),
   rememberArchive: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('electron', () => ({
   app: {
     requestSingleInstanceLock: () => true,
     setAppUserModelId: vi.fn(),
+    getPath: () => 'C:/Cash',
     whenReady: () => Promise.resolve(),
     on: vi.fn(),
     quit: vi.fn(),
@@ -61,15 +63,22 @@ vi.mock('electron', () => ({
   },
 }));
 vi.mock('../../src/native/persistence', () => ({
-  openArchive: native.openArchive,
-  saveArchive: native.saveArchive,
-  createArchive: native.createArchive,
-  inspectArchive: native.inspectArchive,
-  migrateArchive: native.migrateArchive,
-  previewMigration: native.previewMigration,
-  restoreBackup: vi.fn(),
-  saveRecoveryCopy: vi.fn(),
+  archiveStorage: {
+    open: native.openArchive,
+    save: native.saveArchive,
+    create: native.createArchive,
+    inspect: native.inspectArchive,
+    importJson: native.importJsonArchive,
+    close: vi.fn(),
+    restore: native.restoreBackup,
+    recovery: vi.fn(),
+  },
+  closeAllArchives: vi.fn(),
 }));
+vi.mock('../../src/native/legacy-import', () => ({
+  previewMigration: native.previewMigration,
+}));
+vi.mock('../../src/native/sqlite-smoke', () => ({ runSqliteSmoke: vi.fn() }));
 vi.mock('../../src/native/bank-expense-import', () => ({
   readBankExpenseFile: vi.fn(),
 }));
@@ -96,10 +105,14 @@ beforeEach(() => {
   native.events.clear();
   native.windowEvents.clear();
   native.readPreferences.mockResolvedValue(
-    ok({ lastArchivePath: 'Cash.json' }),
+    ok({ lastArchivePath: 'Cash.sqlite' }),
   );
   native.rememberArchive.mockResolvedValue(ok(undefined));
   native.setFicClientId.mockResolvedValue(ok(undefined));
+  native.showSaveDialog.mockResolvedValue({
+    canceled: false,
+    filePath: 'C:/Cash/imported.sqlite',
+  });
   vi.stubGlobal('__dirname', 'C:/Cash/dist/native');
 });
 
@@ -150,16 +163,15 @@ it.each(['open', 'create', 'migrate'] as const)(
   async (operation) => {
     const document = createEmptyDocument();
     const previous: ArchiveSession = {
-      path: 'Cash.json',
+      path: 'Cash.sqlite',
       document,
       readOnly: false,
       token: {
         documentId: document.documentId,
         revision: document.revision,
-        fingerprint: 'previous',
       },
     };
-    const next = { ...previous, path: 'New.json' };
+    const next = { ...previous, path: 'New.sqlite' };
     native.openArchive.mockResolvedValue(ok(previous));
     await import('../../src/native/main');
     await native.handlers.get(IPC.archiveOpenLast)!();
@@ -196,7 +208,7 @@ it.each(['open', 'create', 'migrate'] as const)(
         }),
       );
       native.showMessageBox.mockResolvedValue({ response: 1 });
-      native.migrateArchive.mockResolvedValue(ok(next));
+      native.importJsonArchive.mockResolvedValue(ok(next));
     } else native.openArchive.mockResolvedValue(ok(next));
     const result =
       operation === 'create'
@@ -218,70 +230,83 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('keeps the replacement archive current when an earlier save finishes', async () => {
-  const document = createEmptyDocument();
-  const session: ArchiveSession = {
-    path: 'A.json',
-    document,
-    readOnly: false,
-    token: { documentId: document.documentId, revision: 1, fingerprint: 'A' },
-  };
-  const replacement = { ...session, path: 'B.json' };
-  native.openArchive
-    .mockResolvedValueOnce(ok(session))
-    .mockResolvedValueOnce(ok(replacement));
-  let finish!: (value: ReturnType<typeof ok<ArchiveSession>>) => void;
-  native.saveArchive.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  native.inspectArchive.mockResolvedValue(ok({}));
-  await import('../../src/native/main');
-  await native.handlers.get(IPC.archiveOpenLast)!();
-  const saving = native.handlers.get(IPC.archiveSave)!(
-    {},
-    session.path,
-    document,
-    session.token,
-  );
-  await native.handlers.get(IPC.archiveOpenLast)!();
-  finish(ok({ ...session, token: { ...session.token, revision: 2 } }));
-  expect((await saving).ok).toBe(true);
-  expect(
-    (await native.handlers.get(IPC.archiveInspect)!({}, replacement.path)).ok,
-  ).toBe(true);
-  expect(
-    (await native.handlers.get(IPC.archiveInspect)!({}, session.path)).ok,
-  ).toBe(false);
-  const saved = {
-    ...replacement,
-    token: { ...replacement.token, revision: 2 },
-  };
-  native.saveArchive.mockResolvedValueOnce(ok(saved));
-  expect(
-    await native.handlers.get(IPC.archiveSave)!(
-      {},
-      replacement.path,
+it.each(['save', 'restore'] as const)(
+  'keeps the replacement archive current when an earlier %s finishes',
+  async (operation) => {
+    const document = createEmptyDocument();
+    const session: ArchiveSession = {
+      path: 'A.sqlite',
       document,
-      replacement.token,
-    ),
-  ).toEqual(ok(saved));
-});
+      readOnly: false,
+      token: { documentId: document.documentId, revision: 1 },
+    };
+    const replacement = { ...session, path: 'B.sqlite' };
+    native.openArchive
+      .mockResolvedValueOnce(ok(session))
+      .mockResolvedValueOnce(ok(replacement));
+    let finish!: (value: ReturnType<typeof ok<ArchiveSession>>) => void;
+    const action =
+      operation === 'save' ? native.saveArchive : native.restoreBackup;
+    action.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    native.inspectArchive.mockResolvedValue(ok({}));
+    await import('../../src/native/main');
+    await native.handlers.get(IPC.archiveOpenLast)!();
+    native.showMessageBox.mockResolvedValue({ response: 1 });
+    const saving =
+      operation === 'save'
+        ? native.handlers.get(IPC.archiveSave)!(
+            {},
+            session.path,
+            document,
+            session.token,
+          )
+        : native.handlers.get(IPC.archiveRestore)!(
+            {},
+            session.path,
+            session.token,
+          );
+    await Promise.resolve();
+    await native.handlers.get(IPC.archiveOpenLast)!();
+    finish(ok({ ...session, token: { ...session.token, revision: 2 } }));
+    expect((await saving).ok).toBe(true);
+    expect(
+      (await native.handlers.get(IPC.archiveInspect)!({}, replacement.path)).ok,
+    ).toBe(true);
+    expect(
+      (await native.handlers.get(IPC.archiveInspect)!({}, session.path)).ok,
+    ).toBe(false);
+    const saved = {
+      ...replacement,
+      token: { ...replacement.token, revision: 2 },
+    };
+    native.saveArchive.mockResolvedValueOnce(ok(saved));
+    expect(
+      await native.handlers.get(IPC.archiveSave)!(
+        {},
+        replacement.path,
+        document,
+        replacement.token,
+      ),
+    ).toEqual(ok(saved));
+  },
+);
 
 it.each([false, true])(
   'mantiene la chiusura protetta fino alla conferma renderer (seconda mutazione: %s)',
   async (newerMutation) => {
     const document = createEmptyDocument();
     const session: ArchiveSession = {
-      path: 'Cash.json',
+      path: 'Cash.sqlite',
       document,
       readOnly: false,
       token: {
         documentId: document.documentId,
         revision: 1,
-        fingerprint: 'first',
       },
     };
     native.openArchive.mockResolvedValue(ok(session));
@@ -295,7 +320,7 @@ it.each([false, true])(
         return ok({
           ...session,
           document: { ...snapshot, revision: 2 },
-          token: { ...session.token, revision: 2, fingerprint: 'second' },
+          token: { ...session.token, revision: 2 },
         });
       },
     );
@@ -334,6 +359,9 @@ it.each([false, true])(
 it.each([0, 1])(
   'offers migration of the last archive without another file selection (choice %s)',
   async (response) => {
+    native.readPreferences.mockResolvedValue(
+      ok({ lastArchivePath: 'Cash.json' }),
+    );
     native.openArchive.mockResolvedValue({
       ok: false,
       error: { code: 'MIGRATION_REQUIRED', message: 'Legacy' },
@@ -348,12 +376,12 @@ it.each([0, 1])(
       }),
     );
     native.showMessageBox.mockResolvedValue({ response });
-    native.migrateArchive.mockResolvedValue(ok({ path: 'Cash.json' }));
+    native.importJsonArchive.mockResolvedValue(ok({ path: 'Cash.sqlite' }));
     await import('../../src/native/main');
     const result = await native.handlers.get(IPC.archiveOpenLast)!();
     expect(native.previewMigration).toHaveBeenCalledWith('Cash.json');
     expect(native.showMessageBox).toHaveBeenCalledOnce();
-    expect(native.migrateArchive).toHaveBeenCalledTimes(response);
+    expect(native.importJsonArchive).toHaveBeenCalledTimes(response);
     if (response) expect(result.ok).toBe(true);
     else expect(result.error.code).toBe('CANCELLED');
   },

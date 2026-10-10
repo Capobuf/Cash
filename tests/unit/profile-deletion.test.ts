@@ -83,7 +83,6 @@ it('elimina il profilo sorgente conservando calcoli storici e diagnosi di aggior
       token: {
         documentId: doc.documentId,
         revision: doc.revision,
-        fingerprint: 'hash',
       },
     });
     harness.state = state;

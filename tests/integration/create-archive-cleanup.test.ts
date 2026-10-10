@@ -1,9 +1,8 @@
 import {
-  access,
   mkdtemp,
   readdir,
   readFile,
-  rename,
+  link,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -11,46 +10,47 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createEmptyDocument } from '../../src/domain/model';
-import { createArchive } from '../../src/native/persistence';
+import { createArchive, closeAllArchives } from '../../src/native/persistence';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return {
-    ...actual,
-    access: vi.fn(actual.access),
-    rename: vi.fn(actual.rename),
-    rm: vi.fn(actual.rm),
-  };
+  return { ...actual, link: vi.fn(actual.link) };
 });
-
-afterEach(() => vi.clearAllMocks());
-
-it('removes the created temporary file when publishing fails', async () => {
+const dirs: string[] = [];
+afterEach(async () => {
+  vi.clearAllMocks();
+  closeAllArchives();
+  for (const dir of dirs.splice(0))
+    await rm(dir, { recursive: true, force: true });
+});
+async function directory() {
   const dir = await mkdtemp(join(tmpdir(), 'cash-create-cleanup-'));
-  const path = join(dir, 'Cash.json');
-  vi.mocked(rename).mockRejectedValueOnce(new Error('rename failed'));
-  const result = await createArchive(path, createEmptyDocument());
-  expect(result).toMatchObject({
+  dirs.push(dir);
+  return dir;
+}
+
+it('removes the closed temporary database when publishing fails', async () => {
+  const dir = await directory();
+  const path = join(dir, 'Cash.sqlite');
+  vi.mocked(link).mockRejectedValueOnce(new Error('publish failed'));
+  expect(await createArchive(path, createEmptyDocument())).toMatchObject({
     ok: false,
-    error: { code: 'IO', details: ['Error: rename failed'] },
+    error: { code: 'IO', details: ['Error: publish failed'] },
   });
   expect(await readdir(dir)).toEqual([]);
 });
 
-it('preserves a newly appeared destination even if conflict cleanup fails', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cash-create-conflict-'));
-  const path = join(dir, 'Cash.json');
-  vi.mocked(access)
-    .mockRejectedValueOnce(
-      Object.assign(new Error('absent'), { code: 'ENOENT' }),
-    )
-    .mockImplementationOnce(async () => {
-      await writeFile(path, 'existing archive');
-    });
-  vi.mocked(rm).mockRejectedValueOnce(new Error('cleanup failed'));
-  const result = await createArchive(path, createEmptyDocument());
-  expect(result).toMatchObject({ ok: false, error: { code: 'IO' } });
-  expect(rename).not.toHaveBeenCalled();
+it('preserves a destination that appears during publication and removes temporary files', async () => {
+  const dir = await directory();
+  const path = join(dir, 'Cash.sqlite');
+  vi.mocked(link).mockImplementationOnce(async () => {
+    await writeFile(path, 'existing archive');
+    throw Object.assign(new Error('destination exists'), { code: 'EEXIST' });
+  });
+  expect(await createArchive(path, createEmptyDocument())).toMatchObject({
+    ok: false,
+    error: { code: 'CONFLICT' },
+  });
   expect(await readFile(path, 'utf8')).toBe('existing archive');
-  expect(await readdir(dir)).toEqual(['Cash.json']);
+  expect(await readdir(dir)).toEqual(['Cash.sqlite']);
 });

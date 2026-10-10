@@ -15,13 +15,12 @@ import {
 import type {
   ArchiveSession,
   ConcurrencyToken,
-} from '../../src/native/persistence';
+} from '../../src/shared/archive';
 import { confirmProfile } from '../../src/domain/profiles';
 
 const token: ConcurrencyToken = {
   documentId: '6dadb063-1796-429d-9a8a-ad9a0ec9827b',
   revision: 1,
-  fingerprint: 'hash',
 };
 const input = (document: CashDocument) => ({
   preview: {
@@ -38,15 +37,15 @@ const input = (document: CashDocument) => ({
   token: 'nuovo',
   companyId: '1',
   productId: '2',
-  path: 'Cash.data.json',
+  path: 'Cash.sqlite',
   document,
   concurrencyToken: token,
 });
 const session = (document: CashDocument): ArchiveSession => ({
-  path: 'Cash.data.json',
+  path: 'Cash.sqlite',
   document,
   readOnly: false,
-  token: { ...token, revision: 2, fingerprint: 'hash-2' },
+  token: { ...token, revision: 2 },
 });
 
 function services(overrides: Partial<FicLinkServices> = {}): FicLinkServices {

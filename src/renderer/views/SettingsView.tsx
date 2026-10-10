@@ -305,7 +305,7 @@ export function SettingsView({
                 <div>
                   <CardTitle>Archivio corrente</CardTitle>
                   <CardDescription>
-                    Unico file canonico dei dati di Cash.
+                    Archivio SQLite locale dei dati di Cash.
                   </CardDescription>
                 </div>
                 <CardAction>
@@ -339,11 +339,13 @@ export function SettingsView({
             </Card>
             <Alert>
               <Settings2 />
-              <AlertTitle>Uso sequenziale con Google Drive</AlertTitle>
+              <AlertTitle>Archivio su disco locale</AlertTitle>
               <AlertDescription>
-                Chiudi Cash soltanto quando lo stato è “Salvato”. Attendi la
-                sincronizzazione sulla prima postazione e poi sulla seconda
-                prima di riaprire il file. L’uso simultaneo non è supportato.
+                Conserva l’archivio attivo fuori da Google Drive, OneDrive e
+                condivisioni di rete. Puoi sincronizzare copie di recupero
+                chiuse. Il passaggio fra postazioni tramite sincronizzazione del
+                file attivo non è più supportato. Attendi “Salvato” prima di
+                chiudere Cash.
               </AlertDescription>
             </Alert>
           </div>

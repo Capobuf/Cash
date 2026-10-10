@@ -21,7 +21,9 @@
     "test:watch": "vitest",
     "package:win": "npm run build && electron-builder --win portable --x64 --publish never",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.{ts,tsx}\" \"scripts/*.mjs\" \"*.config.{js,ts}\" \"*.json\" \".prettierrc.json\" \".github/workflows/*.{yml,yaml}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.{ts,tsx}\" \"scripts/*.mjs\" \"*.config.{js,ts}\" \"*.json\" \".prettierrc.json\" \".github/workflows/*.{yml,yaml}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.{ts,tsx}\" \"scripts/*.mjs\" \"*.config.{js,ts}\" \"*.json\" \".prettierrc.json\" \".github/workflows/*.{yml,yaml}\"",
+    "test:sqlite:electron": "node scripts/sqlite-smoke.mjs",
+    "test:sqlite:portable": "node scripts/sqlite-smoke.mjs --packaged"
   },
   "dependencies": {
     "@zowe/secrets-for-zowe-sdk": "8.38.0"

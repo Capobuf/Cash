@@ -127,7 +127,6 @@ function setup() {
     token: {
       documentId: document.documentId,
       revision: 1,
-      fingerprint: 'hash',
     },
   });
   let controller!: ReturnType<typeof useQuoteController>;

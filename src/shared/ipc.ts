@@ -1,4 +1,8 @@
-import type { ArchiveSession, ConcurrencyToken } from '../native/persistence';
+import type {
+  ArchiveSession,
+  ConcurrencyToken,
+  ArchiveInspection,
+} from './archive';
 import type { BankExpenseImport } from '../domain/model';
 import type {
   FicAccessVerification,
@@ -75,19 +79,7 @@ export interface CashNativeApi {
       path: string,
       token: ConcurrencyToken,
     ): Promise<Result<ArchiveSession>>;
-    inspect(path: string): Promise<
-      Result<{
-        header: {
-          schemaVersion: number;
-          documentId: string;
-          revision: number;
-          createdAt: string;
-          updatedAt: string;
-        };
-        fingerprint: string;
-        size: number;
-      }>
-    >;
+    inspect(path: string): Promise<Result<ArchiveInspection>>;
   };
   credentials: {
     hasFicToken(): Promise<Result<boolean>>;

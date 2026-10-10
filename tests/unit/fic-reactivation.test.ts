@@ -57,7 +57,6 @@ it.each([true, false])(
       token: {
         documentId: doc.documentId,
         revision: doc.revision,
-        fingerprint: 'hash',
       },
     });
     const render = () => {

@@ -9,13 +9,13 @@ import {
 } from '../../src/native/bank-expense-import';
 import { createEmptyDocument, meta } from '../../src/domain/model';
 import {
-  backupPathFor,
   createArchive,
-  migrateArchive,
+  importJsonArchive,
+  closeAllArchives,
   openArchive,
-  previewMigration,
   saveArchive,
 } from '../../src/native/persistence';
+import { previewMigration } from '../../src/native/legacy-import';
 
 const headers = [
   'Data_Operazione',
@@ -41,6 +41,7 @@ async function directory() {
   return dir;
 }
 afterEach(async () => {
+  closeAllArchives();
   await Promise.all(
     dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -199,7 +200,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       ok: true,
       value: { fromVersion: 5, toVersion: 11, blockers: [] },
     });
-    const migrated = await migrateArchive(path);
+    const migrated = await importJsonArchive(path, `${path}.sqlite`);
     if (!migrated.ok) throw new Error(migrated.error.message);
     expect(migrated.value.document).toEqual({
       ...document,
@@ -208,7 +209,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
     expect(migrated.value.document!.bankExpenseCategories).toMatchObject([
       { name: 'Imposte P.IVA', systemRole: 'vat_taxes' },
     ]);
-    expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
+    expect(await readFile(path, 'utf8')).toBe(bytes);
     const updated = structuredClone(migrated.value.document!);
     const category = { ...meta(), name: 'Software' };
     updated.bankExpenseCategories.push(category);
@@ -224,9 +225,13 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       matchText: 'licenza',
       categoryId: category.id,
     });
-    const saved = await saveArchive(path, updated, migrated.value.token);
+    const saved = await saveArchive(
+      `${path}.sqlite`,
+      updated,
+      migrated.value.token,
+    );
     expect(saved.ok).toBe(true);
-    expect(await openArchive(path)).toMatchObject({
+    expect(await openArchive(`${path}.sqlite`)).toMatchObject({
       ok: true,
       value: {
         document: {
@@ -239,7 +244,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       },
     });
     expect(
-      await saveArchive(path, updated, migrated.value.token),
+      await saveArchive(`${path}.sqlite`, updated, migrated.value.token),
     ).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
   });
 
@@ -249,14 +254,14 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       path,
       JSON.stringify({ ...createEmptyDocument(), schemaVersion: 99 }),
     );
-    expect(await openArchive(path)).toMatchObject({
-      ok: true,
-      value: { readOnly: true, headerOnly: true },
+    expect(await importJsonArchive(path, `${path}.sqlite`)).toMatchObject({
+      ok: false,
+      error: { code: 'SCHEMA_NEWER' },
     });
     expect(
       (
         await createArchive(
-          join(await directory(), 'empty.json'),
+          join(await directory(), 'empty.sqlite'),
           createEmptyDocument(),
         )
       ).ok,
@@ -272,18 +277,18 @@ describe('XLSX bancario nativo e archivio corrente', () => {
     const path = join(await directory(), 'partial-v6.json');
     const bytes = JSON.stringify(legacy, null, 2);
     await writeFile(path, bytes);
-    const opened = await openArchive(path);
+    const opened = await importJsonArchive(path, `${path}.sqlite`);
     if (!opened.ok) throw new Error(opened.error.message);
     expect(opened.value.document).toEqual(document);
     expect(await readFile(path, 'utf8')).toBe(bytes);
     const saved = await saveArchive(
-      path,
+      `${path}.sqlite`,
       opened.value.document!,
       opened.value.token,
     );
     expect(saved.ok).toBe(true);
-    expect(await readFile(backupPathFor(path), 'utf8')).toBe(bytes);
-    expect(await openArchive(path)).toMatchObject({
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+    expect(await openArchive(`${path}.sqlite`)).toMatchObject({
       ok: true,
       value: {
         document: {
@@ -323,7 +328,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
         bankExpenseRules: undefined,
       }),
     );
-    const opened = await openArchive(path);
+    const opened = await importJsonArchive(path, `${path}.sqlite`);
     if (!opened.ok) throw new Error(opened.error.message);
     expect(
       opened.value.document?.bankExpenses.map((row) => row.categoryIds),
@@ -332,9 +337,17 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       'categoryId',
     );
     expect(
-      (await saveArchive(path, opened.value.document!, opened.value.token)).ok,
+      (
+        await saveArchive(
+          `${path}.sqlite`,
+          opened.value.document!,
+          opened.value.token,
+        )
+      ).ok,
     ).toBe(true);
-    const persisted = JSON.parse(await readFile(path, 'utf8'));
+    const persistedResult = await openArchive(`${path}.sqlite`);
+    if (!persistedResult.ok) throw new Error(persistedResult.error.message);
+    const persisted = persistedResult.value.document!;
     expect(persisted.bankExpenses[0]).toEqual({
       ...rows[0],
       categoryId: undefined,

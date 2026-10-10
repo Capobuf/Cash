@@ -11,7 +11,7 @@ import {
   type FicActivationPreview,
 } from '../domain/integration';
 import { saveProfileRevision } from '../domain/profiles';
-import type { ArchiveSession, ConcurrencyToken } from './persistence';
+import type { ArchiveSession, ConcurrencyToken } from '../shared/archive';
 
 export interface FicLinkServices {
   verify(

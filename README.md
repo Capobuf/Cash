@@ -5,7 +5,7 @@ La preventivazione costruisce offerte a partire da obiettivi economici,
 tempo, spese e trasferte. Il prezzo finale resta sempre una scelta dell’utente. L’app non è un software
 fiscale o contabile e non sostituisce il commercialista.
 
-La specifica canonica è [Cash_Specifica_Funzionale_v0.7.md](Cash_Specifica_Funzionale_v0.7.md), del 30 settembre 2026.
+La specifica canonica è [Cash_Specifica_Funzionale_v0.7.md](Cash_Specifica_Funzionale_v0.7.md), con persistenza Windows aggiornata il 10 ottobre 2026.
 Gli artefatti in `specs/001-cash-mvp` sono documentazione storica e non definiscono i requisiti correnti.
 
 ## Avvio in sviluppo
@@ -29,44 +29,53 @@ ESLint resta dedicato ai controlli sul codice, senza un secondo insieme di regol
 Il runtime carica file locali e non avvia server HTTP né apre porte. Il renderer non ha accesso generico
 a filesystem, credenziali o rete: usa esclusivamente le operazioni native esposte dal preload isolato.
 
-## Archivio e Google Drive
+## Archivio SQLite locale
 
-Tutti i dati funzionali risiedono in un solo file JSON UTF-8 scelto dall’utente. Per usarlo con Google
-Drive for Desktop:
+Tutti i dati funzionali risiedono nell’archivio `.sqlite` scelto dall’utente. La destinazione iniziale
+proposta è `Cash.sqlite` nella cartella locale delle impostazioni Cash. Usa un disco locale e una
+cartella **non sincronizzata**: Google Drive, OneDrive e condivisioni di rete non sono destinazioni
+per il database attivo. Il precedente passaggio fra PC tramite Drive non è più supportato.
+Cash non rileva automaticamente tutte le cartelle sincronizzate. Puoi conservare e sincronizzare
+copie di recupero consistenti e chiuse; aprine una copia su disco locale per usarla.
+Creazione, importazione e copie di recupero richiedono una destinazione NTFS: la pubblicazione
+esclusiva del file verificato usa un hard link per evitare sovrascritture, anche in caso di concorrenza.
+Un filesystem che non supporta questa operazione restituisce un errore, senza fallback.
 
-1. configurare Drive in modalità mirroring («Duplica file»);
-2. creare o spostare l’archivio in una cartella di «Il mio Drive» disponibile offline;
-3. lavorare su una sola postazione alla volta;
-4. prima di cambiare postazione, chiudere Cash solo dopo lo stato `Salvato`;
-5. attendere la fine della sincronizzazione prima sulla postazione precedente e poi su quella nuova.
+Ogni salvataggio convalida l’intero documento e usa una transazione SQLite con revisione attesa.
+Aggiorna solo le righe cambiate e incrementa la revisione dopo il confronto di `documentId` e
+`revision`. Il database usa WAL, `foreign_keys=ON`, timeout di lock di 5 secondi e `synchronous=FULL`.
+Il renderer mantiene il modello applicativo esistente e non riceve SQL, driver o filesystem.
+Importi e percentuali restano stringhe decimali esatte; i calcoli di dominio sono invariati.
 
-Ogni salvataggio valido incrementa la revisione, conserva la versione precedente in
-`<nome>.backup.json`, scrive e valida un file temporaneo nella stessa cartella e controlla UUID,
-revisione e SHA-256 prima della sostituzione. Cash non fonde versioni e non ripristina backup
-automaticamente. In caso di conflitto usare `Copia di recupero` e confrontare esplicitamente i file.
+Prima del salvataggio, la precedente versione valida viene conservata in `<nome>.backup.sqlite`
+con l’API di backup SQLite, verificata e chiusa come file autonomo. Non copiare il solo database
+aperto: WAL può contenere dati non ancora trasferiti nel file principale. `Ripristina backup`
+conserva copie datate di archivio corrente e backup e ripristina tutti i dati in una transazione,
+con un nuovo `documentId` e revisione 1. `Copia di recupero` salva anche le modifiche in memoria
+non ancora persistite in un archivio indipendente, senza cambiare quello corrente. Nessun backup
+viene caricato automaticamente. Errori e conflitti lasciano lo stato non salvato; la chiusura
+richiede una scelta esplicita se esistono modifiche pendenti.
 
-Gli archivi schema 1–10 richiedono anteprima e conferma prima della migrazione allo schema 11.
-La migrazione 10 → 11 conserva i dati senza escludere automaticamente spese o categorie.
-La migrazione dagli schemi 1–9 rimuove il saldo bancario manuale e il relativo contenitore annuale, senza
-trasferirli altrove. Conserva profili, movimenti, categorie, regole, snapshot FIC, preventivi
-e gli altri dati. Per gli archivi storici elimina anche covered/additions senza creare
-movimenti e aggiunge la categoria di sistema Imposte P.IVA solo se assente.
-Una categoria utente omonima rimane distinta.
-La ricerca dei movimenti include descrizione, importo (anche in formato italiano), data,
-categorie manuali e automatiche e stato di esclusione. “Ignora nei conteggi” conserva la
-spesa nell’archivio e nella lista, ma la esclude da riepiloghi, Sankey e panoramica finanziaria,
-comprese le imposte già pagate. L’opzione sulle categorie si applica anche alle sottocategorie:
-una sola categoria effettiva esclusa basta a escludere l’intero movimento.
-Le regole automatiche sono ricercabili per testo e categoria, filtrabili per categoria
-(incluse le sottocategorie) e presenza di corrispondenze, e ordinabili per testo,
-categoria o numero di corrispondenze. I conteggi considerano tutti gli anni e le spese escluse.
-Movimenti e regole assenti vengono letti con liste vuote; le vecchie
-assegnazioni `categoryId` diventano categorie manuali in `categoryIds`. L’apertura non riscrive
-il file: il successivo salvataggio conserva il formato precedente nel consueto backup.
-Il nuovo numero di schema impedisce ai vecchi client di risalvare l’archivio scartando i dati nuovi. La migrazione
-automatica procede solo per trasformazioni deterministiche. Se trova Clienti locali, `oneWayKm` o
-Trasferte del modello precedente, si arresta senza scrivere e indica i dati da ricostruire esplicitamente.
-Uno schema più nuovo viene aperto soltanto in lettura.
+**Importazione JSON storico:** `Apri archivio` seleziona SQLite oppure JSON schema 1–11.
+Se l’ultimo percorso locale è JSON, Cash propone la stessa importazione all’avvio. Dopo anteprima
+e conferma si sceglie un nuovo `.sqlite`; un file già esistente viene rifiutato. Le trasformazioni
+storiche già disponibili aggiornano i dati allo schema applicativo 11. I blocker per Clienti
+locali, `oneWayKm` e Trasferte ambigue impediscono conversioni arbitrarie. Cash crea un database
+temporaneo sul volume di destinazione, importa in transazione, ricostruisce e confronta l’intero
+documento normalizzato, verifica integrità e relazioni e pubblica il file chiuso senza sovrascrivere
+la destinazione. UUID, identità, revisione, date, ordine e optional vengono conservati. Il JSON
+originale e i suoi backup restano byte per byte invariati. Il percorso nelle preferenze locali
+viene aggiornato solo dopo il successo; annullare lascia tutto invariato.
+
+Lo schema SQLite è alla versione **1**, indipendente dallo schema applicativo **11**. Le future
+migrazioni SQL supportate saranno applicate automaticamente all’apertura, dopo un backup coerente,
+in transazione con rollback e verifica integrale. Non esistono migrazioni da versioni SQL precedenti
+alla prima: SQLite sconosciuti, schema zero e file corrotti vengono rifiutati. Uno schema futuro è
+ispezionato in sola lettura, senza degradarlo o sovrascriverlo.
+
+Token FIC e API key OpenRouteService restano nel Gestore credenziali Windows tramite Zowe;
+non entrano nel database, nei backup o nei log. `preferences.json`, incluso il Client ID non segreto
+e le altre preferenze locali, resta separato e compatibile.
 
 ## Uso offline e fonti live
 
@@ -179,7 +188,7 @@ riconciliazione o categorizzazione automatica non configurata dall’utente. Let
 il renderer riceve solo righe normalizzate e applica un’unica mutazione dell’archivio.
 
 **Aggiorna dati Fatture in Cloud** acquisisce manualmente tutte le pagine di invoice, credit_note,
-expense e passive_credit_note e sostituisce un unico snapshot finanziario nel file JSON. Un errore
+expense e passive_credit_note e sostituisce un unico snapshot finanziario nel database SQLite. Un errore
 lascia invariato lo snapshot precedente. Nessun aggiornamento automatico, polling o webhook.
 I nuovi permessi sono di sola lettura; i vecchi token vanno riconfigurati con gli scope sopra elencati.
 
@@ -252,12 +261,13 @@ npm run package:win
 
 Il comando crea `release/Cash.exe`, un’applicazione portable autosufficiente. Non richiede installazione,
 Node.js, database, container o server sulla macchina dell’utente. Il prodotto è destinato a Windows 10/11
-x64 e a uso sequenziale monoutente.
+x64 e a uso locale monoutente.
 
 ## Dipendenze e manutenzione
 
 La CI usa Node.js 24, cache npm e `npm ci` con il lockfile versionato; esegue typecheck,
-lint, `format:check`, test e `package:win`, quindi pubblica come artefatto `release/Cash.exe` (Windows x64).
+lint, `format:check`, test e `package:win`; verifica la persistenza SQLite nel runtime Electron
+e nel portable con `npm run test:sqlite:electron` e `npm run test:sqlite:portable`, quindi pubblica come artefatto `release/Cash.exe` (Windows x64).
 Non è previsto un installer distinto dal portable.
 
 Le credenziali restano nel Gestore credenziali di Windows. `@zowe/secrets-for-zowe-sdk`

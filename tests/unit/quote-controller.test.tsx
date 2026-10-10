@@ -13,7 +13,7 @@ import {
   type ReusableSubItem,
 } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
-import type { ArchiveSession } from '../../src/native/persistence';
+import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState } from '../../src/renderer/state';
 import { useQuoteController } from '../../src/renderer/hooks/use-quote-controller';
 
@@ -25,7 +25,6 @@ function session(document: CashDocument, path = 'Cash.json'): ArchiveSession {
     token: {
       documentId: document.documentId,
       revision: document.revision,
-      fingerprint: 'hash',
     },
   };
 }

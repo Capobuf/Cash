@@ -11,3 +11,7 @@ Thumbs.db
 .vscode/
 .idea/
 .agents/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+!tests/fixtures/**/*.sqlite

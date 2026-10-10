@@ -4,7 +4,7 @@
 
 *Specifica canonica consolidata - v0.7*
 
-*30 settembre 2026*
+*30 settembre 2026; persistenza Windows aggiornata il 10 ottobre 2026*
 
 | **Voce** | **Valore** |
 | --- | --- |
@@ -69,7 +69,7 @@ Cash deve permettere di costruire preventivi partendo da obiettivi economici, di
 
 - 24. Esecuzione locale e architettura vincolante
 
-- 25. Persistenza e utilizzo tramite Google Drive
+- 25. Persistenza SQLite locale
 
 - 26. Impostazioni
 
@@ -145,9 +145,9 @@ Cash deve aiutare a rispondere almeno a queste domande:
 
 **INV-010 -** Il file dati è l'unica fonte canonica dei dati locali di Cash; Fatture in Cloud resta la source of truth dei documenti amministrativi, acquisiti in uno snapshot esplicito e datato. Cache, copie di sicurezza e dati locali del client non possono sostituirlo automaticamente.
 
-**INV-011 -** Ogni salvataggio verifica identificativo, revisione e impronta del file letto. Se il file è cambiato altrove, Cash blocca la scrittura e non tenta una fusione automatica.
+**INV-011 -** Ogni salvataggio verifica identificativo e revisione del database nella transazione di scrittura. Se il file è cambiato altrove, Cash blocca la scrittura e non tenta una fusione automatica.
 
-**INV-012 -** Credenziali e token di servizi esterni non sono mai salvati nel file dati sincronizzato con Google Drive.
+**INV-012 -** Credenziali e token di servizi esterni non sono mai salvati nel database o nei backup.
 
 **INV-013 -** Cash non avvia né richiede un server applicativo, un database server o un servizio in ascolto su una porta locale.
 
@@ -179,8 +179,8 @@ Cash deve aiutare a rispondere almeno a queste domande:
 | Fatture in Cloud | Integrazione interamente facoltativa, attivabile e configurabile dalle Impostazioni; consente ricerca clienti, esportazione/raggruppamento delle voci usando il prodotto “Consulenza” e acquisizione manuale dei documenti finanziari in sola lettura. |
 | OpenRouteService | Unico servizio esterno per ricerca di indirizzi, geocodifica, geocodifica inversa, distanza stradale e tempo di viaggio stimato; configurato nelle Impostazioni già dedicate alle integrazioni o alle API. |
 | Utente | Uso monoutente. Autenticazione, ruoli e permessi non sono requisiti funzionali dell'MVP. |
-| Persistenza | Un solo file dati JSON scelto dall'utente, con revisioni, salvataggio atomico e copia di sicurezza dell'ultima versione valida. |
-| Multi-postazione | Uso sequenziale dello stesso file tramite Google Drive for Desktop in modalità mirroring. |
+| Persistenza | Un archivio SQLite locale scelto dall’utente, con revisioni, transazioni, salvataggi incrementali e backup dell’ultima versione valida. |
+| Multi-postazione | Sincronizzazione del database attivo e uso multi-postazione non supportati; sono ammesse copie di recupero chiuse. |
 | Esecuzione | Client desktop locale con interfaccia HTML/CSS/JavaScript; nessun server applicativo. |
 
 ## 4. Modello economico
@@ -887,7 +887,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 ### 21.1 Configurazione iniziale
 
-**1.** Creare o aprire il file dati nella cartella “Il mio Drive” configurata in modalità mirroring.
+**1.** Creare o aprire un archivio SQLite su disco locale non sincronizzato, oppure importare un JSON storico in un nuovo SQLite.
 
 **2.** In **Impostazioni → Profilo fiscale**, scegliere l'anno, configurare codice ATECO, coefficiente di redditività, aliquota Gestione Separata, massimale, fase nei/oltre i primi cinque periodi, aliquote sostitutive e soglie; verificare l'anteprima e confermare il profilo.
 
@@ -953,7 +953,7 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **14.** Se l'integrazione è attiva, eventualmente raggruppare/esportare le voci verso Fatture in Cloud usando il cliente remoto selezionato.
 
-**15.** Verificare l'indicatore “Salvato” prima di chiudere Cash o cambiare postazione.
+**15.** Verificare l'indicatore “Salvato” prima di chiudere Cash.
 
 ### 21.4 Riapertura di un preventivo
 
@@ -969,17 +969,13 @@ L'esportazione è un'azione: non assegna uno stato al preventivo, non lo blocca 
 
 **6.** Eseguire “Aggiorna con valori correnti” in modo atomico: se un dato necessario non è disponibile, non modificare nulla; l'azione non richiama OpenRouteService e non sostituisce distanza o tempo.
 
-### 21.5 Passaggio a un'altra postazione
+### 21.5 Copie fra postazioni
 
-**1.** Chiudere Cash sulla prima postazione dopo che l'indicatore mostra “Salvato”.
-
-**2.** Attendere che Google Drive for Desktop segnali il completamento della sincronizzazione.
-
-**3.** Sulla seconda postazione attendere a sua volta il completamento della sincronizzazione, quindi aprire lo stesso file dati.
-
-**4.** Se l'integrazione condivisa è attiva ma la postazione non possiede il token, configurarlo localmente prima di usare funzioni live; nessun token viene trasferito da Drive e l'assenza del token non blocca le funzioni locali.
-
-L'uso contemporaneo dello stesso file su più postazioni non è supportato.
+La sincronizzazione del database attivo tramite Google Drive o OneDrive non è supportata.
+L’utente può creare una copia di recupero chiusa e trasportarla, anche tramite una cartella
+sincronizzata. Prima di aprirla su un’altra postazione la copia deve trovarsi su disco locale
+non sincronizzato. Le due copie sono archivi indipendenti: Cash non le sincronizza o fonde.
+Le credenziali delle integrazioni restano locali e devono essere configurate sulla postazione.
 
 ### 21.6 Assenza di ciclo di vita commerciale
 
@@ -1095,7 +1091,7 @@ I documenti amministrativi nello snapshot finanziario usano esclusivamente l’I
 | Inflazione | Valore di confronto; non modifica automaticamente il prezzo scelto. |
 | Aggiornamento valori correnti | Solo su azione esplicita dell'utente; mai automatico in apertura; operazione atomica. |
 | Fallback | Vietati: un dato necessario mancante o una sorgente non disponibile producono un errore esplicito. |
-| File dati | JSON, identificativo e struttura devono essere validi. Uno schema più nuovo viene aperto soltanto in lettura; uno precedente richiede la migrazione prevista. Una revisione incoerente blocca il salvataggio. |
+| File dati | Database SQLite, identificativo, struttura e integrità devono essere validi. Uno schema più nuovo viene aperto soltanto in lettura; uno precedente richiede la migrazione prevista. Una revisione incoerente blocca il salvataggio. |
 | Fatture in Cloud | Se disattivato, non esegue chiamate e non richiede token, azienda, cliente o prodotto. Se attivo, token locale, azienda, prodotto e permessi devono essere validi per la specifica operazione live; per esportare serve anche un cliente remoto della stessa azienda. |
 
 ### 23.1 Nessun fallback
@@ -1161,98 +1157,127 @@ Il frontend può essere sviluppato come un'unica applicazione HTML/JavaScript se
 
 ### 24.2 Rete e funzionamento offline
 
-L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT, OpenRouteService e, se l'integrazione è attiva, Fatture in Cloud; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Google Drive viene usato tramite il normale filesystem sincronizzato da Drive for Desktop; Cash non richiede Google Drive API né OAuth Google.
+L'host nativo del client esegue richieste HTTPS soltanto verso gli endpoint ufficiali necessari di ISTAT, MIMIT, OpenRouteService e, se l'integrazione è attiva, Fatture in Cloud; restituisce all'interfaccia dati strutturati validati. La WebView non chiama direttamente tali API e non riceve accesso generico alla rete o al filesystem. Cash non usa proxy, servizi intermedi o API proprietarie di Cash. Soltanto copie chiuse possono essere trasportate tramite cartelle sincronizzate; il database attivo resta locale. Cash non richiede Google Drive API né OAuth Google.
 
 Senza connessione internet l'utente può aprire e modificare profili, Sedi, catalogo e preventivi già salvati. Sono bloccate, con errore esplicito, le sole operazioni che richiedono dati live: acquisizione di nuovi indici FOI o prezzi carburante, ricerca/geocodifica di Sedi e Calcola/Ricalcola percorso tramite OpenRouteService e, quando il modulo è attivo, caricamento/ricerca clienti, verifica prodotto, esportazione preventivi e aggiornamento dello snapshot finanziario Fatture in Cloud. Gli snapshot esistenti restano consultabili e ricalcolabili con i propri dati storici; distanza e tempo possono essere inseriti manualmente su scelta esplicita dell'utente.
 
 ### 24.3 Aggiornamenti del client e compatibilità dati
 
-Ogni versione del client dichiara le versioni di schema dati che può leggere e scrivere. Se il file usa uno schema più nuovo, Cash lo apre in sola lettura e richiede l'aggiornamento del client. Se serve una migrazione da uno schema precedente, Cash mostra cosa verrà aggiornato, crea una copia di sicurezza e applica la migrazione atomicamente solo dopo conferma esplicita.
+Cash usa `node:sqlite` del runtime Electron Windows x64 nel solo processo nativo. SQL,
+filesystem e driver non sono esposti al renderer; sandbox e preload isolato restano invariati.
+La distribuzione portable include il runtime, senza installazioni esterne.
 
-Quando uno schema precedente non contiene lo stato esplicito dell'integrazione, la migrazione imposta Fatture in Cloud su `Disattivata` e conserva gli eventuali riferimenti non segreti esistenti per una futura riattivazione esplicita.
+Lo schema applicativo è 11; lo schema SQLite usa un contatore distinto, `PRAGMA user_version`,
+attualmente 1. Gli schemi futuri sono aperti al più come intestazione in sola lettura.
+Le migrazioni SQL effettivamente supportate sono automatiche all’apertura, progressive e
+transazionali: backup consistente prima delle modifiche, validazione completa e integrità,
+aggiornamento di `user_version` solo dopo successo. Un errore esegue rollback, conserva il
+backup e blocca la scrittura con indicazione del recupero. Non si inizializzano database
+sconosciuti o versioni zero; non esistono versioni SQL precedenti alla prima rilasciata.
 
-Lo schema corrente è 11. Le migrazioni dagli schemi 1–10 conservano i dati validi, inclusi profili, snapshot FIC, movimenti, categorie, regole e preventivi; rimuovono il saldo bancario manuale e il relativo contenitore senza trasferirli altrove, oltre ai campi fiscali manuali superati, e garantiscono una sola categoria di sistema Imposte P.IVA. Restano i blocker storici per le conversioni ambigue. Anteprima, conferma e backup precedono la migrazione atomica. Un client precedente apre il nuovo schema in sola lettura, impedendo che una validazione elimini i dati nuovi.
+Gli archivi JSON schema 1–11 sono esclusivamente sorgenti di importazione. Le trasformazioni
+storiche, compresi i blocker per Clienti locali, `oneWayKm` e Trasferte ambigue, sono riutilizzate
+per normalizzare allo schema applicativo 11. Non si inventano conferme, categorie manuali o
+importi fiscali. La rimozione dei campi funzionali già superati segue le trasformazioni esistenti.
 
-Non è ammesso che due versioni diverse del client scrivano contemporaneamente lo stesso file.
+## 25. Persistenza SQLite locale
 
-## 25. Persistenza e utilizzo tramite Google Drive
+### 25.1 Archivio canonico e mappatura
 
-### 25.1 File canonico
+Tutti i dati funzionali risiedono in un archivio `.sqlite` scelto dall’utente. La destinazione
+iniziale proposta è `Cash.sqlite` nella cartella locale delle impostazioni dell’applicazione.
+Il modello applicativo resta `CashDocument`; non viene salvato come un unico blob o JSON ombra.
 
-Tutti i dati funzionali sono conservati in un unico file UTF-8 denominato per impostazione iniziale `Cash.data.json`. Il nome può essere scelto dall'utente alla creazione ma deve terminare con `.json`. Il file contiene almeno:
+| Contenuto | Mappatura SQLite |
+| --- | --- |
+| Identità, revisioni e timestamp | Riga `archive_metadata`; schema dati 11 separato da schema SQL 1. |
+| Impostazioni funzionali non segrete | Riga `shared_settings`, JSON annidato della sola configurazione condivisa completa. |
+| Profili | `profiles`, ID, anno unico, revisione, conferme, importi; fiscalità e capacità con festività locali in JSON per profilo. |
+| Costi, veicoli, sedi | `business_costs`, `vehicles`, `sites`; campi scalari espliciti, solo cliente e localizzazione della singola sede in JSON. |
+| Catalogo | `catalog_subitems` e `catalog_templates`; una riga per entità. Campi specifici della sottovoce e voci/varianti del singolo template annidati, senza duplicare le colonne. |
+| Preventivi | `quotes`, ID, date e metadati espliciti; payload del solo preventivo con snapshot, righe, varianti, prove MIMIT/FOI, commissione e tentativi export. I riferimenti storici non diventano FK obbligatorie. |
+| Totali annuali commercialista | `fiscal_payment_overrides`, anno unico e totale decimale testuale; presenza della raccolta indicata nei metadati. |
+| Banca | `bank_expense_categories`, `bank_expenses`, `bank_expense_rules`, categorie manuali ordinate nella relazione `bank_expense_manual_categories`; FK sui soli riferimenti vivi. Unicità esatta di data, descrizione normalizzata e importo. Categorie automatiche sempre derivate. |
+| Snapshot finanziario FIC | `fic_snapshot_metadata` con presenza della raccolta pending; `fic_issued_documents`, `fic_received_documents`, `fic_pending_received_documents`. ID separati per raccolta, pending identificati da sorgente e ID. |
+| Pagamenti FIC | Righe figlie ordinate in `fic_issued_payments` e `fic_received_payments`; ID pagamento facoltativo, importi esatti, scadenza, data e stato. |
 
-- `schemaVersion`;
-- `documentId` UUID immutabile;
-- `revision` intera crescente, inizialmente 1;
-- `createdAt` e `updatedAt` in ISO 8601 UTC;
-- impostazioni condivise;
-- profili economici e fiscali annuali;
-- costi aziendali, veicoli e Sedi con gli eventuali riferimenti non segreti ai clienti Fatture in Cloud;
-- catalogo e template;
-- preventivi e relativi snapshot;
-- riferimenti non segreti alle esportazioni;
-- snapshot finanziario Fatture in Cloud opzionale, disponibile offline e trasferito con lo stesso archivio.
+Ogni lista conserva una posizione; stringhe decimali restano TEXT, mai REAL o conversioni
+finanziarie approssimate. NULL significa optional assente, distinto da false, zero e stringa
+vuota. Flag di presenza distinguono raccolte fiscali e pending assenti da liste vuote. Lettura
+e scrittura applicano lo schema Zod e le invarianti esistenti. Nomi e confronti italiani
+rimangono nel dominio; non vengono sostituiti da COLLATE NOCASE.
 
-Importi, aliquote, coefficienti, distanze e consumi sono serializzati come stringhe decimali con punto come separatore e unità definita dallo schema. Durate e occorrenze sono interi. Il file non contiene un'anagrafica clienti duplicata, né token, password, cache dell'anagrafica remota o copie nascoste di dati live; conserva soltanto riferimenti e snapshot non segreti dove funzionalmente necessari.
+FIC resta la source of truth dei documenti amministrativi. Il database contiene soltanto
+riferimenti e snapshot funzionali, nessuna anagrafica clienti duplicata né credenziali o cache
+remota autonoma. L’ultimo percorso viene riaperto solo se disponibile; se manca non nasce
+silenziosamente un archivio vuoto. Un ultimo percorso JSON propone l’importazione.
 
-Il file dati è l'unica fonte canonica locale; lo snapshot non sostituisce FIC come fonte dei documenti amministrativi. All'avvio Cash apre l'ultimo percorso usato sulla postazione se ancora disponibile; in caso contrario chiede di selezionare esplicitamente il file o di crearne uno nuovo. Non crea automaticamente un archivio vuoto quando il file atteso manca.
+### 25.2 Disco locale e importazione storica
 
-### 25.2 Google Drive for Desktop
+Il database attivo deve risiedere su disco locale non sincronizzato. Google Drive, OneDrive,
+percorsi UNC e condivisioni di rete non sono supportati come archivio live. Cash non promette
+un rilevatore infallibile delle cartelle sincronizzate. Il vecchio workflow di passaggio PC
+tramite Drive è sostituito: sono trasportabili soltanto copie consistenti e chiuse, che devono
+essere copiate su disco locale prima di essere aperte come archivi indipendenti.
+Creazione, importazione e copie di recupero richiedono una destinazione NTFS: la pubblicazione
+esclusiva usa un hard link del temporaneo chiuso. Su filesystem senza supporto l’operazione
+fallisce esplicitamente senza sovrascritture o fallback.
 
-Il file dati e la sua copia di sicurezza devono risiedere in una cartella di “Il mio Drive” sincronizzata da Google Drive for Desktop in modalità **Mirror files / Duplica file**. La modalità mirroring è il modello supportato dall'MVP perché mantiene una copia locale standard anche quando Drive for Desktop non è in esecuzione. La modalità streaming non è supportata come configurazione canonica; marcarne semplicemente il file come disponibile offline non equivale alla garanzia richiesta per salvataggi frequenti.
+L’importazione JSON richiede anteprima, conferma e scelta di un nuovo `.sqlite`. Il JSON
+originale e i suoi backup non vengono modificati, rinominati o cancellati. L’importer convalida
+il documento normalizzato, crea un temporaneo sulla stessa destinazione, importa in transazione,
+ricostruisce e confronta semanticamente l’intero documento, verifica integrità e FK e pubblica
+il database chiuso senza sovrascrivere file preesistenti. DocumentId, revisione, timestamp, UUID,
+ordine, optional e precisione vengono conservati. Il percorso nelle preferenze cambia solo dopo
+successo; errori e annullamento non cambiano la sessione. Il JSON non resta un secondo archivio editabile.
 
-Google Drive sincronizza file, non esegue l'applicazione e non ospita Cash come sito web. Il client può essere installato su ciascuna postazione; solo i dati vengono sincronizzati.
+### 25.3 Salvataggio e backup
 
-### 25.3 Salvataggio atomico
+Ogni operazione logica completata genera uno snapshot applicativo e una scrittura serializzata.
+Dopo la validazione completa: `BEGIN IMMEDIATE`, confronto di documentId/revisione attesa,
+backup consistente della versione precedente, aggiornamento delle sole righe cambiate,
+incremento della revisione e `COMMIT`. Qualsiasi errore esegue rollback e mantiene le modifiche
+in memoria non salvate. Non ci sono last-write-wins, salvataggi parziali o stato Salvato prima
+del commit. Un sync FIC riuscito sostituisce l’intero snapshot in una transazione.
 
-Cash salva automaticamente dopo ogni operazione logica completata, serializzando le scritture in modo che ne esista al massimo una in corso. La UI mostra sempre uno dei seguenti stati: `Modifiche non salvate`, `Salvataggio`, `Salvato`, `Errore di salvataggio`, `Conflitto esterno`.
+SQLite usa foreign_keys ON, WAL, synchronous FULL e timeout di lock esplicito di 5 secondi.
+La connessione appartiene al processo nativo ed è chiusa al cambio archivio o all’uscita;
+operazioni tardive della sessione precedente non possono scrivere nel nuovo archivio.
+La creazione pubblica un temporaneo già verificato senza sostituire una destinazione esistente.
+La prima revisione è 1; l’importazione preserva invece la revisione storica.
 
-All'apertura Cash conserva in memoria l'impronta SHA-256 dei byte del file insieme a `documentId` e `revision`. Per un file già esistente, prima di ogni sostituzione:
+Il backup rolling `<nome-base>.backup.sqlite` conserva la precedente versione valida. È prodotto
+con l’API online di backup SQLite, convalidato e chiuso come file autonomo prima della promozione;
+mai copiando soltanto il database aperto in WAL. Il backup precedente resta disponibile se la
+creazione del nuovo fallisce. I sidecar -wal/-shm sono gestiti da SQLite.
 
-1. rilegge e valida intestazione, `documentId`, `revision` e impronta del file su disco;
-2. verifica che coincidano con identificativo, revisione e impronta caricati;
-3. costruisce integralmente il nuovo documento in memoria, incrementando `revision` di uno;
-4. copia l'ultima versione valida in `<nome-base>.backup.json` nella stessa cartella; con il nome predefinito `Cash.data.json` la copia è `Cash.data.backup.json`;
-5. scrive il nuovo contenuto in un file temporaneo nella stessa cartella, lo chiude e ne verifica JSON, schema e identificativo;
-6. sostituisce atomicamente il file principale, quindi lo rilegge e ne verifica revisione e contenuto.
+La UI distingue modifiche non salvate, salvataggio, salvato, errore, conflitto e sola lettura.
+La chiusura con modifiche pendenti richiede una scelta esplicita. Copia di recupero costruisce
+un nuovo database dai dati in memoria, compresi quelli dirty, con nuovo documentId/revisione 1
+e gli stessi UUID delle entità. Il ripristino è esplicito: conserva copie datate sia dell’archivio
+corrente sia del backup e sostituisce i dati in una transazione con nuova identità e revisione 1.
+Un errore conserva archivio e backup; nessun recupero è automatico.
 
-Alla creazione iniziale, quando non esiste una versione precedente, Cash genera `documentId` e revisione 1, scrive e valida il file temporaneo e lo sposta atomicamente sul percorso scelto senza creare una copia di sicurezza vuota. Se nel frattempo compare un file nel percorso di destinazione, la creazione viene bloccata. La prima copia di sicurezza nasce al primo salvataggio successivo.
+### 25.4 Conflitti e integrità
 
-Se uno dei passaggi fallisce, Cash non considera salvata la modifica e mantiene in memoria la versione locale non salvata. Non tronca né sostituisce il file principale con contenuto parziale. La chiusura dell'applicazione con modifiche non salvate richiede una scelta esplicita fra riprovare, salvare una copia di recupero in un percorso scelto dall'utente o annullare le modifiche e chiudere. Una copia di recupero delle modifiche locali nasce come archivio indipendente con nuovo `documentId`, revisione 1 e gli stessi UUID delle entità contenute.
+Cash controlla documentId e revisione a focus, almeno ogni 30 secondi e dentro ogni transazione
+di salvataggio. Non usa l’impronta SHA dei byte di un database WAL. Una revisione più alta della
+stessa identità può essere ricaricata senza dati dirty; con modifiche locali la scrittura è
+bloccata e si offre una copia di recupero o la riapertura esplicita. Una revisione inferiore o
+un’identità diversa richiede una scelta esplicita, senza fusioni o criteri basati sul timestamp.
 
-La copia `<nome-base>.backup.json` conserva esclusivamente l'ultima versione valida precedente. Non viene caricata automaticamente: il ripristino è sempre un'azione esplicita e, prima di sostituire il file principale, Cash conserva entrambi i file con nomi datati. Il ripristino crea una nuova linea canonica con un nuovo `documentId`, revisione 1 e gli stessi UUID delle entità recuperate; in questo modo le altre postazioni rilevano esplicitamente la sostituzione dell'archivio invece di confonderla con una revisione successiva. Dopo il ripristino l'utente deve attendere la sincronizzazione e riaprire il nuovo archivio sulle altre postazioni. L'utente può inoltre creare in qualsiasi momento un'esportazione di sicurezza con data e ora nel nome.
+Quick_check/integrity_check, foreign_key_check e validazione integrale rilevano archivi non validi.
+Errori di I/O, lock, sola lettura, file mancanti e corruzione vengono mostrati; non producono uno
+stato Salvato. Un SQLite non Cash viene rifiutato, anche con estensione corretta. Nessuna
+riparazione distruttiva o fallback automatico è previsto.
 
-### 25.4 Modifiche esterne e conflitti
+### 25.5 Credenziali e preferenze locali
 
-Cash verifica `documentId`, `revision` e impronta quando la finestra torna in primo piano, prima di ogni salvataggio e almeno ogni 30 secondi mentre il file è aperto. Se il `documentId` è invariato e la revisione su disco è maggiore di quella caricata:
-
-- senza modifiche locali, ricarica il file dopo aver informato l'utente;
-- con modifiche locali, blocca ogni sovrascrittura e offre di salvare le modifiche locali come copia di recupero oppure di scartarle e ricaricare;
-- non fonde record, non sceglie automaticamente una versione e non usa il timestamp come criterio di verità.
-
-Una revisione su disco inferiore a quella caricata, oppure la stessa revisione con un'impronta diversa, è un conflitto anomalo e non viene mai ricaricata automaticamente, anche in assenza di modifiche locali. Cash blocca la scrittura e offre confronto, selezione esplicita o copia di recupero.
-
-Se il percorso contiene invece un `documentId` diverso, Cash considera che il file sia stato sostituito con un altro archivio: blocca salvataggi e ricaricamenti automatici e chiede di scegliere esplicitamente se aprire il nuovo archivio, ritrovare quello originario o salvare una copia di recupero delle modifiche locali.
-
-Se Google Drive crea due file con nomi diversi a seguito di un conflitto, Cash li tratta come due archivi distinti. Può mostrarne `documentId`, revisione, ultima modifica e conteggi principali per aiutare il confronto, ma l'utente deve scegliere esplicitamente quale mantenere. Prima di sostituire o archiviare una copia, entrambe vengono conservate con nomi distinti.
-
-### 25.5 Uso sequenziale fra postazioni
-
-La collaborazione simultanea non è supportata. Per passare a un'altra postazione l'utente deve chiudere Cash dopo lo stato `Salvato`, attendere il completamento della sincronizzazione Drive sulla prima postazione, quindi attendere il completamento sulla seconda prima di aprire il file.
-
-Il controllo di revisione protegge dai conflitti già sincronizzati, ma non può rendere sicure due sessioni contemporanee che lavorano offline o prima che Drive abbia propagato i cambiamenti. Questa limitazione deve essere mostrata nella configurazione iniziale e nella guida al cambio postazione.
-
-### 25.6 Dati locali non sincronizzati
-
-La singola postazione può conservare localmente soltanto:
-
-- percorso dell'ultimo file aperto;
-- dimensione e posizione della finestra e preferenze puramente visive;
-- token Fatture in Cloud nel gestore credenziali del sistema operativo;
-- Basic API key OpenRouteService;
-- identificativo casuale della postazione usato nei messaggi diagnostici.
-
-Nessun dato economico, cliente, catalogo o preventivo può esistere soltanto in una cache locale dopo che la UI indica `Salvato`.
+Token FIC, API key OpenRouteService e altri segreti restano nel Gestore credenziali Windows,
+con gli stessi identificatori e `@zowe/secrets-for-zowe-sdk`. Non entrano in SQLite, backup,
+esportazioni o log. `preferences.json` rimane locale e compatibile, incluso lastArchivePath,
+Client ID FIC non segreto e preferenze locali sconosciute. Stato temporaneo UI e risultati live
+non persistiti restano fuori dall’archivio.
 
 ## 26. Impostazioni
 
@@ -1500,17 +1525,17 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **41.** Non introdurre stati, workflow commerciale o numerazione propria dei preventivi; un preventivo salvato resta modificabile anche dopo l'esportazione.
 
-**42.** Conservare tutti i dati funzionali locali in un unico file JSON UTF-8 versionato, senza duplicare l'anagrafica clienti Fatture in Cloud e senza credenziali o cache dell'anagrafica remota.
+**42.** Conservare tutti i dati funzionali in SQLite locale con tabelle per entità, decimali esatti e snapshot annidati, senza CashDocument monolitico, JSON ombra, anagrafica clienti duplicata o credenziali.
 
-**43.** Salvare automaticamente ogni operazione logica con scrittura temporanea, validazione, sostituzione atomica e incremento della revisione.
+**43.** Salvare automaticamente ogni operazione logica con validazione, transazione, aggiornamenti delle sole righe cambiate e incremento della revisione.
 
-**44.** Creare prima di ogni sostituzione una copia di sicurezza dell'ultima versione valida e non ripristinarla mai automaticamente.
+**44.** Creare un backup SQLite consistente della precedente versione valida prima di ogni salvataggio; ripristino solo esplicito, con copie datate, nuova identità e rollback.
 
-**45.** Bloccare il salvataggio se identificativo, revisione o impronta del file su disco non coincidono con quelli caricati, senza sovrascrittura o fusione automatica, e permettere di salvare una copia di recupero.
+**45.** Bloccare il salvataggio se documentId o revisione nella transazione non coincidono con quelli attesi, senza sovrascritture o fusioni; permettere una copia di recupero dei dati dirty.
 
 **46.** Mostrare sempre lo stato di salvataggio e impedire una chiusura silenziosa con modifiche non salvate.
 
-**47.** Usare Google Drive for Desktop in modalità mirroring come trasporto del file fra postazioni e documentare il passaggio sequenziale con attesa della sincronizzazione.
+**47.** Conservare il database attivo su disco locale non sincronizzato; consentire il trasporto delle sole copie chiuse e documentare che il vecchio workflow Drive non è più supportato.
 
 **48.** Conservare il token Fatture in Cloud solo nel gestore credenziali locale del sistema operativo, richiedere una configurazione separata su ogni postazione e rimuoverlo soltanto tramite l'azione esplicita “Rimuovi collegamento”.
 
@@ -1520,7 +1545,7 @@ L'MVP è funzionalmente coerente con questa specifica quando consente almeno qua
 
 **51.** Applicare le regole di precisione e arrotondamento definite, producendo totali uguali alla somma dei componenti monetari visibili.
 
-**52.** Bloccare l'apertura in scrittura di uno schema dati più nuovo e migrare uno schema precedente soltanto con backup, conferma e operazione atomica.
+**52.** Bloccare la scrittura degli schemi futuri; applicare automaticamente le migrazioni SQL supportate con backup e rollback. Importare JSON storico 1–11 dopo anteprima e conferma, senza alterare sorgente o backup, verificando il round-trip integrale.
 
 **53.** Consentire l'uso offline di profili, Sedi, catalogo, preventivi e snapshot cliente già salvati e bloccare selettivamente soltanto le operazioni che richiedono ISTAT, MIMIT, OpenRouteService o, se attivo, Fatture in Cloud, lasciando disponibile l'inserimento manuale esplicito di distanza e tempo.
 
@@ -1558,7 +1583,7 @@ Riferimenti fiscali e generali verificati nella specifica del 13 settembre 2026;
 
 - **Festività:** Presidenza del Consiglio dei ministri, [Festività e giornate nazionali](https://presidenza.governo.it/ufficio_cerimoniale/cerimoniale/giornate.html), e [Legge 8 ottobre 2025, n. 151](https://www.normattiva.it/atto/caricaDettaglioAtto?atto.codiceRedazionale=25G00153&atto.dataPubblicazioneGazzetta=2025-10-10&tipoDettaglio=multivigenza), in vigore dal 1° gennaio 2026 per il 4 ottobre.
 
-- **Google Drive:** Google, [Stream & mirror files with Drive for desktop](https://support.google.com/drive/answer/13401938?hl=en). Drive è usato come sincronizzatore di normali file locali. Il precedente hosting web di Drive è stato [discontinuato nel 2016](https://workspaceupdates.googleblog.com/2015/08/deprecating-web-hosting-support-in.html).
+- **Google Drive:** Google, [Stream & mirror files with Drive for desktop](https://support.google.com/drive/answer/13401938?hl=en). Drive può trasportare soltanto copie chiuse; non il database SQLite attivo. Il precedente hosting web di Drive è stato [discontinuato nel 2016](https://workspaceupdates.googleblog.com/2015/08/deprecating-web-hosting-support-in.html).
 
 - **File locali nel browser:** Chrome for Developers, [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access), e W3C, [Secure Contexts](https://www.w3.org/TR/secure-contexts/). L'API richiede un contesto sicuro e un gesto utente e non offre una base portabile sufficiente per l'intero prodotto.
 
@@ -1706,7 +1731,7 @@ Spese e categorie possono avere `excludedFromCalculations?: boolean`; il valore 
 
 La tabella **Movimenti** offre il controllo esplicito **Ignora nei conteggi** e uno stato leggibile. L’editor categoria offre la stessa opzione e chiarisce l’effetto sulle sottocategorie; l’esclusione ereditata dal padre è indicata separatamente dal flag diretto. La spesa resta visibile, modificabile e ricercabile, conserva le categorie, partecipa alla deduplicazione e mantiene disponibile il proprio anno. Tutti i conteggi bancari applicano la medesima regola di dominio: totale, numero movimenti, categorizzato/senza categoria, mensile, categorie, Sankey, margine, percentuali sugli incassi, disponibilità stimata e imposte già pagate. La categoria di sistema segue la stessa regola, senza eccezioni.
 
-La migrazione esplicita **10 → 11** richiede anteprima, conferma e backup, preserva i dati e porta lo schema a 11 senza escludere automaticamente spese o categorie. I flag possono restare assenti finché falsi. I client precedenti aprono lo schema più recente soltanto in lettura.
+L’importazione JSON storico **10 → 11** richiede anteprima e conferma, conserva originale e backup e preserva i dati e porta lo schema a 11 senza escludere automaticamente spese o categorie. I flag possono restare assenti finché falsi. I client precedenti aprono lo schema più recente soltanto in lettura.
 
 La tabella **Regole automatiche** offre ricerca per testo riconosciuto e percorso categoria, filtro per categoria (un padre comprende i figli), filtro per regole con o senza corrispondenze e ordinamento crescente/decrescente per testo, categoria e numero di corrispondenze. I conteggi considerano tutti gli anni e anche i movimenti esclusi dai conteggi finanziari. Ricerca, filtri e ordinamento restano disponibili in sola lettura e sono stato locale della vista: non modificano l’archivio, l’ordine persistito o la semantica additiva delle regole. Un risultato vuoto consente di azzerare ricerca e filtri.
 
@@ -1736,7 +1761,7 @@ La dashboard rende leggibili **Totale annuale del commercialista**, **Imposte P.
 
 Non esiste saldo bancario manuale né contenitore annuale per registrarlo. La panoramica usa i dati FIC, i movimenti bancari e le stime fiscali separate, con il solo totale annuale facoltativo del commercialista descritto nella sezione 31.3. `fiscalPaymentOverrides` è l’unico totale confrontabile con i versamenti effettuati nell’anno; non costituisce una copertura aggiuntiva né modifica i movimenti. Senza quel totale, residuo e disponibilità stimata restano indisponibili anche se la previsione fiscale è valida; il margine resta calcolabile quando esiste lo snapshot. Senza snapshot restano indisponibili gli indicatori basati sugli incassi anche con un totale annuale. Cash non ricostruisce il saldo reale del conto e non associa i movimenti a F24, tributo o anno di competenza. Gli anni disponibili seguono l'unione definita nella sezione 31.6, comprese le correzioni annuali.
 
-Lo schema corrente è **11**. La migrazione esplicita con backup **1–9 → 11** rimuove `financialProvisions` e l’eventuale `bankBalance` senza copiarli altrove; il modello corrente e i nuovi documenti non contengono questi campi. L’anteprima dichiara l’abbandono del saldo manuale e del relativo contenitore. Le trasformazioni storiche restano supportate, compresa la rimozione di covered/additions senza trasferirli in movimenti. Profili, movimenti, categorie, `systemRole: 'vat_taxes'`, regole, snapshot FIC, preventivi e gli altri dati validi sono preservati. Aggiunge una categoria di sistema solo se non esiste già: una categoria utente omonima resta distinta e non viene convertita. Per questa collisione i due nomi possono coesistere; le categorie utente mantengono l’unicità per livello. Salvataggi, riaperture e migrazioni non duplicano l’identità di sistema.
+Lo schema corrente è **11**. L’importazione JSON storica **1–9 → 11**, con originale e backup conservati, rimuove `financialProvisions` e l’eventuale `bankBalance` senza copiarli altrove; il modello corrente e i nuovi documenti non contengono questi campi. L’anteprima dichiara l’abbandono del saldo manuale e del relativo contenitore. Le trasformazioni storiche restano supportate, compresa la rimozione di covered/additions senza trasferirli in movimenti. Profili, movimenti, categorie, `systemRole: 'vat_taxes'`, regole, snapshot FIC, preventivi e gli altri dati validi sono preservati. Aggiunge una categoria di sistema solo se non esiste già: una categoria utente omonima resta distinta e non viene convertita. Per questa collisione i due nomi possono coesistere; le categorie utente mantengono l’unicità per livello. Salvataggi, riaperture e migrazioni non duplicano l’identità di sistema.
 
 Contratto FIC verificato il 2 ottobre 2026: [IssuedDocument](https://github.com/fattureincloud/fattureincloud-ts-sdk/blob/master/docs/IssuedDocument.md), [campi detailed](https://developers.fattureincloud.it/docs/basics/customize-response/), [totali e pagamenti](https://developers.fattureincloud.it/docs/guides/invoice-totals/). Il bollo è un importo numerico esplicito, non un booleano; il pagamento è già comprensivo degli elementi riaddebitati. La precedente selezione fields scartava stamp_duty. Fixture realistiche verificano ora importazione, rivalsa inclusa e bollo. Non è stata eseguita una lettura autenticata di documenti dell’account reale: la verifica riguarda il contratto ufficiale e le fixture, non un riscontro sui dati privati.
 

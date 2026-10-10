@@ -7,7 +7,7 @@ import {
   type CashDocument,
   type CashError,
 } from '../../src/domain/model';
-import type { ArchiveSession } from '../../src/native/persistence';
+import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState, type ArchiveDecision } from '../../src/renderer/state';
 
 const session = (document: CashDocument, revision = 1): ArchiveSession => ({
@@ -17,7 +17,6 @@ const session = (document: CashDocument, revision = 1): ArchiveSession => ({
   token: {
     documentId: document.documentId,
     revision,
-    fingerprint: `hash-${revision}`,
   },
 });
 
@@ -241,8 +240,8 @@ describe('coordinatore autosalvataggio', () => {
       await state.save();
       expect(save).toHaveBeenCalledTimes(2);
       expect(save.mock.calls.map((call) => call[2])).toEqual([
-        expect.objectContaining({ revision: 1, fingerprint: 'hash-1' }),
-        expect.objectContaining({ revision: 2, fingerprint: 'hash-2' }),
+        expect.objectContaining({ revision: 1 }),
+        expect.objectContaining({ revision: 2 }),
       ]);
       expect(state.document?.revision).toBe(3);
       expect(state.document?.settings.fuelTerritory).toBe('Sicilia');
