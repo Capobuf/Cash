@@ -356,8 +356,11 @@ export async function runWorkspaceChecks() {
       'A stale initial response hid the available update',
     );
     await click('Apri impostazioni');
+    const activeTab = document.querySelector(
+      '[role="tab"][aria-selected="true"]',
+    );
     check(
-      document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() === 'Applicazione',
+      activeTab?.textContent?.trim() === 'Applicazione',
       'Update notice did not open the application settings tab',
     );
     results.push('update-navigation-and-race');
