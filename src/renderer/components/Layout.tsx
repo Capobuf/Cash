@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { UpdateNotice } from '@/components/UpdatesPanel';
 import type { AppState } from '../state';
 import type { DeleteTarget, View } from '../types';
 import {
@@ -197,6 +198,7 @@ export function AppShell({
   appState,
   view,
   onView,
+  onOpenUpdates,
   years,
   selectedYear,
   onYearChange,
@@ -205,6 +207,7 @@ export function AppShell({
   appState: AppState;
   view: View;
   onView: (view: View) => void;
+  onOpenUpdates: () => void;
   years: number[];
   selectedYear: number | undefined;
   onYearChange: (year: number) => void;
@@ -397,6 +400,7 @@ export function AppShell({
         <Separator />
         <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 p-6 2xl:p-8">
           <GlobalError appState={appState} />
+          <UpdateNotice onOpenSettings={onOpenUpdates} />
           {children}
         </div>
       </SidebarInset>

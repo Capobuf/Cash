@@ -1,0 +1,93 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify version tag is from main
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("$env:GITHUB_REF_NAME" -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME differs from package version $version"
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Only stable numeric versions can be published"
+          }
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$env:GITHUB_SHA" origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "The tagged commit must already be contained in main"
+          }
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Build Windows installer and portable
+        run: npm run package:win
+
+      - name: SQLite smoke in Electron
+        run: npm run test:sqlite:electron
+
+      - name: SQLite smoke in portable Cash.exe
+        run: npm run test:sqlite:portable
+
+      - name: Install Windows package for smoke
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $setup = Resolve-Path "release/Cash-Setup-$version.exe"
+          $process = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+
+      - name: SQLite smoke in installed Cash.exe
+        run: npm run test:sqlite:installed
+
+      - name: Publish verified GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $setup = "release/Cash-Setup-$version.exe"
+          foreach ($asset in @($setup, "$setup.blockmap", 'release/latest.yml', 'release/Cash.exe')) {
+            if (-not (Test-Path $asset)) { throw "Missing update asset: $asset" }
+          }
+          $manifest = Get-Content 'release/latest.yml' -Raw
+          if (-not $manifest.Contains("url: Cash-Setup-$version.exe") -or -not $manifest.Contains("path: Cash-Setup-$version.exe")) {
+            throw "latest.yml does not reference the published installer filename"
+          }
+          gh release create "$env:GITHUB_REF_NAME" $setup "$setup.blockmap" 'release/latest.yml' 'release/Cash.exe' --verify-tag --generate-notes --latest

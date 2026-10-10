@@ -19,14 +19,16 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:win": "npm run build && electron-builder --win portable --x64 --publish never",
+    "package:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.{ts,tsx}\" \"scripts/*.mjs\" \"*.config.{js,ts}\" \"*.json\" \".prettierrc.json\" \".github/workflows/*.{yml,yaml}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.{ts,tsx}\" \"scripts/*.mjs\" \"*.config.{js,ts}\" \"*.json\" \".prettierrc.json\" \".github/workflows/*.{yml,yaml}\"",
     "test:sqlite:electron": "node scripts/sqlite-smoke.mjs",
-    "test:sqlite:portable": "node scripts/sqlite-smoke.mjs --packaged"
+    "test:sqlite:portable": "node scripts/sqlite-smoke.mjs --packaged",
+    "test:sqlite:installed": "node scripts/sqlite-smoke.mjs --installed"
   },
   "dependencies": {
-    "@zowe/secrets-for-zowe-sdk": "8.38.0"
+    "@zowe/secrets-for-zowe-sdk": "8.38.0",
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
@@ -75,10 +77,27 @@
     "win": {
       "icon": "src/renderer/assets/app-icon.ico",
       "target": [
+        "nsis",
         "portable"
       ],
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Cash-Setup-${version}.${ext}"
+    },
+    "portable": {
       "artifactName": "Cash.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Capobuf",
+        "repo": "Cash"
+      }
+    ]
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

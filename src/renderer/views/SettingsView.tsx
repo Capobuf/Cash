@@ -14,6 +14,7 @@ import {
   type FicUiState,
 } from '@/components/integrations/FicWizard';
 import { ResourcesView } from './ResourcesView';
+import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,8 @@ export type { FicUiState } from '@/components/integrations/FicWizard';
 export function SettingsView({
   doc,
   appState,
+  tab,
+  onTabChange,
   ficUi,
   activeProfileId,
   onEditProfile,
@@ -66,13 +69,14 @@ export function SettingsView({
 }: {
   doc: CashDocument;
   appState: AppState;
+  tab: string;
+  onTabChange: (tab: string) => void;
   ficUi: FicUiState;
   activeProfileId?: string;
   onEditProfile: (id?: string) => void;
   onCopyProfile: (id: string) => void;
   requestDelete: (target: DeleteTarget) => void;
 }) {
-  const [tab, setTab] = useState('profiles');
   const [newProfileOpen, setNewProfileOpen] = useState(false);
   const profile = doc.profiles.find((entry) => entry.id === activeProfileId);
   const fic = doc.settings.fic;
@@ -98,7 +102,7 @@ export function SettingsView({
 
   return (
     <>
-      <Tabs value={tab} onValueChange={setTab} className="space-y-5">
+      <Tabs value={tab} onValueChange={onTabChange} className="space-y-5">
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="profiles">Profili annuali</TabsTrigger>
           <TabsTrigger value="planning">Pianificazione</TabsTrigger>
@@ -107,6 +111,7 @@ export function SettingsView({
           </TabsTrigger>
           <TabsTrigger value="integrations">Integrazioni</TabsTrigger>
           <TabsTrigger value="archive">Archivio</TabsTrigger>
+          <TabsTrigger value="application">Applicazione</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profiles">
@@ -297,6 +302,10 @@ export function SettingsView({
         </TabsContent>
 
         <IntegrationsSettings doc={doc} appState={appState} ficUi={ficUi} />
+
+        <TabsContent value="application">
+          <UpdatesPanel appState={appState} />
+        </TabsContent>
 
         <TabsContent value="archive">
           <div className="grid grid-cols-2 gap-4">

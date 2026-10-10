@@ -69,6 +69,7 @@ app.whenReady().then(async () => {
         'delete-target',
         'clients',
         'quotes',
+        'update-navigation-and-race',
         'settings-and-device',
         'profile-selections',
         'global-decisions-and-subscriptions',

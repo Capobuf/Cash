@@ -253,22 +253,50 @@ Windows e verificata con una richiesta reale. Gli indirizzi delle Sedi vengono l
 percorso di una Trasferta viene calcolato solo tramite “Calcola percorso”; distanza e tempo restano
 modificabili e non sono aggiornati automaticamente.
 
-## Pacchetto Windows
+## Installazione e aggiornamenti Windows
 
 ```powershell
 npm run package:win
 ```
 
-Il comando crea `release/Cash.exe`, un’applicazione portable autosufficiente. Non richiede installazione,
-Node.js, database, container o server sulla macchina dell’utente. Il prodotto è destinato a Windows 10/11
-x64 e a uso locale monoutente.
+Il build genera `release/Cash-Setup-<versione>.exe` (installer NSIS per utente) e
+`release/Cash.exe` (portable). Non richiedono Node.js sulla postazione. L'installer aggiunge
+Cash al menu Start e consente la disinstallazione da Windows; è destinato a Windows 10/11 x64.
+Il portable resta utilizzabile, ma non si aggiorna automaticamente: per usare gli
+aggiornamenti integrati occorre installare Cash con il Setup.
+
+L'app installata controlla la presenza di aggiornamenti all'avvio e permette di verificare
+manualmente da **Impostazioni → Applicazione**. La verifica usa le **GitHub Releases pubbliche**,
+non scarica e non esegue codice direttamente dal branch `main`. Quando trova una versione stabile
+più recente, Cash propone il download e poi l'installazione con riavvio **esplicitamente richiesti**.
+Se le modifiche all'archivio non sono state salvate, l'installazione viene bloccata. L'assenza
+di rete non interrompe il normale utilizzo di Cash.
+
+I dati SQLite, i backup e `preferences.json` rimangono fuori dalla cartella di installazione.
+I segreti restano nel Gestore credenziali Windows. Disinstallare o aggiornare l'app non
+elimina i dati utente. La migrazione SQLite resta applicata all'apertura dell'archivio secondo
+le regole già descritte.
+
+Per distribuire una nuova versione: aggiornare la versione in `package.json` e
+`package-lock.json`, unire le modifiche su `main` e creare su quel commit il tag
+`v<versione>` (es. `v0.1.1`). La workflow di release verifica che il tag sia contenuto in
+`main`, che coincida con `package.json`, esegue test e smoke Windows, quindi pubblica su
+GitHub la Release con Setup, portable, `latest.yml` e blockmap. **Un commit senza
+release non produce un aggiornamento installabile.** Per provare realmente l'updater
+occorrono due versioni successive installate su Windows.
+
+Le build attuali sono **senza firma Authenticode**: Windows può mostrare un avviso SmartScreen.
+Anche il controllo della firma dell'installer scaricato non è disponibile; non distribuire
+aggiornamenti oltre un ambiente controllato senza prima predisporre una firma del codice e
+riattivare `win.verifyUpdateCodeSignature`. Le risorse sono trasferite via HTTPS e
+verificate tramite gli hash del manifest, ma non equivalgono a una firma del produttore.
 
 ## Dipendenze e manutenzione
 
 La CI usa Node.js 24, cache npm e `npm ci` con il lockfile versionato; esegue typecheck,
-lint, `format:check`, test e `package:win`; verifica la persistenza SQLite nel runtime Electron
-e nel portable con `npm run test:sqlite:electron` e `npm run test:sqlite:portable`, quindi pubblica come artefatto `release/Cash.exe` (Windows x64).
-Non è previsto un installer distinto dal portable.
+lint, `format:check`, test e packaging NSIS+portable; verifica SQLite nei runtime
+Electron, portable e installato su Windows. Pubblica gli installer come artefatti temporanei
+dei push; soltanto un tag di versione valido pubblica una GitHub Release.
 
 Le credenziali restano nel Gestore credenziali di Windows. `@zowe/secrets-for-zowe-sdk`
 sostituisce `keytar` usando gli stessi identificatori (`it.cash.desktop`,
@@ -289,7 +317,7 @@ Electron, electron-builder, ESLint, TypeScript, Vitest e la CLI shadcn restano n
 `devDependencies`. Le librerie applicative JavaScript vengono incorporate da esbuild
 in `dist`; anche ExcelJS e Recharts restano in `devDependencies`, evitando di distribuire
 una seconda copia dei loro alberi in `node_modules`. Il modulo esterno per le credenziali
-deve essere distribuito in `dependencies`.
+deve essere distribuito in `dependencies`, insieme a `electron-updater`.
 
 ESLint 10 è abbinato a `@eslint/js` 10 e typescript-eslint 8 compatibile con ESLint 10 e
 TypeScript 5.9. `globals` 16.3.0 resta compatibile. Le tre nuove regole recommended di
@@ -319,7 +347,7 @@ Catene della toolchain electron-builder 26.15.3:
 
 Queste deprecazioni richiedono aggiornamenti upstream: non vengono forzate tramite
 nuovi `overrides` o dipendenze dirette. L'override ExcelJS/uuid già presente non
-riguarda questi sei pacchetti. Il target di Cash rimane portable, non Squirrel.
+riguarda questi sei pacchetti. Il target di Cash rimane NSIS + portable, non Squirrel.
 Per ripetere la verifica usare `npm view exceljs dist-tags`,
 `npm view electron-builder dist-tags` e
 `npm ls boolean fstream glob inflight lodash.isequal rimraf --all`.

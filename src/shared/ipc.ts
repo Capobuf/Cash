@@ -56,12 +56,35 @@ export const IPC = {
   orsSearch: 'cash:ors:search',
   orsReverse: 'cash:ors:reverse',
   orsRoute: 'cash:ors:route',
+  updateStatus: 'cash:update:status',
+  updateCheck: 'cash:update:check',
+  updateDownload: 'cash:update:download',
+  updateInstall: 'cash:update:install',
+  updateChanged: 'cash:update:changed',
   appExternal: 'cash:app:external',
   appArchiveReloaded: 'cash:app:archive-reloaded',
   appDirty: 'cash:app:dirty',
   appCloseRequested: 'cash:app:close-requested',
   appResolveClose: 'cash:app:resolve-close',
 } as const;
+
+export type CashUpdatePhase =
+  | 'unsupported'
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'error';
+
+export interface CashUpdateStatus {
+  phase: CashUpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  progressPercent?: number;
+  message?: string;
+}
 
 export interface CashNativeApi {
   bankExpenses: { importFile(): Promise<Result<BankExpenseImport>> };
@@ -172,6 +195,13 @@ export interface CashNativeApi {
         diagnostic?: string;
       }>
     >;
+  };
+  updates: {
+    getStatus(): Promise<CashUpdateStatus>;
+    check(): Promise<Result<CashUpdateStatus>>;
+    download(): Promise<Result<CashUpdateStatus>>;
+    install(): Promise<Result<void>>;
+    onStatus(listener: (status: CashUpdateStatus) => void): () => void;
   };
   setDirty(dirty: boolean): void;
   onExternalChange(listener: (error: CashError) => void): () => void;

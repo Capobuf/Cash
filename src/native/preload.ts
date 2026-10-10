@@ -54,6 +54,20 @@ const api: CashNativeApi = {
     verifyProduct: (input) => ipcRenderer.invoke(IPC.ficProduct, input),
     exportQuote: (input) => ipcRenderer.invoke(IPC.ficExport, input),
   },
+  updates: {
+    getStatus: () => ipcRenderer.invoke(IPC.updateStatus),
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    download: () => ipcRenderer.invoke(IPC.updateDownload),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    onStatus: (listener) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        status: Parameters<typeof listener>[0],
+      ) => listener(status);
+      ipcRenderer.on(IPC.updateChanged, wrapped);
+      return () => ipcRenderer.removeListener(IPC.updateChanged, wrapped);
+    },
+  },
   setDirty: (dirty) => ipcRenderer.send(IPC.appDirty, dirty),
   onExternalChange: (listener) => {
     const wrapped = (

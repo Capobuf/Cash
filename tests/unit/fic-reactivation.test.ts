@@ -67,6 +67,8 @@ it.each([true, false])(
         createElement(SettingsView, {
           doc: document,
           appState: state,
+          tab: 'profiles',
+          onTabChange: vi.fn(),
           ficUi: {
             hasToken,
             connectionError: false,

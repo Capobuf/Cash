@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '../../src/renderer/App';
 import { state } from '../../src/renderer/state';
+import type { CashUpdateStatus } from '../../src/shared/ipc';
 import {
   createEmptyDocument,
   createBlankProfile,
@@ -51,6 +52,13 @@ export async function runWorkspaceChecks() {
     close: 0,
   };
   const clientQueries: string[] = [];
+  const updateListeners = new Set<(status: CashUpdateStatus) => void>();
+  let resolveInitialUpdate: ((status: CashUpdateStatus) => void) | undefined;
+  let initialUpdateRequested = false;
+  let latestUpdate: CashUpdateStatus = {
+    phase: 'idle',
+    currentVersion: '0.1.0',
+  };
   let closeRequested!: () => void;
   let closeChoice: string | undefined;
   const setupInfo = {
@@ -101,6 +109,21 @@ export async function runWorkspaceChecks() {
           ]);
         },
         getClientDetails: async () => ok({ fields: [] }),
+      },
+      updates: {
+        getStatus: () => {
+          if (!initialUpdateRequested) {
+            initialUpdateRequested = true;
+            return new Promise<CashUpdateStatus>((resolve) => {
+              resolveInitialUpdate = resolve;
+            });
+          }
+          return Promise.resolve(latestUpdate);
+        },
+        onStatus: (listener: (status: CashUpdateStatus) => void) => {
+          updateListeners.add(listener);
+          return () => updateListeners.delete(listener);
+        },
       },
       setDirty: () => {},
       onExternalChange: () => {
@@ -316,6 +339,31 @@ export async function runWorkspaceChecks() {
       'New quote list is missing',
     );
     results.push('quotes');
+
+    check(resolveInitialUpdate, 'Initial update read was not requested');
+    await act(async () => {
+      latestUpdate = {
+        phase: 'available',
+        currentVersion: '0.1.0',
+        availableVersion: '0.1.1',
+      };
+      for (const listener of updateListeners) listener(latestUpdate);
+      // Complete the original read after the newer event.
+      resolveInitialUpdate!({ phase: 'idle', currentVersion: '0.1.0' });
+    });
+    check(
+      document.body.innerText.includes('Cash 0.1.1 è disponibile'),
+      'A stale initial response hid the available update',
+    );
+    await click('Apri impostazioni');
+    const activeTab = document.querySelector(
+      '[role="tab"][aria-selected="true"]',
+    );
+    check(
+      activeTab?.textContent?.trim() === 'Applicazione',
+      'Update notice did not open the application settings tab',
+    );
+    results.push('update-navigation-and-race');
 
     await click('Impostazioni');
     await click('Integrazioni');
