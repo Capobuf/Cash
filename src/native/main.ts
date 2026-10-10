@@ -643,9 +643,7 @@ function registerHandlers(): void {
         code: 'CONFLICT',
         message: 'Salva le modifiche all’archivio prima di aggiornare Cash.',
       });
-    const result = installCashUpdate();
-    if (result.ok) closingApproved = true;
-    return result;
+    return installCashUpdate();
   });
   ipcMain.on(IPC.appDirty, (_event, value: boolean) => {
     dirty = value;

@@ -29,11 +29,6 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Inspect formatting
-        shell: pwsh
-        run: |
-          npx prettier --write src/renderer/components/UpdatesPanel.tsx scripts/build.mjs
-          git diff -- src/renderer/components/UpdatesPanel.tsx scripts/build.mjs
       - name: Format check
         run: npm run format:check
 

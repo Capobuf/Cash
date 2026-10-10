@@ -55,17 +55,12 @@ export function UpdateNotice({
   onOpenSettings: () => void;
 }) {
   const update = useCashUpdateStatus();
-  if (
-    !update ||
-    (update.phase !== 'available' && update.phase !== 'ready')
-  )
+  if (!update || (update.phase !== 'available' && update.phase !== 'ready'))
     return null;
   return (
     <Alert>
       <Info />
-      <AlertTitle>
-        Cash {update.availableVersion} è disponibile
-      </AlertTitle>
+      <AlertTitle>Cash {update.availableVersion} è disponibile</AlertTitle>
       <AlertDescription>
         {update.phase === 'ready'
           ? 'Aggiornamento scaricato, pronto per l’installazione.'
@@ -85,7 +80,9 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  async function perform(action: () => Promise<Result<unknown>>): Promise<void> {
+  async function perform(
+    action: () => Promise<Result<unknown>>,
+  ): Promise<void> {
     setPending(true);
     setActionError(null);
     try {
@@ -107,8 +104,8 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
       <CardHeader>
         <CardTitle>Aggiornamenti di Cash</CardTitle>
         <CardDescription>
-          Versione installata: {update?.currentVersion ?? '—'}. Origine:
-          GitHub Releases del progetto Cash.
+          Versione installata: {update?.currentVersion ?? '—'}. Origine: GitHub
+          Releases del progetto Cash.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -127,7 +124,8 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
                       ? `Download in corso: ${update?.progressPercent ?? 0}%.`
                       : phase === 'ready'
                         ? `Versione ${update?.availableVersion} pronta per l'installazione.`
-                        : update?.message ?? 'Lettura degli aggiornamenti in corso…'}
+                        : (update?.message ??
+                          'Lettura degli aggiornamenti in corso…')}
         </p>
         {phase === 'error' || actionError ? (
           <Alert variant="destructive">
@@ -165,9 +163,7 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
           {phase === 'available' ? (
             <Button
               disabled={pending}
-              onClick={() =>
-                void perform(() => window.cash.updates.download())
-              }
+              onClick={() => void perform(() => window.cash.updates.download())}
             >
               <Download />
               Scarica aggiornamento
@@ -176,9 +172,7 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
           {phase === 'ready' ? (
             <Button
               disabled={pending || unsaved}
-              onClick={() =>
-                void perform(() => window.cash.updates.install())
-              }
+              onClick={() => void perform(() => window.cash.updates.install())}
             >
               <RotateCw />
               Installa e riavvia

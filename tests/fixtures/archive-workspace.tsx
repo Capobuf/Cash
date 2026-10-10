@@ -102,6 +102,10 @@ export async function runWorkspaceChecks() {
         },
         getClientDetails: async () => ok({ fields: [] }),
       },
+      updates: {
+        getStatus: async () => ({ phase: 'idle', currentVersion: '0.1.0' }),
+        onStatus: () => () => {},
+      },
       setDirty: () => {},
       onExternalChange: () => {
         counts.external++;

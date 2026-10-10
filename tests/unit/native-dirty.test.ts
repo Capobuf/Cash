@@ -79,6 +79,13 @@ vi.mock('../../src/native/legacy-import', () => ({
   previewMigration: native.previewMigration,
 }));
 vi.mock('../../src/native/sqlite-smoke', () => ({ runSqliteSmoke: vi.fn() }));
+vi.mock('../../src/native/updates', () => ({
+  initializeCashUpdates: vi.fn(),
+  checkCashUpdates: vi.fn(),
+  downloadCashUpdate: vi.fn(),
+  getCashUpdateStatus: vi.fn(),
+  installCashUpdate: vi.fn(),
+}));
 vi.mock('../../src/native/bank-expense-import', () => ({
   readBankExpenseFile: vi.fn(),
 }));
