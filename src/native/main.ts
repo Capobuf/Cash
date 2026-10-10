@@ -37,6 +37,13 @@ import {
   verifyPermissions,
 } from './integrations/fatture-in-cloud';
 import { IPC } from '../shared/ipc';
+import {
+  checkCashUpdates,
+  downloadCashUpdate,
+  getCashUpdateStatus,
+  initializeCashUpdates,
+  installCashUpdate,
+} from './updates';
 import { FIC_SCOPES, requireActiveFic } from '../domain/integration';
 import {
   commitFicActivation,
@@ -627,6 +634,19 @@ function registerHandlers(): void {
       ? exportQuote({ ...input, product: product.value }, token.value)
       : product;
   });
+  ipcMain.handle(IPC.updateStatus, () => getCashUpdateStatus());
+  ipcMain.handle(IPC.updateCheck, () => checkCashUpdates());
+  ipcMain.handle(IPC.updateDownload, () => downloadCashUpdate());
+  ipcMain.handle(IPC.updateInstall, () => {
+    if (dirty)
+      return err({
+        code: 'CONFLICT',
+        message: 'Salva le modifiche all’archivio prima di aggiornare Cash.',
+      });
+    const result = installCashUpdate();
+    if (result.ok) closingApproved = true;
+    return result;
+  });
   ipcMain.on(IPC.appDirty, (_event, value: boolean) => {
     dirty = value;
   });
@@ -735,8 +755,15 @@ else {
     window.focus();
   });
   app.whenReady().then(() => {
+    initializeCashUpdates((status) => {
+      if (window && !window.isDestroyed())
+        window.webContents.send(IPC.updateChanged, status);
+    });
     registerHandlers();
-    void createWindow();
+    void createWindow().then(() => {
+      // One startup check only. Subsequent checks are explicitly requested.
+      void checkCashUpdates();
+    });
     setInterval(() => void detectExternalChange(), 30_000);
   });
   app.on('before-quit', () => closeAllArchives());

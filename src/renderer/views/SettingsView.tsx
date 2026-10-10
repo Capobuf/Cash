@@ -14,6 +14,7 @@ import {
   type FicUiState,
 } from '@/components/integrations/FicWizard';
 import { ResourcesView } from './ResourcesView';
+import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -107,6 +108,7 @@ export function SettingsView({
           </TabsTrigger>
           <TabsTrigger value="integrations">Integrazioni</TabsTrigger>
           <TabsTrigger value="archive">Archivio</TabsTrigger>
+          <TabsTrigger value="application">Applicazione</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profiles">
@@ -297,6 +299,10 @@ export function SettingsView({
         </TabsContent>
 
         <IntegrationsSettings doc={doc} appState={appState} ficUi={ficUi} />
+
+        <TabsContent value="application">
+          <UpdatesPanel appState={appState} />
+        </TabsContent>
 
         <TabsContent value="archive">
           <div className="grid grid-cols-2 gap-4">
