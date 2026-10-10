@@ -12,7 +12,12 @@ const installed = process.argv.includes('--installed');
 const packaged = installed || process.argv.includes('--packaged');
 const directory = await mkdtemp(join(tmpdir(), 'cash-sqlite-smoke-'));
 const executable = installed
-  ? resolve(process.env.LOCALAPPDATA ?? '', 'Programs', 'cash-desktop', 'Cash.exe')
+  ? resolve(
+      process.env.LOCALAPPDATA ?? '',
+      'Programs',
+      'cash-desktop',
+      'Cash.exe',
+    )
   : packaged
     ? resolve('release/Cash.exe')
     : electron;
