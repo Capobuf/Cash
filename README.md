@@ -259,7 +259,7 @@ modificabili e non sono aggiornati automaticamente.
 npm run package:win
 ```
 
-Il build genera `release/Cash Setup <versione>.exe` (installer NSIS per utente) e
+Il build genera `release/Cash-Setup-<versione>.exe` (installer NSIS per utente) e
 `release/Cash.exe` (portable). Non richiedono Node.js sulla postazione. L'installer aggiunge
 Cash al menu Start e consente la disinstallazione da Windows; è destinato a Windows 10/11 x64.
 Il portable resta utilizzabile, ma non si aggiorna automaticamente: per usare gli
@@ -347,7 +347,7 @@ Catene della toolchain electron-builder 26.15.3:
 
 Queste deprecazioni richiedono aggiornamenti upstream: non vengono forzate tramite
 nuovi `overrides` o dipendenze dirette. L'override ExcelJS/uuid già presente non
-riguarda questi sei pacchetti. Il target di Cash rimane portable, non Squirrel.
+riguarda questi sei pacchetti. Il target di Cash rimane NSIS + portable, non Squirrel.
 Per ripetere la verifica usare `npm view exceljs dist-tags`,
 `npm view electron-builder dist-tags` e
 `npm ls boolean fstream glob inflight lodash.isequal rimraf --all`.

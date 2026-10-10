@@ -224,10 +224,12 @@ function ArchiveWorkspace({
         : (years[0] ?? currentYear);
   const [activeQuoteId, setActiveQuoteId] = useState<string>();
   const [activeProfileId, setActiveProfileId] = useState<string>();
+  const [settingsTab, setSettingsTab] = useState('profiles');
   const [copyProfileId, setCopyProfileId] = useState<string>();
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const navigate = (next: View) => {
+  const navigate = (next: View, tab = 'profiles') => {
     setView(next);
+    if (next === 'settings') setSettingsTab(tab);
     setActiveQuoteId(undefined);
     if (next !== 'settings') setActiveProfileId(undefined);
   };
@@ -409,6 +411,8 @@ function ArchiveWorkspace({
       <SettingsView
         doc={doc}
         appState={appState}
+        tab={settingsTab}
+        onTabChange={setSettingsTab}
         activeProfileId={activeProfileId}
         ficUi={ficUi}
         onEditProfile={setActiveProfileId}
@@ -426,6 +430,7 @@ function ArchiveWorkspace({
         appState={appState}
         view={view}
         onView={navigate}
+        onOpenUpdates={() => navigate('settings', 'application')}
         years={years}
         selectedYear={financialYear}
         onYearChange={setSelectedYear}

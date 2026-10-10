@@ -22,15 +22,18 @@ function useCashUpdateStatus(): CashUpdateStatus | null {
   const [status, setStatus] = useState<CashUpdateStatus | null>(null);
   useEffect(() => {
     let active = true;
+    let receivedEvent = false;
     const unsubscribe = window.cash.updates.onStatus((next) => {
-      if (active) setStatus(next);
+      if (!active) return;
+      receivedEvent = true;
+      setStatus(next);
     });
     void window.cash.updates.getStatus().then(
       (next) => {
-        if (active) setStatus(next);
+        if (active && !receivedEvent) setStatus(next);
       },
       () => {
-        if (active)
+        if (active && !receivedEvent)
           setStatus({
             phase: 'error',
             currentVersion: '—',

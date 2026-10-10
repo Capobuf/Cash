@@ -1179,6 +1179,12 @@ dell'utente. L'installazione è bloccata se esistono modifiche non salvate; il r
 avviene soltanto su richiesta. Mancanza di rete o controllo fallito non blocca Cash.
 Il portable continua a essere aggiornato sostituendo manualmente l'eseguibile.
 
+Gli eseguibili distribuiti in questa fase non sono firmati Authenticode e la verifica
+della firma del codice negli aggiornamenti (`win.verifyUpdateCodeSignature`) è disattivata.
+HTTPS e i checksum SHA-512 di `latest.yml` verificano il trasporto e l'integrità dei
+file scaricati, ma non autenticano il produttore. Questa modalità è ammessa soltanto
+in distribuzioni controllate. Prima della distribuzione non controllata occorre
+firmare gli eseguibili e riattivare la verifica della firma degli aggiornamenti.
 
 Lo schema applicativo è 11; lo schema SQLite usa un contatore distinto, `PRAGMA user_version`,
 attualmente 1. Gli schemi futuri sono aperti al più come intestazione in sola lettura.

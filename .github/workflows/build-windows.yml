@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $setup = Resolve-Path "release/Cash Setup $version.exe"
+          $setup = Resolve-Path "release/Cash-Setup-$version.exe"
           $process = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
 
@@ -64,8 +64,8 @@ jobs:
           name: Cash-Windows-x64
           path: |
             release/Cash.exe
-            release/Cash Setup *.exe
-            release/Cash Setup *.exe.blockmap
+            release/Cash-Setup-*.exe
+            release/Cash-Setup-*.exe.blockmap
             release/latest.yml
           if-no-files-found: error
           retention-days: 14

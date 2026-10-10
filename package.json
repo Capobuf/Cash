@@ -83,11 +83,10 @@
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "Cash Setup ${version}.${ext}"
+      "artifactName": "Cash-Setup-${version}.${ext}"
     },
     "portable": {
       "artifactName": "Cash.${ext}"
