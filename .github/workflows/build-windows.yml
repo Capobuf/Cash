@@ -1,7 +1,8 @@
-name: Build Windows portable
+name: Build Windows
 
 on:
   push:
+    branches: ['**']
   workflow_dispatch:
 
 permissions:
@@ -10,7 +11,7 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -37,7 +38,7 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Package Windows portable
+      - name: Package Windows installer and portable
         run: npm run package:win
 
       - name: SQLite smoke in Electron
@@ -46,10 +47,25 @@ jobs:
       - name: SQLite smoke in portable Cash.exe
         run: npm run test:sqlite:portable
 
-      - name: Upload Windows portable
+      - name: Install Windows package for smoke
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $setup = Resolve-Path "release/Cash Setup $version.exe"
+          $process = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+
+      - name: SQLite smoke in installed Cash.exe
+        run: npm run test:sqlite:installed
+
+      - name: Upload Windows packages
         uses: actions/upload-artifact@v7
         with:
-          name: Cash-Windows-Portable-x64
-          path: release/Cash.exe
+          name: Cash-Windows-x64
+          path: |
+            release/Cash.exe
+            release/Cash Setup *.exe
+            release/Cash Setup *.exe.blockmap
+            release/latest.yml
           if-no-files-found: error
           retention-days: 14

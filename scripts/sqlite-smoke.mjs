@@ -8,9 +8,14 @@ import console from 'node:console';
 import assert from 'node:assert/strict';
 import electron from 'electron';
 
-const packaged = process.argv.includes('--packaged');
+const installed = process.argv.includes('--installed');
+const packaged = installed || process.argv.includes('--packaged');
 const directory = await mkdtemp(join(tmpdir(), 'cash-sqlite-smoke-'));
-const executable = packaged ? resolve('release/Cash.exe') : electron;
+const executable = installed
+  ? resolve(process.env.LOCALAPPDATA ?? '', 'Programs', 'Cash', 'Cash.exe')
+  : packaged
+    ? resolve('release/Cash.exe')
+    : electron;
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 try {
@@ -52,7 +57,7 @@ try {
   assert.ok(result.electron, 'Must run in Electron, not Node');
   assert.equal(result.platform, 'win32');
   assert.equal(result.arch, 'x64');
-  console.log(JSON.stringify({ packaged, ...result }, null, 2));
+  console.log(JSON.stringify({ packaged, installed, ...result }, null, 2));
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
