@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  FileText,
   FilePlus2,
   Settings2,
   WalletCards,
@@ -15,7 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -52,12 +52,32 @@ export function DashboardView({
     ? calculateProfile(profile, doc.businessCosts)
     : undefined;
   const values = calculated?.ok ? calculated.value : undefined;
+  const recentQuotes = doc.quotes.slice(-6).reverse();
+  const latestQuote = recentQuotes[0];
+  const profileStatus = !profile
+    ? 'Profilo annuale mancante'
+    : !profile.confirmed
+      ? 'Profilo da verificare'
+      : !values
+        ? 'Calcolo non disponibile'
+        : 'Profilo confermato';
+  const unavailableNote = !profile
+    ? 'Crea il profilo annuale per calcolare il tuo riferimento economico.'
+    : !profile.confirmed
+      ? 'Verifica e conferma il profilo prima di usare le proiezioni.'
+      : calculated && !calculated.ok
+        ? calculated.error.message
+        : '';
+  const editProfile = () => {
+    if (profile) {
+      onEditProfile(profile.id);
+      return;
+    }
+    const created = createManualProfile(year);
+    if (!appState.mutate((document) => document.profiles.push(created))) return;
+    onEditProfile(created.id);
+  };
   const missing = [
-    !profile
-      ? 'Crea il profilo annuale'
-      : !profile.confirmed
-        ? `Conferma il profilo ${profile.year}`
-        : undefined,
     !doc.settings.fuelTerritory
       ? 'Configura il territorio carburanti'
       : undefined,
@@ -66,69 +86,98 @@ export function DashboardView({
   ].filter((entry): entry is string => Boolean(entry));
 
   return (
-    <div className="space-y-5">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-card to-primary/5">
-        <CardContent className="flex items-center justify-between gap-8 py-6">
-          <div className="max-w-2xl">
-            <Badge variant="secondary">Workspace di preventivazione</Badge>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">
-              Costruisci il prossimo preventivo mentre ragioni sul lavoro.
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Aggiungi voci, template, spese e trasferte liberamente. Il prezzo
-              commerciale resta sempre una tua scelta.
+    <div className="min-w-0 space-y-5">
+      <Card className="dashboard-hero dashboard-enter [--card-spacing:--spacing(6)] xl:[--card-spacing:--spacing(8)]">
+        <CardContent className="grid min-w-0 gap-8 py-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:items-center xl:gap-10">
+          <div className="dashboard-enter dashboard-intro min-w-0">
+            <p className="flex items-center gap-2 text-xs font-semibold tracking-widest uppercase">
+              <span
+                className="size-2 rounded-full bg-primary"
+                aria-hidden="true"
+              />
+              Cash · Il tuo spazio di preventivazione
             </p>
+            <h2 className="mt-5 text-3xl leading-tight font-semibold tracking-tight 2xl:text-4xl">
+              Il tuo lavoro.
+              <br />
+              Il suo valore.
+            </h2>
+            <p className="mt-4 max-w-lg text-sm leading-relaxed text-foreground/75">
+              Dai una base economica alle tue offerte. Componi tempi, spese e
+              trasferte: il prezzo finale resta una tua scelta.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button size="lg" className="h-11 px-4" onClick={onNewQuote}>
+                <FilePlus2 aria-hidden="true" />
+                Nuovo preventivo
+              </Button>
+              {latestQuote ? (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-11 gap-2 bg-card/80 px-4"
+                  onClick={() => onOpenQuote(latestQuote.id)}
+                >
+                  Riprendi il lavoro
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="transition-transform duration-200 motion-safe:group-hover/button:translate-x-0.5"
+                  />
+                </Button>
+              ) : null}
+            </div>
           </div>
-          <Button size="lg" onClick={onNewQuote}>
-            <FilePlus2 />
-            Nuovo preventivo
-          </Button>
+          <div className="dashboard-enter dashboard-value min-w-0 rounded-xl border border-border bg-card/90 p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-medium">Valore orario obiettivo</p>
+              <Badge variant="secondary">{year}</Badge>
+            </div>
+            <p className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums">
+              <span className="min-w-0 text-4xl font-semibold tracking-tight break-all 2xl:text-5xl">
+                {values ? formatNumber(values.hourlyTarget, 2) : '—'}
+              </span>
+              <span className="text-lg font-medium text-card-foreground/75">
+                €/h
+              </span>
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-card-foreground/75">
+              {values
+                ? 'Il valore da generare per ogni ora dedicata ai clienti. Un riferimento economico, non una tariffa obbligatoria.'
+                : unavailableNote}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+              <span className="flex items-center gap-2 text-xs font-medium">
+                {values ? (
+                  <CheckCircle2
+                    className="size-4 text-primary"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                )}
+                {profileStatus}
+              </span>
+              {!values ? (
+                <Button variant="outline" size="sm" onClick={editProfile}>
+                  {profile ? 'Verifica profilo' : `Crea profilo ${year}`}
+                  <ArrowRight aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {!profile ? (
-        <Alert>
-          <AlertTriangle />
-          <AlertTitle>Profilo {year} mancante</AlertTitle>
-          <AlertDescription className="flex items-center justify-between gap-4">
-            <span>
-              Crea il profilo annuale per ottenere valore medio, capacità e
-              proiezioni.
-            </span>
-            <Button
-              size="sm"
-              onClick={() => {
-                const created = createManualProfile(year);
-                if (
-                  !appState.mutate((document) =>
-                    document.profiles.push(created),
-                  )
-                )
-                  return;
-                onEditProfile(created.id);
-              }}
-            >
-              Crea profilo {year}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="dashboard-metrics grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Metric
           icon={WalletCards}
-          label="Valore medio da generare"
-          value={values ? `${eur(values.hourlyTarget)}/h` : '—'}
-          note="Riferimento, non tariffa obbligatoria"
-          primary
-        />
-        <Metric
-          icon={CalendarDays}
           label="Fatturato obiettivo"
           value={profile ? eur(profile.revenueTarget) : '—'}
           note={
             profile
-              ? `Profilo ${profile.year} · rev. ${profile.revision}`
+              ? profile.confirmed
+                ? `Obiettivo annuale ${profile.year}`
+                : 'Obiettivo del profilo da verificare'
               : 'Profilo non configurato'
           }
         />
@@ -136,7 +185,13 @@ export function DashboardView({
           icon={CheckCircle2}
           label="Netto fiscale stimato"
           value={eur(values?.fiscalNet)}
-          note="Stima interna non contabile"
+          note={
+            values?.fiscalNet !== undefined
+              ? 'Stima interna non contabile'
+              : values
+                ? 'Proiezione fiscale non disponibile'
+                : profileStatus
+          }
         />
         <Metric
           icon={Clock3}
@@ -145,13 +200,13 @@ export function DashboardView({
           note={
             values
               ? `${values.availableDays} giorni disponibili`
-              : 'Richiede un profilo confermato'
+              : profileStatus
           }
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.65fr)]">
-        <Card>
+        <Card className="min-w-0 [--card-spacing:--spacing(5)]">
           <CardHeader>
             <div>
               <CardTitle>Preventivi recenti</CardTitle>
@@ -159,12 +214,6 @@ export function DashboardView({
                 Riprendi rapidamente il lavoro dove lo avevi lasciato.
               </CardDescription>
             </div>
-            <CardAction>
-              <Button variant="outline" onClick={onNewQuote}>
-                <FilePlus2 />
-                Nuovo
-              </Button>
-            </CardAction>
           </CardHeader>
           <CardContent>
             {doc.quotes.length ? (
@@ -179,45 +228,49 @@ export function DashboardView({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {doc.quotes
-                    .slice(-6)
-                    .reverse()
-                    .map((quote) => (
-                      <TableRow key={quote.id}>
-                        <TableCell className="font-medium">
-                          {quote.items.map((item) => item.name).join(', ') ||
-                            'Preventivo incompleto'}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {quote.client?.displayName ?? 'Nessun cliente'}
-                        </TableCell>
-                        <TableCell>{dateIt(quote.date)}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {quote.items.length}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => onOpenQuote(quote.id)}
-                          >
-                            Apri <ArrowRight />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                  {recentQuotes.map((quote) => (
+                    <TableRow key={quote.id}>
+                      <TableCell className="max-w-64 min-w-40 font-medium whitespace-normal">
+                        {quote.items.map((item) => item.name).join(', ') ||
+                          'Preventivo incompleto'}
+                      </TableCell>
+                      <TableCell className="max-w-48 text-foreground/75 whitespace-normal">
+                        {quote.client?.displayName ?? 'Nessun cliente'}
+                      </TableCell>
+                      <TableCell className="text-xs tabular-nums">
+                        {dateIt(quote.date)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {quote.items.length}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Apri preventivo ${quote.items.map((item) => item.name).join(', ') || 'incompleto'} del ${dateIt(quote.date)}`}
+                          onClick={() => onOpenQuote(quote.id)}
+                        >
+                          Apri{' '}
+                          <ArrowRight
+                            aria-hidden="true"
+                            className="transition-transform duration-200 motion-safe:group-hover/button:translate-x-0.5"
+                          />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             ) : (
-              <div className="grid min-h-52 place-items-center rounded-lg border border-dashed text-center">
-                <div>
+              <div className="grid min-h-60 place-items-center rounded-lg border border-dashed bg-muted/30 p-6 text-center">
+                <div className="max-w-sm">
+                  <span className="mx-auto mb-4 grid size-11 place-items-center rounded-lg bg-secondary text-secondary-foreground">
+                    <FileText className="size-5" aria-hidden="true" />
+                  </span>
                   <p className="font-medium">Nessun preventivo</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Il primo preventivo può partire vuoto o da un template.
                   </p>
-                  <Button className="mt-4" size="sm" onClick={onNewQuote}>
-                    Crea il primo preventivo
-                  </Button>
                 </div>
               </div>
             )}
@@ -225,22 +278,21 @@ export function DashboardView({
         </Card>
 
         <div className="space-y-4">
-          <Card>
+          <Card className="[--card-spacing:--spacing(5)]">
             <CardHeader>
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  Profilo attivo{' '}
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  <CalendarDays className="size-4" aria-hidden="true" />
+                  Profilo annuale{' '}
                   {profile ? (
-                    <Badge
-                      variant={profile.confirmed ? 'default' : 'secondary'}
-                    >
+                    <Badge variant="secondary">
                       {profile.confirmed ? 'Confermato' : 'Da verificare'}
                     </Badge>
                   ) : null}
                 </CardTitle>
                 <CardDescription>
                   {profile
-                    ? `${profile.year} · revisione ${profile.revision}`
+                    ? `Profilo ${profile.year} · revisione ${profile.revision}`
                     : 'Nessun profilo annuale'}
                 </CardDescription>
               </div>
@@ -252,12 +304,8 @@ export function DashboardView({
                   value={eur(values?.availableIncome)}
                 />
                 <SmallMetric
-                  label="Ore cliente"
-                  value={
-                    values
-                      ? formatNumber(values.availableClientMinutes / 60, 1)
-                      : '—'
-                  }
+                  label="Costi aziendali annui"
+                  value={eur(values?.annualBusinessCosts)}
                 />
               </div>
               {profile ? (
@@ -266,9 +314,22 @@ export function DashboardView({
                   variant="outline"
                   onClick={() => onEditProfile(profile.id)}
                 >
-                  <Settings2 />
-                  Modifica profilo
+                  <Settings2 aria-hidden="true" />
+                  {profile.confirmed ? 'Modifica profilo' : 'Verifica profilo'}
                 </Button>
+              ) : null}
+              {values?.warnings.length ? (
+                <Alert>
+                  <AlertTriangle aria-hidden="true" />
+                  <AlertTitle>Indicazioni sul profilo</AlertTitle>
+                  <AlertDescription>
+                    <ul className="list-disc space-y-1 pl-4">
+                      {values.warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
               ) : null}
             </CardContent>
           </Card>
@@ -306,25 +367,27 @@ function Metric({
   label,
   value,
   note,
-  primary = false,
 }: {
   icon: typeof Clock3;
   label: string;
   value: string;
   note: string;
-  primary?: boolean;
 }) {
   return (
-    <Card className={primary ? 'border-primary/30' : undefined}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardDescription>{label}</CardDescription>
-          <Icon className="size-4 text-muted-foreground" />
+    <Card className="dashboard-enter min-w-0 gap-3 transition-colors duration-200 hover:bg-secondary/20 hover:ring-primary/40 [--card-spacing:--spacing(5)]">
+      <CardHeader className="gap-4">
+        <div className="flex min-h-9 items-center justify-between gap-3">
+          <CardTitle className="text-sm">{label}</CardTitle>
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
+            <Icon className="size-4" aria-hidden="true" />
+          </span>
         </div>
-        <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
+        <p className="text-2xl font-semibold tracking-tight break-words tabular-nums 2xl:text-3xl">
+          {value}
+        </p>
       </CardHeader>
-      <CardContent className="text-xs text-muted-foreground">
-        {note}
+      <CardContent className="mt-auto">
+        <CardDescription className="text-xs">{note}</CardDescription>
       </CardContent>
     </Card>
   );
@@ -334,7 +397,7 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border bg-muted/30 p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 font-semibold tabular-nums">{value}</p>
+      <p className="mt-1 font-semibold break-words tabular-nums">{value}</p>
     </div>
   );
 }

@@ -45,7 +45,7 @@ const months = [
   'Nov',
   'Dic',
 ];
-const config = { amount: { label: 'Spese', color: 'var(--chart-1)' } };
+const config = { amount: { label: 'Spese', color: 'var(--muted-foreground)' } };
 
 export function BankSummaryView({
   doc,

@@ -55,7 +55,9 @@ export function ExpenseCategoryChart({
       <CardContent>
         {data.length ? (
           <ChartContainer
-            config={{ value: { label: 'Importo', color: 'var(--chart-4)' } }}
+            config={{
+              value: { label: 'Importo', color: 'var(--muted-foreground)' },
+            }}
             className="w-full aspect-auto"
             style={{ height: Math.max(220, data.length * 46 + 36) }}
           >

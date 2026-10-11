@@ -82,7 +82,11 @@ const entries: Array<{ key: View; label: string; icon: typeof Gauge }> = [
   { key: 'quotes', label: 'Preventivi', icon: FileText },
   { key: 'clients', label: 'Clienti', icon: Users },
   { key: 'catalog', label: 'Catalogo', icon: BookOpen },
-  { key: 'financial-analysis', label: 'Panoramica', icon: ChartNoAxesCombined },
+  {
+    key: 'financial-analysis',
+    label: 'Panoramica finanziaria',
+    icon: ChartNoAxesCombined,
+  },
   { key: 'settings', label: 'Impostazioni', icon: Settings },
 ];
 

@@ -82,9 +82,9 @@ const months = [
   'Dicembre',
 ];
 const monthlyConfig = {
-  collected: { label: 'Incassato', color: 'var(--chart-2)' },
-  bank: { label: 'Uscite dal conto', color: 'var(--chart-4)' },
-  margin: { label: 'Margine dopo le uscite', color: 'var(--chart-3)' },
+  collected: { label: 'Incassato', color: 'var(--chart-1)' },
+  bank: { label: 'Uscite dal conto', color: 'var(--muted-foreground)' },
+  margin: { label: 'Margine dopo le uscite', color: 'var(--foreground)' },
 } satisfies ChartConfig;
 
 function Kpi({
@@ -350,6 +350,7 @@ function MonthlyFlow({ overview: o }: { overview: FinancialOverview }) {
                 dataKey="margin"
                 stroke="var(--color-margin)"
                 strokeWidth={2}
+                strokeDasharray="5 3"
                 dot={false}
               />
             ) : null}

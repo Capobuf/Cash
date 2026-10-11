@@ -290,8 +290,11 @@ export function FinancialCharts({
             description="Emesso per data fattura · Incassato per data pagamento FIC"
             data={monthly}
             config={{
-              issued: { label: 'Fatturato emesso', color: 'var(--chart-1)' },
-              collected: { label: 'Incassato', color: 'var(--chart-2)' },
+              issued: {
+                label: 'Fatturato emesso',
+                color: 'var(--muted-foreground)',
+              },
+              collected: { label: 'Incassato', color: 'var(--chart-1)' },
             }}
             emptyTitle="Nessun ricavo FIC registrato"
             emptyDescription="Non risultano fatture emesse o pagamenti incassati nell’anno selezionato."
@@ -303,9 +306,9 @@ export function FinancialCharts({
             config={{
               documented: {
                 label: 'Costi documentati',
-                color: 'var(--chart-4)',
+                color: 'var(--muted-foreground)',
               },
-              paid: { label: 'Costi pagati', color: 'var(--chart-5)' },
+              paid: { label: 'Costi pagati', color: 'var(--foreground)' },
             }}
             emptyTitle="Nessun costo FIC registrato"
             emptyDescription="Non risultano costi documentati o pagati nell’anno selezionato."
@@ -330,9 +333,9 @@ export function FinancialCharts({
               {
                 key: 'issued',
                 label: 'Fatturato emesso',
-                color: 'var(--chart-1)',
+                color: 'var(--muted-foreground)',
               },
-              { key: 'collected', label: 'Incassato', color: 'var(--chart-2)' },
+              { key: 'collected', label: 'Incassato', color: 'var(--chart-1)' },
             ]}
           />
           <RankingChart
@@ -351,7 +354,7 @@ export function FinancialCharts({
               {
                 key: 'delay',
                 label: 'Giorni medi di ritardo',
-                color: 'var(--chart-5)',
+                color: 'var(--muted-foreground)',
               },
             ]}
           />
@@ -373,7 +376,7 @@ export function FinancialCharts({
               {
                 key: 'documented',
                 label: 'Costi documentati',
-                color: 'var(--chart-4)',
+                color: 'var(--muted-foreground)',
               },
             ]}
           />

@@ -14,7 +14,7 @@ function FlowNode({ x, y, width, height, payload }: SankeyNodeProps) {
         y={y}
         width={width}
         height={height}
-        fill="var(--chart-1)"
+        fill="var(--muted-foreground)"
       />
       <Text
         x={labelX}
@@ -32,7 +32,7 @@ function FlowNode({ x, y, width, height, payload }: SankeyNodeProps) {
         x={labelX}
         y={y + height / 2 + 20}
         textAnchor={terminal ? 'end' : 'start'}
-        fill="var(--muted-foreground)"
+        fill="var(--color-muted-foreground)"
         fontSize={11}
       >
         {eur(String(payload.value))}
@@ -131,7 +131,7 @@ export function MoneyFlowChart({
           sort={false}
           align="left"
           margin={{ top: 24, bottom: 24, left: 8, right: 8 }}
-          link={{ stroke: 'var(--chart-1)', strokeOpacity: 0.18 }}
+          link={{ stroke: 'var(--foreground)', strokeOpacity: 0.12 }}
           onMouseEnter={(item, _type, event) => {
             const payload = item.payload;
             const name =
