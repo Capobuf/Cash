@@ -60,6 +60,7 @@ export const IPC = {
   updateCheck: 'cash:update:check',
   updateDownload: 'cash:update:download',
   updateInstall: 'cash:update:install',
+  updateOpenReleases: 'cash:update:open-releases',
   updateChanged: 'cash:update:changed',
   appExternal: 'cash:app:external',
   appArchiveReloaded: 'cash:app:archive-reloaded',
@@ -201,6 +202,7 @@ export interface CashNativeApi {
     check(): Promise<Result<CashUpdateStatus>>;
     download(): Promise<Result<CashUpdateStatus>>;
     install(): Promise<Result<void>>;
+    openReleases(): Promise<Result<void>>;
     onStatus(listener: (status: CashUpdateStatus) => void): () => void;
   };
   setDirty(dirty: boolean): void;

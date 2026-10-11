@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { UpdateNotice } from '@/components/UpdatesPanel';
+import { UpdateNotice, UpdatesPanel } from '@/components/UpdatesPanel';
 import type { AppState } from '../state';
 import type { DeleteTarget, View } from '../types';
 import {
@@ -133,18 +133,32 @@ function BrandLogo({ className }: { className: string }) {
 
 export function GlobalError({ appState }: { appState: AppState }) {
   if (!appState.error) return null;
+  const needsUpdate = appState.error.code === 'SCHEMA_NEWER';
+  const details = appState.error.details?.length ? (
+    <ul className="mt-2 list-disc space-y-1 break-words pl-4">
+      {appState.error.details.map((detail) => (
+        <li key={detail}>{detail}</li>
+      ))}
+    </ul>
+  ) : null;
   return (
-    <Alert variant="destructive">
+    <Alert variant={needsUpdate ? 'default' : 'destructive'}>
       <AlertTitle>{appState.error.message}</AlertTitle>
       <AlertDescription>
         {appState.error.action ? <div>{appState.error.action}</div> : null}
-        {appState.error.details?.length ? (
-          <ul className="mt-2 list-disc pl-4">
-            {appState.error.details.map((detail) => (
-              <li key={detail}>{detail}</li>
-            ))}
-          </ul>
-        ) : null}
+        {needsUpdate ? (
+          <div className="mt-4 space-y-4">
+            <UpdatesPanel appState={appState} compact archiveBlocked />
+            {details ? (
+              <details>
+                <summary className="cursor-pointer">Dettagli tecnici</summary>
+                {details}
+              </details>
+            ) : null}
+          </div>
+        ) : (
+          details
+        )}
       </AlertDescription>
       <AlertAction>
         <Button
@@ -186,7 +200,9 @@ export function Onboarding({ appState }: { appState: AppState }) {
           </p>
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" onClick={() => void appState.open()}>
-              Apri archivio
+              {appState.session?.headerOnly
+                ? 'Apri un altro archivio'
+                : 'Apri archivio'}
             </Button>
             <Button onClick={() => void appState.create()}>
               Crea archivio

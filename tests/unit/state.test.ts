@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createEmptyDocument,
+  CURRENT_SCHEMA_VERSION,
   err,
   meta,
   ok,
@@ -24,6 +25,41 @@ const session = (document: CashDocument, revision = 1): ArchiveSession => ({
 describe('coordinatore autosalvataggio', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  it('guides users to updates for a newer archive and never modifies its data', async () => {
+    const save = vi.fn();
+    const setDirty = vi.fn();
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty } });
+    try {
+      const state = new AppState();
+      const archive: ArchiveSession = {
+        path: 'C:\\Cash.sqlite',
+        token: { documentId: createEmptyDocument().documentId, revision: 262 },
+        readOnly: true,
+        headerOnly: true,
+        schemaVersion: CURRENT_SCHEMA_VERSION + 1,
+        storageVersion: 2,
+      };
+      state.acceptNativeSession(archive);
+      expect(state.status).toBe('Sola lettura');
+      expect(state.error).toMatchObject({
+        code: 'SCHEMA_NEWER',
+        message:
+          'Per aprire questo archivio serve una versione più recente di Cash',
+        action: expect.stringContaining('Verifica gli aggiornamenti'),
+        details: expect.arrayContaining([archive.path]),
+      });
+      const mutation = vi.fn();
+      expect(state.mutate(mutation)).toBe(false);
+      await state.save();
+      expect(mutation).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(state.session).toBe(archive);
+      expect(setDirty).toHaveBeenCalledExactlyOnceWith(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it('una creazione rifiutata non consuma numeri e un retry del salvataggio conserva lo stesso numero', async () => {
     const save = vi

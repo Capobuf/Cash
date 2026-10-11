@@ -1,4 +1,10 @@
-import { RefreshCw, Download, RotateCw, Info } from 'lucide-react';
+import {
+  RefreshCw,
+  Download,
+  RotateCw,
+  Info,
+  ExternalLink,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { CashUpdateStatus } from '../../shared/ipc';
 import type { Result } from '../../domain/model';
@@ -78,7 +84,15 @@ export function UpdateNotice({
   );
 }
 
-export function UpdatesPanel({ appState }: { appState: AppState }) {
+export function UpdatesPanel({
+  appState,
+  compact = false,
+  archiveBlocked = false,
+}: {
+  appState: AppState;
+  compact?: boolean;
+  archiveBlocked?: boolean;
+}) {
   const update = useCashUpdateStatus();
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -102,6 +116,121 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
 
   const phase = update?.phase;
   const unsaved = isUnsaved(appState);
+  const content = (
+    <>
+      <p className="text-sm text-muted-foreground" role="status">
+        {phase === 'unsupported'
+          ? 'Questa copia di Cash non supporta l’aggiornamento automatico. Apri la pagina dei download per verificare le versioni disponibili e scaricare quella adatta.'
+          : phase === 'idle'
+            ? 'Verifica degli aggiornamenti non ancora effettuata.'
+            : phase === 'checking'
+              ? 'Verifica degli aggiornamenti in corso…'
+              : phase === 'up-to-date'
+                ? archiveBlocked
+                  ? 'Non sono disponibili aggiornamenti più recenti. Per aprire questo archivio serve comunque una versione compatibile di Cash. Puoi controllare le versioni nella pagina dei download o aprire un altro archivio.'
+                  : 'Stai già utilizzando la versione più recente pubblicata.'
+                : phase === 'available'
+                  ? `È disponibile la versione ${update?.availableVersion}.`
+                  : phase === 'downloading'
+                    ? `Download in corso: ${update?.progressPercent ?? 0}%.`
+                    : phase === 'ready'
+                      ? `Versione ${update?.availableVersion} pronta per l'installazione.`
+                      : phase === 'error'
+                        ? 'Non è stato possibile verificare o completare l’aggiornamento. Controlla la connessione e riprova, oppure apri la pagina dei download.'
+                        : 'Lettura degli aggiornamenti in corso…'}
+      </p>
+      {phase === 'error' || actionError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Aggiornamento non riuscito</AlertTitle>
+          <AlertDescription>
+            <div>Riprova oppure apri la pagina dei download.</div>
+            {actionError || update?.message ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer">Dettagli tecnici</summary>
+                <div className="mt-2 break-words">
+                  {actionError ?? update?.message}
+                </div>
+              </details>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {unsaved && phase === 'ready' ? (
+        <Alert>
+          <Info />
+          <AlertTitle>Modifiche ancora da salvare</AlertTitle>
+          <AlertDescription>
+            Attendi lo stato “Salvato” prima di riavviare per aggiornare.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={
+            compact && (phase === 'idle' || phase === 'error')
+              ? 'default'
+              : 'outline'
+          }
+          disabled={
+            pending ||
+            !phase ||
+            phase === 'unsupported' ||
+            phase === 'checking' ||
+            phase === 'downloading' ||
+            phase === 'ready'
+          }
+          onClick={() => void perform(() => window.cash.updates.check())}
+        >
+          <RefreshCw />
+          {phase === 'checking'
+            ? 'Verifica in corso…'
+            : 'Verifica aggiornamenti'}
+        </Button>
+        {phase === 'available' ? (
+          <Button
+            disabled={pending}
+            onClick={() => void perform(() => window.cash.updates.download())}
+          >
+            <Download />
+            Scarica aggiornamento
+          </Button>
+        ) : null}
+        {phase === 'ready' ? (
+          <Button
+            disabled={pending || unsaved}
+            onClick={() => void perform(() => window.cash.updates.install())}
+          >
+            <RotateCw />
+            Installa e riavvia
+          </Button>
+        ) : null}
+        {phase === 'unsupported' ||
+        phase === 'error' ||
+        phase === 'up-to-date' ||
+        actionError ? (
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() =>
+              void perform(() => window.cash.updates.openReleases())
+            }
+          >
+            <ExternalLink />
+            Apri pagina dei download
+          </Button>
+        ) : null}
+      </div>
+    </>
+  );
+  if (compact)
+    return (
+      <section aria-label="Aggiornamenti di Cash" className="space-y-3">
+        <div className="text-sm text-muted-foreground">
+          Versione installata: {update?.currentVersion ?? '—'}
+        </div>
+        {content}
+      </section>
+    );
   return (
     <Card>
       <CardHeader>
@@ -111,78 +240,7 @@ export function UpdatesPanel({ appState }: { appState: AppState }) {
           Releases del progetto Cash.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground" role="status">
-          {phase === 'unsupported'
-            ? 'Gli aggiornamenti integrati sono disponibili solo nella versione installata su Windows, non nella portable o in sviluppo.'
-            : phase === 'idle'
-              ? 'Verifica degli aggiornamenti non ancora effettuata.'
-              : phase === 'checking'
-                ? 'Verifica degli aggiornamenti in corso…'
-                : phase === 'up-to-date'
-                  ? 'Stai già utilizzando la versione più recente pubblicata.'
-                  : phase === 'available'
-                    ? `È disponibile la versione ${update?.availableVersion}.`
-                    : phase === 'downloading'
-                      ? `Download in corso: ${update?.progressPercent ?? 0}%.`
-                      : phase === 'ready'
-                        ? `Versione ${update?.availableVersion} pronta per l'installazione.`
-                        : (update?.message ??
-                          'Lettura degli aggiornamenti in corso…')}
-        </p>
-        {phase === 'error' || actionError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Aggiornamento non riuscito</AlertTitle>
-            <AlertDescription>
-              {actionError ?? update?.message}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {unsaved && phase === 'ready' ? (
-          <Alert>
-            <Info />
-            <AlertTitle>Modifiche ancora da salvare</AlertTitle>
-            <AlertDescription>
-              Attendi lo stato “Salvato” prima di riavviare per aggiornare.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            disabled={
-              pending ||
-              !phase ||
-              phase === 'unsupported' ||
-              phase === 'checking' ||
-              phase === 'downloading' ||
-              phase === 'ready'
-            }
-            onClick={() => void perform(() => window.cash.updates.check())}
-          >
-            <RefreshCw />
-            Verifica aggiornamenti
-          </Button>
-          {phase === 'available' ? (
-            <Button
-              disabled={pending}
-              onClick={() => void perform(() => window.cash.updates.download())}
-            >
-              <Download />
-              Scarica aggiornamento
-            </Button>
-          ) : null}
-          {phase === 'ready' ? (
-            <Button
-              disabled={pending || unsaved}
-              onClick={() => void perform(() => window.cash.updates.install())}
-            >
-              <RotateCw />
-              Installa e riavvia
-            </Button>
-          ) : null}
-        </div>
-      </CardContent>
+      <CardContent className="space-y-4">{content}</CardContent>
     </Card>
   );
 }

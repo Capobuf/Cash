@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import electronUpdater from 'electron-updater';
 import { err, ok, type Result } from '../domain/model';
 import type { CashUpdateStatus } from '../shared/ipc';
@@ -33,6 +33,18 @@ function updateFailed(cause: unknown): Result<never> {
 
 export function getCashUpdateStatus(): CashUpdateStatus {
   return { ...status };
+}
+
+export async function openCashReleases(): Promise<Result<void>> {
+  try {
+    await shell.openExternal('https://github.com/Capobuf/Cash/releases');
+    return ok(undefined);
+  } catch {
+    return err({
+      code: 'IO',
+      message: 'Impossibile aprire la pagina dei download. Riprova.',
+    });
+  }
 }
 
 export function initializeCashUpdates(

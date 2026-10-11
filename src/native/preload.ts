@@ -59,6 +59,7 @@ const api: CashNativeApi = {
     check: () => ipcRenderer.invoke(IPC.updateCheck),
     download: () => ipcRenderer.invoke(IPC.updateDownload),
     install: () => ipcRenderer.invoke(IPC.updateInstall),
+    openReleases: () => ipcRenderer.invoke(IPC.updateOpenReleases),
     onStatus: (listener) => {
       const wrapped = (
         _event: Electron.IpcRendererEvent,

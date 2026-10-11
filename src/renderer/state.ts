@@ -119,11 +119,16 @@ export class AppState {
       ? {
           code: 'SCHEMA_NEWER',
           source: 'archive',
-          message: `L’archivio usa uno schema più recente${session.schemaVersion ? ` (${session.schemaVersion})` : ''} di quello supportato da questa versione di Cash (${CURRENT_SCHEMA_VERSION}).${session.storageVersion ? ` Versione archivio SQLite: ${session.storageVersion}.` : ''}`,
+          message:
+            'Per aprire questo archivio serve una versione più recente di Cash',
           action:
-            'Apri il file con una versione di Cash compatibile. I dati non sono stati modificati.',
+            'Questa versione di Cash non può leggere l’archivio. I tuoi dati non sono stati modificati. Verifica gli aggiornamenti e, se disponibili, installali. Dopo il riavvio, riapri l’archivio.',
           details: [
             session.path,
+            `Schema archivio: ${session.schemaVersion ?? 'non disponibile'} · Schema supportato: ${CURRENT_SCHEMA_VERSION}.`,
+            ...(session.storageVersion
+              ? [`Versione archivio SQLite: ${session.storageVersion}.`]
+              : []),
             `Revisione: ${session.token.revision} · Sola lettura: contenuto non disponibile in questa versione.`,
           ],
         }

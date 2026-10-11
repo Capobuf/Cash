@@ -43,6 +43,7 @@ import {
   getCashUpdateStatus,
   initializeCashUpdates,
   installCashUpdate,
+  openCashReleases,
 } from './updates';
 import { FIC_SCOPES, requireActiveFic } from '../domain/integration';
 import {
@@ -637,6 +638,7 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.updateStatus, () => getCashUpdateStatus());
   ipcMain.handle(IPC.updateCheck, () => checkCashUpdates());
   ipcMain.handle(IPC.updateDownload, () => downloadCashUpdate());
+  ipcMain.handle(IPC.updateOpenReleases, () => openCashReleases());
   ipcMain.handle(IPC.updateInstall, () => {
     if (dirty)
       return err({
