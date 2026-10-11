@@ -147,8 +147,9 @@ describe('varianti', () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.value.subItems).toEqual([]);
-    expect(calculateItem(applied.value, '100').blockers.join(' ')).toContain(
-      'tempo',
-    );
+    const analysis = calculateItem(applied.value, '100');
+    expect(analysis.blockers).toEqual([]);
+    expect(analysis.theoreticalValue).toBeUndefined();
+    expect(analysis.yieldPerHour).toBeUndefined();
   });
 });

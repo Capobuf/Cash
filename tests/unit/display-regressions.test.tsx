@@ -161,6 +161,7 @@ it('refreshes open invoice details when the FIC payment changes', () => {
 
 it('keeps provider diagnostics visible inside the export dialog', () => {
   const quote: Quote = {
+    number: 1,
     ...meta(),
     date: '2026-01-01',
     snapshotRevision: 0,

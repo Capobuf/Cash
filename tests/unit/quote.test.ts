@@ -159,7 +159,7 @@ describe('preventivo', () => {
     expect(result.theoreticalValue).toBe('170.00');
     expect(result.deficit).toBe('20.00');
   });
-  it('non espone totali completi se una voce è incompleta', () => {
+  it('mostra il teorico disponibile come parziale anche con una voce senza dati tecnici', () => {
     const complete: QuoteItem = {
       ...meta(),
       name: 'A',
@@ -177,7 +177,144 @@ describe('preventivo', () => {
       subItems: [],
     };
     const result = calculateQuote([complete, incomplete], '100');
-    expect(result.blockingItems[0]).toContain('B');
-    expect(result.theoreticalValue).toBeUndefined();
+    expect(result.blockingItems).toEqual([]);
+    expect(result.theoreticalValue).toBe('100.00');
+    expect(result.theoreticalPartial).toBe(true);
+    expect(result.chosenTotal).toBe('110.00');
+    expect(result.chosenPartial).toBe(false);
+    expect(result.yieldPerHour).toBeUndefined();
+  });
+});
+
+const commercialItem = (chosenPrice?: string): QuoteItem => ({
+  ...meta(),
+  name: 'Server',
+  chosenPrice,
+  subItems: [],
+  variantGroups: [],
+  variantSelections: [],
+});
+
+describe('disponibilità indipendente dei valori economici', () => {
+  it('accetta una voce commerciale senza sottovoci e senza profilo', () => {
+    const item = calculateItem(commercialItem('400.00'));
+    expect(item).toMatchObject({ chosenPrice: '400.00', blockers: [] });
+    expect(item.theoreticalValue).toBeUndefined();
+    expect(item.minutes).toBeUndefined();
+    expect(item.yieldPerHour).toBeUndefined();
+    expect(item.deviationPercent).toBeUndefined();
+    expect(item.coherentMinutes).toBeUndefined();
+    expect(calculateQuote([commercialItem('400.00')])).toMatchObject({
+      chosenTotal: '400.00',
+      chosenPartial: false,
+    });
+  });
+
+  it('somma 400, 250 e 150 anche con una voce senza prezzo e senza profilo', () => {
+    expect(
+      calculateQuote(
+        ['400.00', '250.00', '150.00', undefined].map(commercialItem),
+      ),
+    ).toMatchObject({ chosenTotal: '800.00', chosenPartial: true });
+    expect(calculateQuote([commercialItem()]).chosenTotal).toBeUndefined();
+    expect(calculateQuote([]).chosenTotal).toBeUndefined();
+  });
+
+  it('distingue uno zero esplicito da un prezzo assente', () => {
+    expect(calculateQuote([commercialItem('0.00')])).toMatchObject({
+      chosenTotal: '0.00',
+      chosenPartial: false,
+    });
+    expect(
+      calculateQuote([commercialItem('0.00'), commercialItem()]),
+    ).toMatchObject({ chosenTotal: '0.00', chosenPartial: true });
+  });
+
+  it('calcola il teorico senza prezzo e lo aggiorna con le sottovoci', () => {
+    const item = commercialItem();
+    item.subItems.push({
+      ...meta(),
+      kind: 'time',
+      description: 'Lavoro',
+      minutes: 285,
+    });
+    expect(calculateQuote([item], '100')).toMatchObject({
+      theoreticalValue: '475.00',
+      theoreticalPartial: false,
+      timeValue: '475.00',
+    });
+    item.subItems.push({
+      ...meta(),
+      kind: 'expense',
+      description: 'Materiale',
+      amount: '25.00',
+    });
+    expect(calculateQuote([item, commercialItem()], '100')).toMatchObject({
+      theoreticalValue: '500.00',
+      theoreticalPartial: true,
+    });
+    item.subItems[0] = {
+      ...meta(),
+      kind: 'time',
+      description: 'Lavoro',
+      minutes: 60,
+    };
+    expect(calculateItem(item, '100').theoreticalValue).toBe('125.00');
+    item.subItems.shift();
+    expect(calculateItem(item).theoreticalValue).toBe('25.00');
+    item.subItems = [];
+    expect(calculateItem(item, '100').theoreticalValue).toBeUndefined();
+  });
+
+  it('mantiene spese note e resa senza inventare un obiettivo orario', () => {
+    const item = commercialItem('125.00');
+    item.subItems = [
+      { ...meta(), kind: 'time', description: 'Lavoro', minutes: 60 },
+      { ...meta(), kind: 'expense', description: 'Spese', amount: '25.00' },
+    ];
+    for (const result of [calculateItem(item), calculateQuote([item])]) {
+      expect(result).toMatchObject({
+        minutes: 60,
+        expenses: '25.00',
+        theoreticalValue: '25.00',
+        theoreticalPartial: true,
+        yieldPerHour: '100.00',
+      });
+      expect(result.timeValue).toBeUndefined();
+      expect(result.deviationPercent).toBeUndefined();
+      expect(result.coherentMinutes).toBeUndefined();
+    }
+    item.subItems.pop();
+    expect(calculateItem(item).theoreticalValue).toBeUndefined();
+    expect(calculateQuote([item]).yieldPerHour).toBe('125.00');
+  });
+
+  it('segnala la trasferta incompleta conservando prezzo, tempo e spese indipendenti', () => {
+    const item = commercialItem('400.00');
+    item.subItems = [
+      { ...meta(), kind: 'time', description: 'Lavoro', minutes: 60 },
+      { ...meta(), kind: 'expense', description: 'Spese', amount: '20.00' },
+      {
+        ...meta(),
+        kind: 'travel',
+        description: 'Visita',
+        roundTrip: false,
+        occurrences: 1,
+      },
+    ];
+    const result = calculateQuote([item, commercialItem('250.00')], '100');
+    expect(result).toMatchObject({
+      chosenTotal: '650.00',
+      chosenPartial: false,
+      theoreticalValue: '120.00',
+      theoreticalPartial: true,
+      minutes: 60,
+      expenses: '20.00',
+      minutesPartial: true,
+      expensesPartial: true,
+    });
+    expect(result.blockers.join(' ')).toContain('Trasferta');
+    expect(result.yieldPerHour).toBeUndefined();
+    expect(result.deviationPercent).toBeUndefined();
   });
 });

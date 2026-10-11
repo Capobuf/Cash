@@ -30,7 +30,9 @@ describe('periodi mensili', () => {
     ({ period, valid }) => {
       const referencePrice = { amount: '100.00', period };
       const document = createEmptyDocument();
+      document.nextQuoteNumber = 2;
       document.quotes.push({
+        number: 1,
         ...meta(),
         date: '2026-01-01',
         snapshotRevision: 0,
@@ -124,7 +126,9 @@ describe('schema archivio corrente', () => {
       variantGroups: [],
       variantSelections: [],
     };
+    document.nextQuoteNumber = 2;
     document.quotes.push({
+      number: 1,
       ...meta(),
       date: '2026-10-05',
       items: [item],

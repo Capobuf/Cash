@@ -8,6 +8,7 @@ import {
 import { meta, type Quote } from '../../src/domain/model';
 
 const quote: Quote = {
+  number: 1,
   ...meta(),
   date: '2026-09-08',
   client: {
@@ -39,6 +40,21 @@ const quote: Quote = {
   ],
 };
 describe('esportazione deliberata', () => {
+  it('mantiene le descrizioni commerciali esportate senza richiedere tempo', () => {
+    expect(buildExportLines(quote)).toMatchObject({
+      ok: true,
+      value: [
+        { description: 'A', amount: '100.00' },
+        { description: 'B', amount: '50.00' },
+      ],
+    });
+    const zero = structuredClone(quote);
+    zero.items[0]!.chosenPrice = '0.00';
+    expect(buildExportLines(zero)).toMatchObject({
+      ok: true,
+      value: [{ description: 'A', amount: '0.00' }, { description: 'B' }],
+    });
+  });
   it('esporta solo le voci scelte anche se le altre sono prive di prezzo', () => {
     const partial = structuredClone(quote);
     delete partial.items[1]!.chosenPrice;

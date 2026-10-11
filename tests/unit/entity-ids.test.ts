@@ -34,7 +34,9 @@ function fixture() {
     ],
   };
   doc.catalog.templates.push({ ...meta(), name: 'Template', items: [item] });
+  doc.nextQuoteNumber = 2;
   doc.quotes.push({
+    number: 1,
     ...meta(),
     date: '2026-10-02',
     items: [],
@@ -95,6 +97,7 @@ it('accepts independent copies and repeated source and remote references', () =>
     displayName: 'Client',
   };
   doc.quotes[0]!.mainSite = { sourceId: site.id, name: site.name };
-  doc.quotes.push({ ...structuredClone(doc.quotes[0]!), ...meta() });
+  doc.quotes.push({ ...structuredClone(doc.quotes[0]!), ...meta(), number: 2 });
+  doc.nextQuoteNumber = 3;
   expect(cashDocumentSchema.safeParse(doc).success).toBe(true);
 });

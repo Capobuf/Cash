@@ -51,6 +51,7 @@ describe('snapshot e aggiornamento atomico', () => {
     coordinates: { longitude: '9.1900', latitude: '45.4642' },
   };
   const quote: Quote = {
+    number: 1,
     ...meta(),
     date: '2026-09-08',
     profileId: profile.id,

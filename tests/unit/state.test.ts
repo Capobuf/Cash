@@ -9,6 +9,7 @@ import {
 } from '../../src/domain/model';
 import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState, type ArchiveDecision } from '../../src/renderer/state';
+import { addQuote } from '../../src/domain/quotes';
 
 const session = (document: CashDocument, revision = 1): ArchiveSession => ({
   path: 'C:\\Cash.data.json',
@@ -23,6 +24,66 @@ const session = (document: CashDocument, revision = 1): ArchiveSession => ({
 describe('coordinatore autosalvataggio', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  it('una creazione rifiutata non consuma numeri e un retry del salvataggio conserva lo stesso numero', async () => {
+    const save = vi
+      .fn<Window['cash']['archive']['save']>()
+      .mockResolvedValueOnce(
+        err({ code: 'IO', message: 'Disco non disponibile' }),
+      )
+      .mockImplementation(async (_path, document, token) =>
+        ok(
+          session(
+            { ...document, revision: token.revision + 1 },
+            token.revision + 1,
+          ),
+        ),
+      );
+    vi.stubGlobal('window', { cash: { archive: { save }, setDirty: vi.fn() } });
+    try {
+      const state = new AppState();
+      state.acceptNativeSession(session(createEmptyDocument()));
+      expect(
+        state.mutate((document) => {
+          addQuote(document);
+          document.quotes[0]!.date = 'invalid';
+        }),
+      ).toBe(false);
+      expect(state.document).toMatchObject({ nextQuoteNumber: 1, quotes: [] });
+      expect(save).not.toHaveBeenCalled();
+      expect(
+        state.mutate((document) => {
+          addQuote(document);
+        }),
+      ).toBe(true);
+      await state.save();
+      expect(state.status).toBe('Errore di salvataggio');
+      expect(state.document).toMatchObject({
+        nextQuoteNumber: 2,
+        quotes: [{ number: 1 }],
+      });
+      await state.save();
+      expect(state.status).toBe('Salvato');
+      expect(save.mock.calls.map((call) => call[1].quotes[0]!.number)).toEqual([
+        1, 1,
+      ]);
+      expect(
+        state.mutate((document) => {
+          document.quotes = [];
+          document.nextQuoteNumber = 1;
+        }),
+      ).toBe(false);
+      expect(
+        state.mutate((document) => {
+          document.quotes[0]!.number = 2;
+          document.nextQuoteNumber = 3;
+        }),
+      ).toBe(false);
+      expect(state.document!.quotes[0]!.number).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it.each(['cancel', 'recovery', 'discard', 'save'] as const)(
     'protegge il ripristino dirty con scelta %s senza sovrascrivere il backup',

@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { templateRequiresTravel } from '../../../domain/catalog';
 import {
@@ -26,6 +27,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group';
 import {
   NativeSelect,
   NativeSelectOption,
@@ -180,12 +186,14 @@ export function InsertTemplateDialog({
     context: { siteId?: string; vehicleId?: string },
   ) => Promise<boolean>;
 }) {
+  const [query, setQuery] = useState('');
   const [templateId, setTemplateId] = useState(
     doc.catalog.templates[0]?.id ?? '',
   );
-  const template = doc.catalog.templates.find(
-    (entry) => entry.id === templateId,
+  const templates = doc.catalog.templates.filter((entry) =>
+    entry.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  const template = templates.find((entry) => entry.id === templateId);
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [siteId, setSiteId] = useState(quote.mainSite?.sourceId ?? '');
   const [vehicleId, setVehicleId] = useState(
@@ -220,10 +228,21 @@ export function InsertTemplateDialog({
             completamente modificabili.
           </DialogDescription>
         </DialogHeader>
+        <InputGroup>
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Cerca template da inserire"
+            placeholder="Cerca template"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </InputGroup>
         <div className="grid gap-5 md:grid-cols-[240px_minmax(0,1fr)]">
           <ScrollArea className="h-[420px] rounded-lg border">
             <div className="p-2">
-              {doc.catalog.templates.map((entry) => (
+              {templates.map((entry) => (
                 <ChoiceButton
                   key={entry.id}
                   selected={entry.id === templateId}
@@ -235,6 +254,11 @@ export function InsertTemplateDialog({
                   }}
                 />
               ))}
+              {!templates.length ? (
+                <p className="p-4 text-center text-sm text-muted-foreground">
+                  Nessun template trovato.
+                </p>
+              ) : null}
             </div>
           </ScrollArea>
           <ScrollArea className="h-[420px]">

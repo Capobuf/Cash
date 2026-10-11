@@ -57,6 +57,7 @@ describe('destinazioni delle trasferte', () => {
       const supplier = { ...meta(), name: 'Fornitore ABC' };
       doc.sites.push(main, supplier);
       const quote: Quote = {
+        number: 1,
         ...meta(),
         date: '2026-10-02',
         items: [],

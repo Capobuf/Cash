@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { createEmptyDocument, meta, type Result } from '../domain/model';
+import { addQuote } from '../domain/quotes';
 import {
   createArchive,
   openArchive,
@@ -27,6 +28,8 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
   try {
     const path = join(directory, 'Cash.sqlite');
     const document = createEmptyDocument();
+    assert.equal(addQuote(document).number, 1);
+    assert.equal(addQuote(document).number, 2);
     document.bankExpenses.push({
       ...meta(),
       date: '2026-10-01',
@@ -41,8 +44,17 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
     assert.deepEqual(reopened.document, created.document);
     const changed = structuredClone(reopened.document!);
     changed.settings.fuelTerritory = 'Lazio';
+    changed.quotes.pop();
+    assert.equal(addQuote(changed).number, 3);
     const saved = unwrap(await saveArchive(path, changed, reopened.token));
     assert.equal(saved.token.revision, 2);
+    closeArchive(path);
+    const numbered = unwrap(await openArchive(path));
+    assert.deepEqual(
+      numbered.document!.quotes.map((quote) => quote.number),
+      [1, 3],
+    );
+    assert.equal(numbered.document!.nextQuoteNumber, 4);
     const db = new DatabaseSync(path, { readOnly: true });
     try {
       assert.equal(
@@ -100,6 +112,7 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
             'JSON import',
             'decimal precision',
             'integrity',
+            'quote numbering and non-reuse',
           ],
         },
         null,

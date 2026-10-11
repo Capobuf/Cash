@@ -68,6 +68,7 @@ app.whenReady().then(async () => {
         'same-document',
         'delete-target',
         'clients',
+        'quote-price-preview',
         'quotes',
         'update-navigation-and-race',
         'settings-and-device',

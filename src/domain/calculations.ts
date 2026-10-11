@@ -497,25 +497,68 @@ export function calculateTravel(input: {
 }
 
 export interface ItemAnalysis {
-  minutes: number;
-  expenses: string;
-  timeValue: string;
-  theoreticalValue: string;
+  minutes?: number;
+  expenses?: string;
+  timeValue?: string;
+  theoreticalValue?: string;
+  chosenPrice?: string;
+  minutesPartial: boolean;
+  expensesPartial: boolean;
+  timeValuePartial: boolean;
+  theoreticalPartial: boolean;
   yieldPerHour?: string;
   deviationPercent?: string;
   coherentMinutes?: number;
   deficit?: string;
   blockers: string[];
 }
+
+function economicIndicators(
+  minutes: number | undefined,
+  expenses: string | undefined,
+  chosenPrice: string | undefined,
+  hourlyTarget?: string,
+): Pick<
+  ItemAnalysis,
+  'yieldPerHour' | 'deviationPercent' | 'coherentMinutes' | 'deficit'
+> {
+  if (
+    chosenPrice === undefined ||
+    expenses === undefined ||
+    !minutes ||
+    minutes <= 0
+  )
+    return {};
+  const margin = d(chosenPrice).minus(expenses);
+  const yieldPerHour = money(margin.div(decimalHours(minutes)));
+  const rate = hourlyTarget === undefined ? undefined : d(hourlyTarget);
+  return {
+    yieldPerHour,
+    ...(margin.lt(0) ? { deficit: money(margin.abs()) } : {}),
+    ...(rate?.gt(0)
+      ? {
+          deviationPercent: percentOut(
+            d(yieldPerHour).div(rate).minus(1).mul(100),
+          ),
+          ...(margin.gte(0)
+            ? { coherentMinutes: floorMinute(margin.div(rate)) }
+            : {}),
+        }
+      : {}),
+  };
+}
+
 export function calculateItem(
   item: QuoteItem,
-  hourlyTarget: string,
+  hourlyTarget?: string,
 ): ItemAnalysis {
   const blockers: string[] = [];
-  let minutes = 0;
+  let minutes: number | undefined;
   const expenses: string[] = [];
+  let minutesPartial = false;
+  let expensesPartial = false;
   for (const sub of item.subItems) {
-    if (sub.kind === 'time') minutes += sub.minutes;
+    if (sub.kind === 'time') minutes = (minutes ?? 0) + sub.minutes;
     else if (sub.kind === 'expense') expenses.push(money(sub.amount));
     else {
       const travelLabel = sub.description.trim()
@@ -527,123 +570,133 @@ export function calculateItem(
         blockers.push(`${travelLabel}: destinazione non selezionata.`);
       if (!sub.vehicleId)
         blockers.push(`${travelLabel}: Veicolo non selezionato.`);
-      if (sub.totalMinutes === undefined)
+      if (sub.totalMinutes === undefined) {
+        minutesPartial = true;
         blockers.push(`${travelLabel}: tempo non disponibile.`);
-      else minutes += sub.totalMinutes;
-      if (sub.totalCost === undefined)
+      } else minutes = (minutes ?? 0) + sub.totalMinutes;
+      if (sub.totalCost === undefined) {
+        expensesPartial = true;
         blockers.push(`${travelLabel}: costo non disponibile.`);
-      else expenses.push(money(sub.totalCost));
+      } else expenses.push(money(sub.totalCost));
     }
   }
-  if (minutes <= 0)
-    blockers.push('Serve almeno una sottovoce che produca tempo positivo.');
-  const rate = d(hourlyTarget);
-  if (rate.lte(0))
-    blockers.push('Il valore medio da generare deve essere positivo.');
-  const expenseTotal = sumMoney(expenses);
+  const rate = hourlyTarget === undefined ? undefined : d(hourlyTarget);
+  const expenseTotal =
+    expenses.length || (item.subItems.length && !expensesPartial)
+      ? sumMoney(expenses)
+      : undefined;
   const timeValue =
-    minutes > 0 && rate.gt(0) ? money(decimalHours(minutes).mul(rate)) : '0.00';
-  const theoreticalValue = money(d(timeValue).plus(expenseTotal));
-  const result: ItemAnalysis = {
+    minutes !== undefined && rate?.gt(0)
+      ? money(decimalHours(minutes).mul(rate))
+      : undefined;
+  const components = [
+    timeValue,
+    expenses.length ? sumMoney(expenses) : undefined,
+  ].filter((value): value is string => value !== undefined);
+  const theoreticalValue = components.length ? sumMoney(components) : undefined;
+  const theoreticalPartial =
+    theoreticalValue !== undefined &&
+    (blockers.length > 0 ||
+      minutesPartial ||
+      expensesPartial ||
+      (minutes !== undefined && timeValue === undefined));
+  return {
     minutes,
     expenses: expenseTotal,
     timeValue,
     theoreticalValue,
+    chosenPrice: item.chosenPrice,
+    minutesPartial,
+    expensesPartial,
+    timeValuePartial: minutesPartial,
+    theoreticalPartial,
     blockers,
+    ...(!blockers.length && !minutesPartial && !expensesPartial
+      ? economicIndicators(
+          minutes,
+          expenseTotal,
+          item.chosenPrice,
+          hourlyTarget,
+        )
+      : {}),
   };
-  if (item.chosenPrice === undefined) return result;
-  if (d(item.chosenPrice).lt(0)) {
-    blockers.push('Il prezzo scelto non può essere negativo.');
-    return result;
-  }
-  if (minutes <= 0 || rate.lte(0)) return result;
-  const margin = d(item.chosenPrice).minus(expenseTotal);
-  result.yieldPerHour = money(margin.div(decimalHours(minutes)));
-  result.deviationPercent = percentOut(
-    d(result.yieldPerHour).div(rate).minus(1).mul(100),
-  );
-  if (margin.lt(0)) result.deficit = money(margin.abs());
-  else result.coherentMinutes = floorMinute(margin.div(rate));
-  return result;
 }
 
-export interface QuoteAnalysis {
-  minutes?: number;
-  expenses?: string;
-  timeValue?: string;
-  theoreticalValue?: string;
+export interface QuoteAnalysis extends Omit<ItemAnalysis, 'chosenPrice'> {
   chosenTotal?: string;
-  yieldPerHour?: string;
-  deviationPercent?: string;
-  coherentMinutes?: number;
-  deficit?: string;
-  blockers: string[];
+  chosenPartial: boolean;
   blockingItems: string[];
 }
 export function calculateQuote(
   items: QuoteItem[],
-  hourlyTarget: string,
+  hourlyTarget?: string,
 ): QuoteAnalysis {
   const analyses = items.map((item) => calculateItem(item, hourlyTarget));
-  const blockingItems = items.length
-    ? analyses.flatMap((analysis, index) =>
-        analysis.blockers.length
-          ? [
-              `${items[index]?.name.trim() || `Voce ${index + 1}`}: ${analysis.blockers.join(' ')}`,
-            ]
-          : [],
-      )
-    : ['Preventivo: aggiungere almeno una voce calcolabile.'];
-  const minutes = analyses.reduce((sum, value) => sum + value.minutes, 0);
-  const expenses = sumMoney(analyses.map((value) => value.expenses));
-  const timeValue = sumMoney(analyses.map((value) => value.timeValue));
-  const theoreticalValue = sumMoney(
-    analyses.map((value) => value.theoreticalValue),
+  const blockingItems = analyses.flatMap((analysis, index) =>
+    analysis.blockers.length
+      ? [
+          `${items[index]?.name.trim() || `Voce ${index + 1}`}: ${analysis.blockers.join(' ')}`,
+        ]
+      : [],
   );
-  if (blockingItems.length)
-    return { blockers: [...blockingItems], blockingItems };
-  const result: QuoteAnalysis = {
+  const prices = items.flatMap((item) =>
+    item.chosenPrice === undefined ? [] : [item.chosenPrice],
+  );
+  const chosenTotal = prices.length ? sumMoney(prices) : undefined;
+  const sumAvailable = (key: 'expenses' | 'timeValue' | 'theoreticalValue') => {
+    const values = analyses.flatMap((analysis) =>
+      analysis[key] === undefined ? [] : [analysis[key]!],
+    );
+    return values.length ? sumMoney(values) : undefined;
+  };
+  const knownMinutes = analyses.flatMap((analysis) =>
+    analysis.minutes === undefined ? [] : [analysis.minutes],
+  );
+  const minutes = knownMinutes.length
+    ? knownMinutes.reduce((sum, value) => sum + value, 0)
+    : undefined;
+  const expenses = sumAvailable('expenses');
+  const theoreticalValue = sumAvailable('theoreticalValue');
+  const chosenPartial = prices.length > 0 && prices.length < items.length;
+  const theoreticalPartial =
+    theoreticalValue !== undefined &&
+    analyses.some(
+      (analysis) =>
+        analysis.theoreticalValue === undefined || analysis.theoreticalPartial,
+    );
+  return {
     minutes,
     expenses,
-    timeValue,
+    timeValue: sumAvailable('timeValue'),
     theoreticalValue,
-    blockers: [],
+    chosenTotal,
+    chosenPartial,
+    minutesPartial: analyses.some(
+      (analysis) =>
+        analysis.minutesPartial ||
+        (analysis.minutes === undefined && analysis.expenses === undefined),
+    ),
+    expensesPartial: analyses.some(
+      (analysis) => analysis.expensesPartial || analysis.expenses === undefined,
+    ),
+    timeValuePartial: analyses.some(
+      (analysis) =>
+        analysis.timeValuePartial || analysis.timeValue === undefined,
+    ),
+    theoreticalPartial,
+    blockers: blockingItems,
     blockingItems,
+    ...(!chosenPartial &&
+    !blockingItems.length &&
+    analyses.every(
+      (analysis) =>
+        analysis.expenses !== undefined &&
+        !analysis.expensesPartial &&
+        !analysis.minutesPartial &&
+        (analysis.minutes !== undefined ||
+          analysis.theoreticalValue !== undefined),
+    )
+      ? economicIndicators(minutes, expenses, chosenTotal, hourlyTarget)
+      : {}),
   };
-  if (items.some((item) => item.chosenPrice === undefined)) {
-    result.blockers.push(
-      'Ogni voce richiede un prezzo scelto per gli indicatori complessivi.',
-    );
-    return result;
-  }
-  result.chosenTotal = sumMoney(items.map((item) => item.chosenPrice!));
-  const synthetic: QuoteItem = {
-    ...items[0]!,
-    name: 'Totale',
-    chosenPrice: result.chosenTotal,
-    subItems: [
-      {
-        id: '00000000-0000-4000-8000-000000000000',
-        createdAt: new Date(0).toISOString(),
-        updatedAt: new Date(0).toISOString(),
-        kind: 'time',
-        description: 'Tempo totale',
-        minutes,
-      },
-      {
-        id: '00000000-0000-4000-8000-000000000001',
-        createdAt: new Date(0).toISOString(),
-        updatedAt: new Date(0).toISOString(),
-        kind: 'expense',
-        description: 'Spese totali',
-        amount: expenses,
-      },
-    ],
-  };
-  const aggregate = calculateItem(synthetic, hourlyTarget);
-  result.yieldPerHour = aggregate.yieldPerHour;
-  result.deviationPercent = aggregate.deviationPercent;
-  result.coherentMinutes = aggregate.coherentMinutes;
-  result.deficit = aggregate.deficit;
-  return result;
 }

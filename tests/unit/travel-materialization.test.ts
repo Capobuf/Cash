@@ -64,6 +64,7 @@ function setup() {
     variantSelections: [],
   };
   const quote: Quote = {
+    number: 1,
     ...meta(),
     date: '2026-10-02',
     items: [item],
@@ -71,6 +72,7 @@ function setup() {
     exportAttempts: [],
   };
   document.quotes.push(quote);
+  document.nextQuoteNumber = 2;
   const template = {
     ...meta(),
     name: 'Modello',

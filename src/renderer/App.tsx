@@ -5,7 +5,7 @@ import { BankMovementsView } from './views/BankMovementsView';
 import { BankCategoriesView } from './views/BankCategoriesView';
 import { touch, type CashDocument } from '../domain/model';
 import { copyProfileToYear } from '../domain/profiles';
-import { createQuote as buildQuote } from '../domain/quotes';
+import { addQuote } from '../domain/quotes';
 import { AppShell, DeleteDialog, Onboarding } from '@/components/Layout';
 import {
   AlertDialog,
@@ -237,9 +237,14 @@ function ArchiveWorkspace({
   const createQuote = () => {
     const doc = appState.document;
     if (!doc) return;
-    const created = buildQuote(doc);
-    if (!appState.mutate((document) => document.quotes.push(created))) return;
-    setActiveQuoteId(created.id);
+    let createdId: string | undefined;
+    if (
+      !appState.mutate((document) => {
+        createdId = addQuote(document).id;
+      })
+    )
+      return;
+    setActiveQuoteId(createdId);
     setView('quotes');
   };
 

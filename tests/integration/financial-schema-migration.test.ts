@@ -1,3 +1,4 @@
+import { legacyDocument } from '../fixtures/sqlite-document';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -25,11 +26,11 @@ describe('migrazione fiscale allo schema corrente', () => {
       await mkdtemp(join(tmpdir(), 'cash-schema10-')),
       'Cash.json',
     );
-    const legacy = { ...document, schemaVersion: 9 };
+    const legacy = legacyDocument(document, 9);
     await writeFile(path, JSON.stringify(legacy));
     expect(await previewMigration(path)).toMatchObject({
       ok: true,
-      value: { fromVersion: 9, toVersion: 11 },
+      value: { fromVersion: 9, toVersion: 12 },
     });
     const migrated = await importJsonArchive(path, `${path}.sqlite`);
     if (!migrated.ok) throw new Error(migrated.error.message);
@@ -135,8 +136,10 @@ describe('migrazione fiscale allo schema corrente', () => {
     document.catalog.subItems = [
       { ...meta(), kind: 'time', description: 'Lavoro', minutes: 60 },
     ];
+    document.nextQuoteNumber = 2;
     document.quotes = [
       {
+        number: 1,
         ...meta(),
         date: '2026-10-01',
         snapshotRevision: 0,
@@ -145,8 +148,7 @@ describe('migrazione fiscale allo schema corrente', () => {
       },
     ];
     const legacy = {
-      ...document,
-      schemaVersion: 8,
+      ...legacyDocument(document, 8),
       financialProvisions: [
         { year: 2026, bankBalance: { amount: '12345.67', date: '2026-10-01' } },
       ],
@@ -160,7 +162,7 @@ describe('migrazione fiscale allo schema corrente', () => {
     const preview = await previewMigration(path);
     expect(preview).toMatchObject({
       ok: true,
-      value: { fromVersion: 8, toVersion: 11, blockers: [] },
+      value: { fromVersion: 8, toVersion: 12, blockers: [] },
     });
     if (!preview.ok) throw new Error(preview.error.message);
     expect(preview.value.changes.join(' ')).toContain(
@@ -193,7 +195,7 @@ describe('migrazione fiscale allo schema corrente', () => {
 
   it('crea e valida documenti correnti senza il contenitore abbandonato', () => {
     const document = createEmptyDocument();
-    expect(document.schemaVersion).toBe(11);
+    expect(document.schemaVersion).toBe(12);
     expect(document).not.toHaveProperty('financialProvisions');
     expect(
       parseDocument({
@@ -244,8 +246,7 @@ describe('migrazione fiscale allo schema corrente', () => {
       };
       const bankBalance = { amount: '34000.00', date: '2026-10-01' };
       const legacy = {
-        ...document,
-        schemaVersion: version,
+        ...legacyDocument(document, version),
         financialProvisions:
           version === 7
             ? [
@@ -270,7 +271,7 @@ describe('migrazione fiscale allo schema corrente', () => {
       });
       expect(await previewMigration(path)).toMatchObject({
         ok: true,
-        value: { fromVersion: version, toVersion: 11, blockers: [] },
+        value: { fromVersion: version, toVersion: 12, blockers: [] },
       });
       expect(await readFile(path, 'utf8')).toBe(bytes);
       const migrated = await importJsonArchive(path, `${path}.sqlite`);
@@ -325,7 +326,7 @@ describe('migrazione fiscale allo schema corrente', () => {
       await mkdtemp(join(tmpdir(), 'cash-fiscal-')),
       'Cash.json',
     );
-    await writeFile(path, JSON.stringify({ ...document, schemaVersion: 7 }));
+    await writeFile(path, JSON.stringify(legacyDocument(document, 7)));
     expect(await importJsonArchive(path, `${path}.sqlite`)).toMatchObject({
       ok: true,
       value: { document },

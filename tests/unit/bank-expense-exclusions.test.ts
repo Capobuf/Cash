@@ -412,7 +412,7 @@ describe('esclusione dai conteggi bancari', () => {
       expense({ description: 'Ignorata', excludedFromCalculations: true }),
       expense({ description: 'Assente' }),
     ];
-    expect(doc.schemaVersion).toBe(11);
+    expect(doc.schemaVersion).toBe(12);
     expect(cashDocumentSchema.safeParse(doc).success).toBe(true);
     for (const invalid of ['true', 1, null]) {
       expect(

@@ -38,23 +38,25 @@ export function WorkItemRow({
   const displayDescription = description.trim() || labels[kind];
   const content = (
     <>
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+      <span className="row-span-2 grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground @lg:row-span-1">
         <Icon className="size-4" aria-hidden="true" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate font-medium">{displayDescription}</span>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 break-words text-base font-medium">
+            {displayDescription}
+          </span>
           {kind !== 'time' ? (
             <Badge variant="outline">{labels[kind]}</Badge>
           ) : null}
         </span>
         {note ? (
-          <span className="mt-0.5 block text-xs text-muted-foreground">
+          <span className="mt-0.5 block break-words text-xs text-muted-foreground">
             {note}
           </span>
         ) : null}
       </span>
-      <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+      <span className="col-start-2 min-w-0 break-words text-sm tabular-nums text-muted-foreground @lg:col-start-auto @lg:text-right">
         {detail}
       </span>
     </>
@@ -63,21 +65,23 @@ export function WorkItemRow({
   return (
     <div
       className={cn(
-        'flex min-h-12 items-center gap-3 rounded-lg border bg-card px-3 py-2 transition-colors hover:border-input hover:bg-muted/20',
+        '@container flex min-h-12 items-start gap-3 rounded-lg border bg-card px-3 py-2 transition-colors hover:border-input hover:bg-muted/20',
         className,
       )}
     >
       {onClick ? (
         <button
           type="button"
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+          className="grid min-w-0 flex-1 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 text-left @lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)]"
           title={`Modifica ${displayDescription}`}
           onClick={onClick}
         >
           {content}
         </button>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-3">{content}</div>
+        <div className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 @lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)]">
+          {content}
+        </div>
       )}
       {action}
     </div>

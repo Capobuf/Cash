@@ -1,5 +1,4 @@
 import { Search } from 'lucide-react';
-import { useState } from 'react';
 import {
   type CashDocument,
   type FicClientSnapshot,
@@ -31,6 +30,7 @@ export function CustomerDialog({
   doc,
   hasToken,
   results,
+  searching = false,
   onSearch,
   onSelect,
 }: {
@@ -40,10 +40,10 @@ export function CustomerDialog({
   doc: CashDocument;
   hasToken: boolean;
   results: FicClientSnapshot[];
+  searching?: boolean;
   onSearch: (query: string) => Promise<void>;
   onSelect: (clientId: string | FicClientSnapshot) => boolean;
 }) {
-  const [searching, setSearching] = useState(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
@@ -68,10 +68,7 @@ export function CustomerDialog({
               className="flex gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                setSearching(true);
-                void onSearch(
-                  formReader(event.currentTarget).get('query'),
-                ).finally(() => setSearching(false));
+                void onSearch(formReader(event.currentTarget).get('query'));
               }}
             >
               <InputGroup>
@@ -80,15 +77,18 @@ export function CustomerDialog({
                 </InputGroupAddon>
                 <InputGroupInput
                   name="query"
-                  defaultValue={quote.client?.displayName ?? ''}
+                  aria-label="Cerca cliente in Fatture in Cloud"
                   placeholder="Cerca cliente in Fatture in Cloud"
                 />
               </InputGroup>
-              <Button disabled={searching}>
+              <Button type="submit" disabled={searching}>
                 {searching ? 'Ricerca…' : 'Cerca'}
               </Button>
             </form>
-            <ScrollArea className="h-72 rounded-lg border">
+            <ScrollArea
+              className="h-72 rounded-lg border"
+              aria-busy={searching}
+            >
               <div className="p-2">
                 {results.length ? (
                   results.map((client) => (
@@ -107,7 +107,9 @@ export function CustomerDialog({
                   ))
                 ) : (
                   <p className="p-8 text-center text-sm text-muted-foreground">
-                    Avvia una ricerca per caricare i clienti correnti.
+                    {searching
+                      ? 'Caricamento clienti…'
+                      : 'Nessun cliente trovato.'}
                   </p>
                 )}
               </div>

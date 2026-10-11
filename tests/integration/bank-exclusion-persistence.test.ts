@@ -1,3 +1,4 @@
+import { legacyDocument } from '../fixtures/sqlite-document';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -49,7 +50,7 @@ function fixture() {
 describe('migrazione e persistenza delle esclusioni nello schema 11', () => {
   it('richiede migrazione esplicita 10 → 11, conserva backup e dati senza introdurre esclusioni', async () => {
     const document = fixture();
-    const legacy = { ...document, schemaVersion: 10 };
+    const legacy = { ...legacyDocument(document, 10) };
     const path = join(
       await mkdtemp(join(tmpdir(), 'cash-schema11-')),
       'Cash.json',
@@ -63,11 +64,12 @@ describe('migrazione e persistenza delle esclusioni nello schema 11', () => {
     const preview = await previewMigration(path);
     expect(preview).toMatchObject({
       ok: true,
-      value: { fromVersion: 10, toVersion: 11, blockers: [] },
+      value: { fromVersion: 10, toVersion: 12, blockers: [] },
     });
     if (!preview.ok) throw new Error(preview.error.message);
     expect(preview.value.changes).toEqual([
       expect.stringContaining('non esclude automaticamente'),
+      expect.stringContaining('progressivo'),
     ]);
     expect(await readFile(path, 'utf8')).toBe(bytes);
     const migrated = await importJsonArchive(path, `${path}.sqlite`);

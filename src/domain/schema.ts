@@ -773,6 +773,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
     quotes: z.array(
       z.object({
         ...entity,
+        number: z.number().int().positive(),
         date: z.string().date(),
         profileId: uuid.optional(),
         profileSnapshot: profileSnapshotSchema.optional(),
@@ -785,6 +786,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
         exportAttempts: z.array(exportAttemptSchema),
       }),
     ),
+    nextQuoteNumber: z.number().int().positive(),
   })
   .superRefine((document, ctx) => {
     const entityIds = new Set<string>();
@@ -834,8 +836,22 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
         registerGroups(item.variantGroups, [...itemPath, 'variantGroups']);
       });
     });
+    const quoteNumbers = new Set<number>();
     document.quotes.forEach((quote, index) => {
       const path = ['quotes', index];
+      if (quoteNumbers.has(quote.number))
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'number'],
+          message: 'Numero preventivo duplicato',
+        });
+      quoteNumbers.add(quote.number);
+      if (quote.number >= document.nextQuoteNumber)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nextQuoteNumber'],
+          message: 'Il prossimo numero deve superare tutti i numeri assegnati',
+        });
       register(quote, path);
       quote.items.forEach((item, itemIndex) => {
         const itemPath = [...path, 'items', itemIndex];

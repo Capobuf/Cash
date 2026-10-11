@@ -23,7 +23,10 @@ import {
 } from '../../src/native/persistence';
 import { previewMigration } from '../../src/native/legacy-import';
 import { runSchemaMigrations } from '../../src/native/sqlite-migrations';
-import { comprehensiveDocument } from '../fixtures/sqlite-document';
+import {
+  comprehensiveDocument,
+  legacyDocument,
+} from '../fixtures/sqlite-document';
 
 function unwrap<T>(result: Result<T>): T {
   if (!result.ok)
@@ -46,7 +49,7 @@ afterEach(async () => {
 });
 
 describe('importazione JSON read-only', () => {
-  it.each(Array.from({ length: 11 }, (_, index) => index + 1))(
+  it.each(Array.from({ length: 12 }, (_, index) => index + 1))(
     'importa schema %s senza alterare originale o backup',
     async (schemaVersion) => {
       const dir = await directory();
@@ -54,7 +57,7 @@ describe('importazione JSON read-only', () => {
       const destination = join(dir, 'Cash.sqlite');
       const document = createEmptyDocument();
       document.revision = 42;
-      const legacy = { ...document, schemaVersion };
+      const legacy = legacyDocument(document, schemaVersion);
       const bytes = JSON.stringify(legacy, null, 2);
       const oldBackup = join(dir, 'Cash.backup.json');
       await writeFile(source, bytes);
@@ -185,8 +188,7 @@ describe('importazione JSON read-only', () => {
     await writeFile(
       source,
       JSON.stringify({
-        ...document,
-        schemaVersion: 1,
+        ...legacyDocument(document, 1),
         profiles: [{ ...profile, confirmed: true, fiscal }],
         settings: { ficCompanyId: '10', ficConsultingProductId: '20' },
         vehicles: [
@@ -227,8 +229,7 @@ describe('importazione JSON read-only', () => {
     const dir = await directory();
     const source = join(dir, 'legacy.json');
     const bytes = JSON.stringify({
-      ...createEmptyDocument(),
-      schemaVersion: 3,
+      ...legacyDocument(createEmptyDocument(), 3),
       ...ambiguous,
     });
     await writeFile(source, bytes);
@@ -531,13 +532,13 @@ describe('riconoscimento e versioni SQL', () => {
     closeArchive(path);
     const safety = await runSchemaMigrations(
       path,
-      [{ version: 2, sql: 'CREATE INDEX test_migration ON quotes(position)' }],
-      2,
+      [{ version: 3, sql: 'CREATE INDEX test_migration ON quotes(position)' }],
+      3,
     );
     expect(safety).toBeDefined();
     const db = new DatabaseSync(path);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(2);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(3);
       expect(
         db
           .prepare("SELECT name FROM sqlite_master WHERE name='test_migration'")
@@ -551,18 +552,18 @@ describe('riconoscimento e versioni SQL', () => {
         path,
         [
           {
-            version: 3,
+            version: 4,
             sql: 'ALTER TABLE quotes ADD COLUMN migration_test TEXT; SELECT * FROM no_such_table',
           },
         ],
-        3,
+        4,
       ),
     ).rejects.toThrow('backup:');
     const rolledBack = new DatabaseSync(path);
     try {
       expect(
         rolledBack.prepare('PRAGMA user_version').get()!.user_version,
-      ).toBe(2);
+      ).toBe(3);
       expect(
         rolledBack
           .prepare('PRAGMA table_info(quotes)')

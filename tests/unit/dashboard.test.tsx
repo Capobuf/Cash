@@ -92,18 +92,27 @@ describe('Panoramica iniziale', () => {
     const doc = fixture();
     doc.quotes = Array.from({ length: 7 }, (_, index) => ({
       ...meta(),
+      number: index + 1,
       date: '2026-10-01',
       snapshotRevision: 0,
       exportAttempts: [],
       items: [
-        { ...meta(), name: `Lavoro ${index}`, subItems: [], variantGroups: [] },
+        {
+          ...meta(),
+          name: `Lavoro ${index}`,
+          subItems: [],
+          variantGroups: [],
+          variantSelections: [],
+        },
       ],
     }));
     const html = render(doc);
     expect(html).toContain('Riprendi il lavoro');
-    expect(html).not.toContain('Lavoro 0');
-    expect(html.indexOf('Lavoro 6')).toBeLessThan(html.indexOf('Lavoro 5'));
-    expect(html.match(/Apri preventivo/g)).toHaveLength(6);
+    expect(html).not.toContain('Preventivo #1');
+    expect(html.indexOf('Preventivo #7')).toBeLessThan(
+      html.indexOf('Preventivo #6'),
+    );
+    expect(html.match(/Apri Preventivo/g)).toHaveLength(6);
   });
 
   it('does not reuse a confirmed profile from another year', () => {

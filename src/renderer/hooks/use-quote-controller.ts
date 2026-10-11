@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { isYearMonth } from '../../domain/calendar';
 import { parseDecimalInput } from '../../domain/decimal';
 import {
@@ -23,7 +23,7 @@ import {
   type ReusableSubItem,
   type SubItemDefinition,
 } from '../../domain/model';
-import { createQuote } from '../../domain/quotes';
+import { addQuote } from '../../domain/quotes';
 import { refreshQuote, snapshotProfile } from '../../domain/refresh';
 import { applyVariantSelections, changeVariant } from '../../domain/variants';
 import type { AppState } from '../state';
@@ -70,6 +70,8 @@ export function useQuoteController({
   requestDelete: (target: DeleteTarget) => void;
 }) {
   const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([]);
+  const [searchingClients, setSearchingClients] = useState(false);
+  const clientRequest = useRef(0);
   const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId);
   const archivePath = appState.session?.path;
   const archiveContext = appState.archiveContext;
@@ -230,10 +232,14 @@ export function useQuoteController({
   };
 
   const newQuote = () => {
-    const created = createQuote(doc);
-    if (!appState.mutate((document) => document.quotes.push(created)))
+    let createdId: string | undefined;
+    if (
+      !appState.mutate((document) => {
+        createdId = addQuote(document).id;
+      })
+    )
       return false;
-    setActiveQuoteId(created.id);
+    setActiveQuoteId(createdId);
     return true;
   };
 
@@ -344,13 +350,20 @@ export function useQuoteController({
       });
       return;
     }
-    const result = await window.cash.fic.searchClients({ companyId, query });
-    if (!isCurrent()) return;
-    if (!result.ok) {
-      appState.setError(result.error);
-      return;
+    const request = ++clientRequest.current;
+    setSearchingClients(true);
+    setClientResults([]);
+    try {
+      const result = await window.cash.fic.searchClients({ companyId, query });
+      if (request !== clientRequest.current || !isCurrent()) return;
+      if (!result.ok) {
+        appState.setError(result.error);
+        return;
+      }
+      setClientResults(result.value);
+    } finally {
+      if (request === clientRequest.current) setSearchingClients(false);
     }
-    setClientResults(result.value);
   };
 
   const addItem = (name: string) => {
@@ -390,6 +403,11 @@ export function useQuoteController({
       appState.setError({ ...value.error, field: 'chosenPrice' });
       return false;
     }
+    if (
+      quote.items.find((item) => item.id === itemId)?.chosenPrice ===
+      (value?.ok ? value.value : undefined)
+    )
+      return true;
     return appState.mutate((document) => {
       const item = touch(
         touch(
@@ -1008,6 +1026,7 @@ export function useQuoteController({
   return {
     quote,
     clientResults,
+    searchingClients,
     newQuote,
     updateQuote,
     updateClient,

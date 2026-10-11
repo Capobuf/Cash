@@ -11,8 +11,34 @@ export interface SchemaMigration {
   sql: string;
 }
 
-// Version 1 is the first shipped SQL schema. Add only real future migrations.
-const migrations: readonly SchemaMigration[] = [];
+const migrations: readonly SchemaMigration[] = [
+  {
+    version: 2,
+    sql: `
+      CREATE TEMP TABLE numbering_validation (valid INTEGER CHECK(valid=1));
+      INSERT INTO numbering_validation SELECT CASE WHEN
+        (SELECT schemaVersion FROM archive_metadata WHERE singleton=1)=11
+        AND NOT EXISTS (SELECT position FROM quotes GROUP BY position HAVING COUNT(*)>1)
+        AND NOT EXISTS (SELECT 1 FROM quotes WHERE json_type(payload, '$.number') IS NOT NULL)
+        THEN 1 ELSE 0 END;
+      DROP TABLE numbering_validation;
+      CREATE TABLE numbered_quotes (
+        id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+        position INTEGER NOT NULL, number INTEGER NOT NULL UNIQUE CHECK(number>0),
+        date TEXT NOT NULL, payload TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO numbered_quotes
+        SELECT id, createdAt, updatedAt, position,
+          ROW_NUMBER() OVER (ORDER BY position), date, payload FROM quotes;
+      DROP TABLE quotes;
+      ALTER TABLE numbered_quotes RENAME TO quotes;
+      CREATE INDEX quotes_date ON quotes(date);
+      ALTER TABLE archive_metadata ADD COLUMN nextQuoteNumber INTEGER NOT NULL DEFAULT 1 CHECK(nextQuoteNumber>0);
+      UPDATE archive_metadata SET schemaVersion=12,
+        nextQuoteNumber=(SELECT COUNT(*)+1 FROM quotes) WHERE singleton=1;
+    `,
+  },
+];
 
 export async function runSchemaMigrations(
   path: string,

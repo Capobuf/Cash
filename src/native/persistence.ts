@@ -23,6 +23,7 @@ import type {
 } from '../shared/archive';
 import { inspectJsonArchive, readLegacyDocument } from './legacy-import';
 import { runSchemaMigrations } from './sqlite-migrations';
+import { quoteNumberingError } from '../domain/quotes';
 import {
   APPLICATION_ID,
   STORAGE_VERSION,
@@ -430,6 +431,15 @@ export function saveArchive(
         db.exec('ROLLBACK');
         transaction = false;
         return conflict();
+      }
+      const numberingError = quoteNumberingError(
+        connection.document,
+        parsed.data,
+      );
+      if (numberingError) {
+        db.exec('ROLLBACK');
+        transaction = false;
+        return err({ code: 'VALIDATION', message: numberingError });
       }
       await consistentBackup(path, backupPathFor(path), token);
       if (connection.closing) {

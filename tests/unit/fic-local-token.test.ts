@@ -61,6 +61,7 @@ it('mostra gli snapshot e blocca i controlli live senza token', () => {
   const doc = createEmptyDocument();
   doc.settings.fic = { enabled: true, company: { id: '1', name: 'Studio' } };
   const quote: Quote = {
+    number: 1,
     ...meta(),
     date: '2026-10-02',
     items: [],
@@ -74,6 +75,7 @@ it('mostra gli snapshot e blocca i controlli live senza token', () => {
     },
   };
   doc.quotes.push(quote);
+  doc.nextQuoteNumber = 2;
   const appState = new AppState();
   const markup = renderToStaticMarkup(
     createElement(QuotesView, {

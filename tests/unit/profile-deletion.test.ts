@@ -55,7 +55,9 @@ it('elimina il profilo sorgente conservando calcoli storici e diagnosi di aggior
     doc.profiles.push(profile);
     const snapshot = snapshotProfile(profile, []);
     if (!snapshot.ok) throw new Error(snapshot.error.message);
+    doc.nextQuoteNumber = 2;
     doc.quotes.push({
+      number: 1,
       ...meta(),
       date: '2026-10-02',
       profileId: profile.id,

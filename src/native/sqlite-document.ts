@@ -3,7 +3,7 @@ import { parseDocument, documentHeaderSchema } from '../domain/schema';
 import type { CashDocument } from '../domain/model';
 import type { ConcurrencyToken } from '../shared/archive';
 
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 export const APPLICATION_ID = 0x43415348;
 
 type Row = Record<string, SQLInputValue>;
@@ -26,7 +26,7 @@ const tables: Table[] = [
   {
     name: 'archive_metadata',
     fields:
-      'singleton INTEGER PRIMARY KEY CHECK(singleton=1), schemaVersion INTEGER NOT NULL, documentId TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, fiscalOverridesPresent INTEGER NOT NULL',
+      'singleton INTEGER PRIMARY KEY CHECK(singleton=1), schemaVersion INTEGER NOT NULL, documentId TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, fiscalOverridesPresent INTEGER NOT NULL, nextQuoteNumber INTEGER NOT NULL CHECK(nextQuoteNumber>0)',
     keys: ['singleton'],
     booleans: ['fiscalOverridesPresent'],
   },
@@ -73,7 +73,7 @@ const tables: Table[] = [
   },
   {
     name: 'quotes',
-    fields: `${meta}, date TEXT NOT NULL, payload TEXT NOT NULL`,
+    fields: `${meta}, number INTEGER NOT NULL UNIQUE CHECK(number>0), date TEXT NOT NULL, payload TEXT NOT NULL`,
     keys: ['id'],
   },
   {
@@ -188,6 +188,7 @@ export function documentRows(document: CashDocument): DocumentRows {
         createdAt: document.createdAt,
         updatedAt: document.updatedAt,
         fiscalOverridesPresent: document.fiscalPaymentOverrides !== undefined,
+        nextQuoteNumber: document.nextQuoteNumber,
       },
     ],
     shared_settings: [{ singleton: 1, settings: document.settings }],
@@ -421,6 +422,7 @@ export function readDocument(db: DatabaseSync): CashDocument {
       templates: data.catalog_templates,
     },
     quotes: data.quotes,
+    nextQuoteNumber: metadata.nextQuoteNumber,
     ...(metadata.fiscalOverridesPresent
       ? { fiscalPaymentOverrides: data.fiscal_payment_overrides }
       : {}),

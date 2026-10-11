@@ -110,6 +110,7 @@ function setup(hasToken = true) {
     displayName: 'Cliente',
   };
   const quote: Quote = {
+    number: 1,
     ...meta(),
     date: '2026-10-02',
     profileId: profile.id,
@@ -120,6 +121,7 @@ function setup(hasToken = true) {
     exportAttempts: [],
   };
   document.quotes.push(quote);
+  document.nextQuoteNumber = 2;
   const template = {
     ...meta(),
     name: 'Modello',
@@ -211,6 +213,29 @@ function setup(hasToken = true) {
 }
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
+  it('assegna numeri diversi anche a due creazioni consecutive prima di un nuovo render', async () => {
+    const { state, controller, setActiveQuoteId } = setup();
+    expect(controller.newQuote()).toBe(true);
+    expect(controller.newQuote()).toBe(true);
+    await state.save();
+    expect(state.document!.quotes.map((quote) => quote.number)).toEqual([
+      1, 2, 3,
+    ]);
+    expect(state.document!.nextQuoteNumber).toBe(4);
+    expect(setActiveQuoteId).toHaveBeenCalledTimes(2);
+    expect(setActiveQuoteId.mock.calls[0]![0]).not.toBe(
+      setActiveQuoteId.mock.calls[1]![0],
+    );
+  });
+
+  it('una creazione rifiutata in sola lettura non modifica il progressivo', () => {
+    const { state, controller, setActiveQuoteId } = setup();
+    state.session!.readOnly = true;
+    expect(controller.newQuote()).toBe(false);
+    expect(state.document!.nextQuoteNumber).toBe(2);
+    expect(state.document!.quotes).toHaveLength(1);
+    expect(setActiveQuoteId).not.toHaveBeenCalled();
+  });
   it('updates item and aggregate timestamps without changing identities', () => {
     const { state, controller, quote, item, document } = setup();
     const time = new Date(Date.now() + 1000);

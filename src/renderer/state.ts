@@ -13,6 +13,7 @@ import {
 } from '../domain/schema';
 import type { ArchiveSession } from '../shared/archive';
 import { deduplicateBankExpenses } from '../domain/bank-expenses';
+import { quoteNumberingError } from '../domain/quotes';
 
 export type SaveStatus =
   | 'Nessun archivio'
@@ -296,6 +297,14 @@ export class AppState {
     if (!validation.success) {
       this.error = validationErrorFromIssues(validation.error.issues);
       this.emit();
+      return false;
+    }
+    const numberingError = quoteNumberingError(
+      this.session.document,
+      validation.data,
+    );
+    if (numberingError) {
+      this.setError({ code: 'VALIDATION', message: numberingError });
       return false;
     }
     this.mutationVersion += 1;

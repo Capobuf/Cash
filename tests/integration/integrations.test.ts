@@ -484,6 +484,7 @@ describe('fonti ufficiali', () => {
       if (!result.ok) throw new Error(result.error.message);
       expect(
         needsRepeatWarning({
+          number: 1,
           ...meta(),
           date: '2026-10-02',
           items: [],

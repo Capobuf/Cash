@@ -10,6 +10,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { calculateProfile } from '../../domain/calculations';
+import { quoteTitle } from '../../domain/quotes';
 import { createManualProfile, type CashDocument } from '../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -231,8 +232,7 @@ export function DashboardView({
                   {recentQuotes.map((quote) => (
                     <TableRow key={quote.id}>
                       <TableCell className="max-w-64 min-w-40 font-medium whitespace-normal">
-                        {quote.items.map((item) => item.name).join(', ') ||
-                          'Preventivo incompleto'}
+                        {quoteTitle(quote)}
                       </TableCell>
                       <TableCell className="max-w-48 text-foreground/75 whitespace-normal">
                         {quote.client?.displayName ?? 'Nessun cliente'}
@@ -247,7 +247,7 @@ export function DashboardView({
                         <Button
                           size="sm"
                           variant="ghost"
-                          aria-label={`Apri preventivo ${quote.items.map((item) => item.name).join(', ') || 'incompleto'} del ${dateIt(quote.date)}`}
+                          aria-label={`Apri ${quoteTitle(quote)} del ${dateIt(quote.date)}`}
                           onClick={() => onOpenQuote(quote.id)}
                         >
                           Apri{' '}

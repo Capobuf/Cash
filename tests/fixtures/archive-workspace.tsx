@@ -6,10 +6,13 @@ import type { CashUpdateStatus } from '../../src/shared/ipc';
 import {
   createEmptyDocument,
   createBlankProfile,
+  createFiscalPreset2026,
   meta,
   ok,
   type CashDocument,
 } from '../../src/domain/model';
+import { snapshotProfile } from '../../src/domain/refresh';
+import { eur } from '../../src/renderer/lib/format';
 
 export async function runWorkspaceChecks() {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -28,7 +31,9 @@ export async function runWorkspaceChecks() {
     name: 'Template A',
     items: [{ ...meta(), name: 'Lavoro A', subItems: [], variantGroups: [] }],
   });
+  archive.nextQuoteNumber = 2;
   archive.quotes.push({
+    number: 1,
     ...meta(),
     date: '2026-10-02',
     snapshotRevision: 0,
@@ -44,6 +49,7 @@ export async function runWorkspaceChecks() {
     ],
   });
   const counts = {
+    saves: 0,
     openLast: 0,
     credentials: 0,
     setupInfo: 0,
@@ -77,6 +83,14 @@ export async function runWorkspaceChecks() {
   Object.assign(window, {
     cash: {
       archive: {
+        save: async (
+          _path: string,
+          document: CashDocument,
+          token: { revision: number },
+        ) => {
+          counts.saves++;
+          return ok(session({ ...document, revision: token.revision + 1 }));
+        },
         openLast: async () => {
           counts.openLast++;
           return ok(session(archive));
@@ -96,9 +110,9 @@ export async function runWorkspaceChecks() {
         },
         searchClients: async ({ query }: { query: string }) => {
           clientQueries.push(query);
-          return ok([
+          const clients = [
             {
-              source: 'fatture_in_cloud',
+              source: 'fatture_in_cloud' as const,
               companyId: '1',
               clientId: '3',
               displayName: state.document!.catalog.templates[0]!.name.replace(
@@ -106,7 +120,18 @@ export async function runWorkspaceChecks() {
                 'Cliente',
               ),
             },
-          ]);
+            {
+              source: 'fatture_in_cloud' as const,
+              companyId: '1',
+              clientId: '4',
+              displayName: 'Altro cliente',
+            },
+          ];
+          return ok(
+            clients.filter((client) =>
+              client.displayName.toLowerCase().includes(query.toLowerCase()),
+            ),
+          );
         },
         getClientDetails: async () => ok({ fields: [] }),
       },
@@ -274,10 +299,7 @@ export async function runWorkspaceChecks() {
     results.push('delete-target');
 
     await click('Clienti');
-    await fill(
-      '[aria-label="Cerca clienti Fatture in Cloud"]',
-      'Previous search',
-    );
+    await fill('[aria-label="Cerca clienti Fatture in Cloud"]', 'Cliente B');
     await click('Cerca');
     await clickSelector('[aria-label="Apri dettagli di Cliente B"]');
     check(
@@ -313,12 +335,432 @@ export async function runWorkspaceChecks() {
 
     await click('Preventivi');
     const row = [...document.querySelectorAll('tr')].find((row) =>
-      row.textContent?.includes('Preventivo C'),
+      row.textContent?.includes('Preventivo #1'),
     );
     check(row, 'Quote list row missing');
     await act(async () => {
       row!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     });
+    const savedBeforeCustomerSearch = counts.saves;
+    await click('Inserisci template');
+    const templateQuery = '[aria-label="Cerca template da inserire"]';
+    check(
+      find('[role="dialog"]').innerText.includes('Template C'),
+      'Template picker did not show the initial list',
+    );
+    await fill(templateQuery, 'Nessun risultato');
+    check(
+      find('[role="dialog"]').innerText.includes('Nessun template trovato.') &&
+        !find('[role="dialog"]').innerText.includes('Template C'),
+      'Template search did not filter the list and preview',
+    );
+    const insertButton = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Inserisci 0 voci',
+    );
+    check(
+      insertButton?.disabled,
+      'Filtered-out template can still be inserted',
+    );
+    await fill(templateQuery, '  TEMPLATE C  ');
+    check(
+      find('[role="dialog"]').innerText.includes('Template C'),
+      'Template search did not ignore case and surrounding spaces',
+    );
+    await fill(templateQuery, '');
+    check(
+      find('[role="dialog"]').innerText.includes('Template C'),
+      'Clearing the template search did not restore the list',
+    );
+    check(
+      counts.saves === savedBeforeCustomerSearch,
+      'Template search persisted the quote',
+    );
+    await click('Annulla');
+    await click('Inserisci template');
+    check(
+      (find(templateQuery) as HTMLInputElement).value === '',
+      'Template search survived closing the picker',
+    );
+    await click('Annulla');
+    await click('Scegli cliente');
+    check(
+      clientQueries.at(-1) === '',
+      'Customer picker did not load all clients',
+    );
+    check(
+      find('[role="dialog"]').innerText.includes('Cliente C') &&
+        find('[role="dialog"]').innerText.includes('Altro cliente'),
+      'Customer picker is empty on opening',
+    );
+    const customerQuery = '[aria-label="Cerca cliente in Fatture in Cloud"]';
+    await fill(customerQuery, 'Cliente C');
+    await click('Cerca');
+    check(
+      clientQueries.at(-1) === 'Cliente C' &&
+        find('[role="dialog"]').innerText.includes('Cliente C') &&
+        !find('[role="dialog"]').innerText.includes('Altro cliente'),
+      'Customer search did not filter the list',
+    );
+    await fill(customerQuery, 'Nessun risultato');
+    await click('Cerca');
+    check(
+      find('[role="dialog"]').innerText.includes('Nessun cliente trovato.'),
+      'Empty customer search has no feedback',
+    );
+    await fill(customerQuery, '');
+    await click('Cerca');
+    check(
+      find('[role="dialog"]').innerText.includes('Altro cliente'),
+      'Clearing the search did not restore the list',
+    );
+    check(
+      counts.saves === savedBeforeCustomerSearch,
+      'Loading or searching customers persisted the quote',
+    );
+    await clickSelector('[role="dialog"] [data-slot="scroll-area"] button');
+    check(
+      !document.querySelector('[role="dialog"]') &&
+        state.document!.quotes[0]!.client?.displayName === 'Cliente C',
+      'Selecting a listed customer did not update the quote',
+    );
+    await act(async () => {
+      const customerButton = [...document.querySelectorAll('button')].find(
+        (button) => button.textContent?.startsWith('Cliente C'),
+      );
+      check(customerButton, 'Selected customer button missing');
+      customerButton!.click();
+    });
+    check(
+      (find(customerQuery) as HTMLInputElement).value === '' &&
+        clientQueries.at(-1) === '' &&
+        find('[role="dialog"]').innerText.includes('Altro cliente'),
+      'Reopening the customer picker did not reset the list and search',
+    );
+    await click('Chiudi');
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.client = {
+          source: 'fatture_in_cloud',
+          companyId: '1',
+          clientId: '2',
+          displayName: 'MCH Italia',
+        };
+      });
+    });
+    check(
+      document.querySelector('h2')?.textContent ===
+        'MCH Italia - Preventivo #1',
+      'Client change did not update quote title',
+    );
+    await act(async () => {
+      state.mutate((document) => {
+        delete document.quotes[0]!.client;
+      });
+    });
+    check(
+      document.querySelector('h2')?.textContent === 'Preventivo #1',
+      'Removing client changed the quote number or kept its name',
+    );
+    const chosenSelector = `#chosen-${state.document!.quotes[0]!.items[0]!.id}`;
+    const chosen = find(chosenSelector) as HTMLInputElement;
+    const savedBeforeTyping = counts.saves;
+    await act(async () => {
+      chosen.focus();
+    });
+    await fill(chosenSelector, '400');
+    check(
+      find('aside').innerText.includes(eur('400.00')),
+      'Chosen total did not update before blur without profile',
+    );
+    check(
+      counts.saves === savedBeforeTyping,
+      'Typing persisted an intermediate value',
+    );
+    check(
+      state.document!.quotes[0]!.items[0]!.chosenPrice === undefined,
+      'Typing changed persisted state',
+    );
+    check(
+      !document.body.innerText.includes('Da completare'),
+      'Commercial item requires technical data',
+    );
+    await fill(chosenSelector, '400,');
+    check(chosen.value === '400,', 'Decimal separator was overwritten');
+    await fill(chosenSelector, '400,25');
+    check(
+      find('aside').innerText.includes(eur('400.25')),
+      'Decimal price did not update the total',
+    );
+    check(document.activeElement === chosen, 'Price input lost focus');
+    await act(async () => {
+      chosen.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    check(
+      state.document!.quotes[0]!.items[0]!.chosenPrice === '400.25',
+      'Final price did not persist',
+    );
+    check(
+      counts.saves === savedBeforeTyping + 1,
+      'Final price was not saved exactly once',
+    );
+    await act(async () => {
+      chosen.focus();
+    });
+    await fill(chosenSelector, '400,259');
+    await act(async () => {
+      chosen.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    check(
+      state.document!.quotes[0]!.items[0]!.chosenPrice === '400.25',
+      'Invalid precision was persisted',
+    );
+    check(
+      counts.saves === savedBeforeTyping + 1,
+      'Invalid precision caused a save',
+    );
+    await fill(chosenSelector, '0');
+    check(
+      find('aside').innerText.includes(eur('0.00')),
+      'Explicit zero did not appear in the total',
+    );
+    await act(async () => {
+      chosen.focus();
+      chosen.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    await fill(chosenSelector, '');
+    check(
+      find('aside').innerText.includes('Non inserito'),
+      'Empty price is not distinct from zero',
+    );
+    await act(async () => {
+      chosen.focus();
+      chosen.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    await act(async () => {
+      const profile = createFiscalPreset2026();
+      profile.confirmed = true;
+      profile.revenueTarget = '50000.00';
+      const snapshot = snapshotProfile(profile, []);
+      check(snapshot.ok, 'Test profile is not usable');
+      if (!snapshot.ok) return;
+      state.mutate((document) => {
+        document.quotes[0]!.profileSnapshot = snapshot.value;
+        document.quotes[0]!.items[0]!.subItems.push({
+          ...meta(),
+          kind: 'time',
+          description: 'Lavoro',
+          minutes: 60,
+        });
+        document.quotes[0]!.items.push({
+          ...meta(),
+          name: 'Voce senza dati',
+          subItems: [],
+          variantGroups: [],
+          variantSelections: [],
+        });
+      });
+    });
+    check(
+      find('aside').innerText.includes('Parziale'),
+      'Partial theoretical total is not labelled',
+    );
+    const missingItem = state.document!.quotes[0]!.items[1]!;
+    const afterNavigation = async () => {
+      await act(async () => {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+      });
+    };
+    const savesBeforeNavigation = counts.saves;
+    await clickSelector('[aria-label="Mostra cosa manca per Valore teorico"]');
+    await afterNavigation();
+    const technical = find(`#quote-technical-${missingItem.id}`);
+    check(
+      counts.saves === savesBeforeNavigation,
+      'Partial navigation caused an archive save',
+    );
+    check(
+      document.activeElement === technical,
+      'Partial theoretical total did not focus the missing technical data',
+    );
+    check(
+      technical.classList.contains('ring-2'),
+      'Missing technical data was not highlighted',
+    );
+    check(
+      technical.innerText.includes('Aggiungi attività o costi'),
+      'Missing technical data has no explanation',
+    );
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.items[0]!.chosenPrice = '400.00';
+      });
+    });
+    await clickSelector('[aria-label="Mostra cosa manca per Prezzo scelto"]');
+    await afterNavigation();
+    const missingChosen = find(`#chosen-${missingItem.id}`) as HTMLInputElement;
+    check(
+      document.activeElement === missingChosen,
+      'Partial chosen total did not focus the missing price',
+    );
+    check(
+      missingChosen
+        .closest('[data-slot="input-group"]')
+        ?.classList.contains('ring-2'),
+      'Missing price was not highlighted',
+    );
+    await fill(`#chosen-${missingItem.id}`, '0');
+    check(
+      !missingChosen
+        .closest('[data-slot="input-group"]')
+        ?.classList.contains('ring-2'),
+      'Completed price stayed highlighted',
+    );
+    await act(async () => {
+      missingChosen.dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true }),
+      );
+    });
+    const profileSnapshot = structuredClone(
+      state.document!.quotes[0]!.profileSnapshot!,
+    );
+    await act(async () => {
+      state.mutate((document) => {
+        delete document.quotes[0]!.profileSnapshot;
+        document.quotes[0]!.items[0]!.subItems.push({
+          ...meta(),
+          kind: 'expense',
+          description: 'Spesa nota',
+          amount: '15.00',
+        });
+      });
+    });
+    await clickSelector('[aria-label="Mostra cosa manca per Valore teorico"]');
+    await afterNavigation();
+    check(
+      document.activeElement === find('#quote-profile'),
+      'Missing hourly target did not focus the profile',
+    );
+    check(
+      find('#quote-profile')
+        .closest('[data-slot="native-select-wrapper"]')
+        ?.classList.contains('ring-2'),
+      'Missing profile was not highlighted',
+    );
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.profileSnapshot = profileSnapshot;
+        document.quotes[0]!.items[0]!.subItems.pop();
+      });
+    });
+    check(
+      !find('#quote-profile')
+        .closest('[data-slot="native-select-wrapper"]')
+        ?.classList.contains('ring-2'),
+      'Completed profile stayed highlighted',
+    );
+    const incompleteTravel = {
+      ...meta(),
+      kind: 'travel' as const,
+      description: 'Visita incompleta',
+      roundTrip: false,
+      occurrences: 1,
+      travelMinutesPerOccurrence: 30,
+      totalMinutes: 30,
+    };
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.items[0]!.subItems.push(incompleteTravel);
+        document.quotes[0]!.items[0]!.subItems.push({
+          ...meta(),
+          kind: 'expense',
+          description: 'Spesa nota',
+          amount: '15.00',
+        });
+      });
+    });
+    const firstItem = state.document!.quotes[0]!.items[0]!;
+    const expandSelector = `[aria-label="Apri o chiudi ${firstItem.name}"]`;
+    await clickSelector(expandSelector);
+    check(
+      find(expandSelector).getAttribute('aria-expanded') === 'false',
+      'Test item did not collapse',
+    );
+    await clickSelector('[aria-label="Mostra cosa manca per Valore teorico"]');
+    await afterNavigation();
+    check(
+      find(expandSelector).getAttribute('aria-expanded') === 'true',
+      'Partial navigation did not expand the item',
+    );
+    const travelTarget = find(`#quote-sub-${incompleteTravel.id}`);
+    check(
+      document.activeElement === travelTarget,
+      'Partial navigation did not focus the incomplete travel',
+    );
+    check(
+      travelTarget.classList.contains('ring-2'),
+      'Incomplete travel was not highlighted',
+    );
+    check(
+      travelTarget.innerText.includes('costo'),
+      'Incomplete travel did not explain its missing data',
+    );
+    await clickSelector('[aria-label="Mostra cosa manca per Spese"]');
+    await afterNavigation();
+    check(
+      document.activeElement === travelTarget,
+      'Partial expenses did not focus the missing travel cost',
+    );
+    check(
+      travelTarget.innerText.includes('Dati trasferta mancanti: costo.'),
+      'Partial expenses did not identify the cost specifically',
+    );
+    await clickSelector('[aria-label="Mostra cosa manca per Tempo"]');
+    await afterNavigation();
+    check(
+      document.activeElement === technical,
+      'Partial time did not focus the item without technical data',
+    );
+    await clickSelector(
+      `[aria-label="Mostra cosa manca per Valore teorico di ${firstItem.name}"]`,
+    );
+    await afterNavigation();
+    check(
+      document.activeElement === find(`#quote-sub-${incompleteTravel.id}`),
+      'Item partial badge did not focus its own missing data',
+    );
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.items[0]!.subItems.pop();
+        document.quotes[0]!.items[0]!.subItems.pop();
+      });
+    });
+    const theoreticalBefore = find('aside').innerText;
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.items[0]!.subItems.push({
+          ...meta(),
+          kind: 'expense',
+          description: 'Materiale',
+          amount: '25.00',
+        });
+      });
+    });
+    check(
+      find('aside').innerText !== theoreticalBefore,
+      'Added expense did not update analysis',
+    );
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.items[0]!.subItems = [];
+      });
+    });
+    check(
+      find('aside').innerText.includes('Non calcolabile'),
+      'Removing technical data did not update analysis',
+    );
+    results.push('quote-price-preview');
     await click('Aggiungi voce');
     await fill('#item-name', 'Old quote draft');
     await replace('D');
@@ -335,9 +777,16 @@ export async function runWorkspaceChecks() {
       'Old active quote survived archive change',
     );
     check(
-      document.body.innerText.includes('Preventivo D'),
+      document.body.innerText.includes('Preventivo #1'),
       'New quote list is missing',
     );
+    await clickSelector('[aria-label="Azioni Preventivo #1"]');
+    await clickMenu('Elimina');
+    check(
+      find('[role="alertdialog"]').innerText.includes('Preventivo #1'),
+      'Quote deletion did not use the automatic title',
+    );
+    await click('Annulla');
     results.push('quotes');
 
     check(resolveInitialUpdate, 'Initial update read was not requested');
@@ -422,7 +871,9 @@ export async function runWorkspaceChecks() {
     await click('Annulla');
     check(closeChoice === 'cancel', 'Pending close decision was lost');
     check(
-      Object.values(counts).every((count) => count === 1),
+      Object.entries(counts).every(
+        ([name, count]) => name === 'saves' || count === 1,
+      ),
       'Global initialization or subscription repeated: ' +
         JSON.stringify(counts),
     );

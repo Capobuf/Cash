@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 export interface EntityMeta {
   id: string;
@@ -319,6 +319,7 @@ export interface ExportAttempt extends EntityMeta {
 }
 
 export interface Quote extends EntityMeta {
+  number: number;
   date: string;
   profileId?: string;
   profileSnapshot?: ProfileSnapshot;
@@ -459,6 +460,7 @@ export interface CashDocument {
   sites: Site[];
   catalog: Catalog;
   quotes: Quote[];
+  nextQuoteNumber: number;
   financialSnapshot?: FicFinancialSnapshot;
   fiscalPaymentOverrides?: { year: number; total: DecimalString }[];
   bankExpenseCategories: BankExpenseCategory[];
@@ -501,6 +503,7 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   sites: [],
   catalog: { subItems: [], templates: [] },
   quotes: [],
+  nextQuoteNumber: 1,
   bankExpenseCategories: [createTaxCategory()],
   bankExpenses: [],
   bankExpenseRules: [],

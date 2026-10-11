@@ -140,8 +140,12 @@ async function previewMigrationNow(
     changes.push(
       'Aggiorna allo schema 10 per consentire un totale fiscale annuale facoltativo del commercialista. Non crea correzioni, non ricostruisce F24 e conserva i dati esistenti.',
     );
+  if (fromVersion < 11)
+    changes.push(
+      'Aggiorna allo schema 11 per consentire l’esclusione di spese e categorie dai conteggi. Conserva i dati esistenti e non esclude automaticamente alcun movimento o categoria.',
+    );
   changes.push(
-    'Aggiorna allo schema 11 per consentire l’esclusione di spese e categorie dai conteggi. Conserva i dati esistenti e non esclude automaticamente alcun movimento o categoria.',
+    'Assegna i numeri dei preventivi nell’ordine della raccolta e conserva il prossimo progressivo disponibile (schema 12).',
   );
   const raw = inspection.value.raw as Record<string, unknown>;
   const blockers =
@@ -343,9 +347,34 @@ function migrateLegacyDocument(
   raw: Record<string, unknown>,
   fromVersion: number,
 ): Result<CashDocument> {
-  if (fromVersion === 10) {
+  if (
+    !Array.isArray(raw.quotes) ||
+    'nextQuoteNumber' in raw ||
+    raw.quotes.some(
+      (quote: unknown) =>
+        !quote ||
+        typeof quote !== 'object' ||
+        Array.isArray(quote) ||
+        'number' in quote,
+    )
+  )
+    return err({
+      code: 'VALIDATION',
+      source: 'archive',
+      message:
+        'Numerazione o raccolta preventivi non valida per lo schema JSON storico.',
+    });
+  const numbered: Record<string, unknown> = {
+    ...raw,
+    quotes: raw.quotes.map((quote: Record<string, unknown>, index: number) => ({
+      ...quote,
+      number: index + 1,
+    })),
+    nextQuoteNumber: raw.quotes.length + 1,
+  };
+  if (fromVersion >= 10) {
     const migrated = cashDocumentSchema.safeParse({
-      ...raw,
+      ...numbered,
       schemaVersion: CURRENT_SCHEMA_VERSION,
     });
     return migrated.success
@@ -354,10 +383,10 @@ function migrateLegacyDocument(
   }
   const v3 =
     fromVersion === 1
-      ? migrateV2Record(migrateV1(raw))
+      ? migrateV2Record(migrateV1(numbered))
       : fromVersion === 2
-        ? migrateV2Record(raw)
-        : raw;
+        ? migrateV2Record(numbered)
+        : numbered;
   const blockers = fromVersion >= 4 ? [] : findV3Blockers(v3);
   if (blockers.length)
     return err({
@@ -369,7 +398,7 @@ function migrateLegacyDocument(
         'Rimuovi o ricostruisci esplicitamente i dati indicati con una versione precedente di Cash, quindi riprova.',
       details: blockers,
     });
-  const v4 = fromVersion >= 4 ? raw : migrateV3(v3);
+  const v4 = fromVersion >= 4 ? numbered : migrateV3(v3);
   const categories = (v4.bankExpenseCategories ?? []) as Array<
     Record<string, unknown>
   >;

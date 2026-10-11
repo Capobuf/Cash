@@ -1,3 +1,4 @@
+import { legacyDocument } from '../fixtures/sqlite-document';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -64,7 +65,7 @@ describe('archivio finanziario corrente', () => {
       ok: true,
       value: {
         document: {
-          schemaVersion: 11,
+          schemaVersion: 12,
           financialSnapshot: document.financialSnapshot,
         },
       },
@@ -86,7 +87,9 @@ describe('archivio finanziario corrente', () => {
       description: 'Suite',
       monthlyAmount: '10.00',
     });
+    document.nextQuoteNumber = 2;
     document.quotes.push({
+      number: 1,
       ...meta(),
       date: '2026-09-01',
       snapshotRevision: 0,
@@ -110,17 +113,19 @@ describe('archivio finanziario corrente', () => {
         },
       ],
     });
-    await writeFile(path, JSON.stringify(document));
+    await writeFile(path, JSON.stringify(legacyDocument(document, 4)));
     expect(await previewMigration(path)).toMatchObject({
       ok: true,
-      value: { fromVersion: 4, toVersion: 11, blockers: [] },
+      value: { fromVersion: 4, toVersion: 12, blockers: [] },
     });
     const migrated = await importJsonArchive(path, `${path}.sqlite`);
     expect(migrated.ok).toBe(true);
     if (!migrated.ok) throw new Error(migrated.error.message);
-    expect(migrated.value.document).toEqual({ ...document, schemaVersion: 11 });
+    expect(migrated.value.document).toEqual({ ...document, schemaVersion: 12 });
     expect(migrated.value.document).not.toHaveProperty('financialSnapshot');
-    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(document);
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(
+      legacyDocument(document, 4),
+    );
   });
 
   it('migra anche v3 non ambiguo fino allo schema corrente', async () => {
@@ -129,14 +134,13 @@ describe('archivio finanziario corrente', () => {
     await writeFile(
       path,
       JSON.stringify({
-        ...createEmptyDocument(),
-        schemaVersion: 3,
+        ...legacyDocument(createEmptyDocument(), 3),
         localClients: [],
       }),
     );
     expect(await importJsonArchive(path, `${path}.sqlite`)).toMatchObject({
       ok: true,
-      value: { document: { schemaVersion: 11 } },
+      value: { document: { schemaVersion: 12 } },
     });
   });
 

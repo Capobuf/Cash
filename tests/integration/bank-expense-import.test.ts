@@ -1,3 +1,4 @@
+import { legacyDocument } from '../fixtures/sqlite-document';
 import ExcelJS from 'exceljs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -185,7 +186,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       receivedDocuments: [],
       pendingReceivedDocuments: [],
     };
-    const legacy: Record<string, unknown> = { ...document, schemaVersion: 5 };
+    const legacy: Record<string, unknown> = { ...legacyDocument(document, 5) };
     delete legacy.bankExpenses;
     delete legacy.bankExpenseCategories;
     delete legacy.bankExpenseRules;
@@ -198,7 +199,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
     });
     expect(await previewMigration(path)).toMatchObject({
       ok: true,
-      value: { fromVersion: 5, toVersion: 11, blockers: [] },
+      value: { fromVersion: 5, toVersion: 12, blockers: [] },
     });
     const migrated = await importJsonArchive(path, `${path}.sqlite`);
     if (!migrated.ok) throw new Error(migrated.error.message);

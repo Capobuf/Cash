@@ -3,7 +3,8 @@ import {
   createEmptyDocument,
   createFiscalPreset2026,
 } from '../../src/domain/model';
-import { createQuote } from '../../src/domain/quotes';
+import { addQuote, createQuote, quoteTitle } from '../../src/domain/quotes';
+import { cashDocumentSchema } from '../../src/domain/schema';
 
 describe('creazione condivisa del preventivo', () => {
   beforeEach(() => {
@@ -14,6 +15,69 @@ describe('creazione condivisa del preventivo', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it('assegna numeri progressivi senza riutilizzare quelli eliminati o azzerarli a gennaio', () => {
+    const document = createEmptyDocument();
+    expect(addQuote(document).number).toBe(1);
+    expect(addQuote(document).number).toBe(2);
+    document.quotes.pop();
+    vi.setSystemTime(new Date('2027-01-01T12:00:00Z'));
+    const third = addQuote(document);
+    expect(third.number).toBe(3);
+    expect(third.date).toBe('2027-01-01');
+    third.client = {
+      source: 'fatture_in_cloud',
+      companyId: '1',
+      clientId: '2',
+      displayName: 'Cliente',
+    };
+    expect(third.number).toBe(3);
+    expect(document.nextQuoteNumber).toBe(4);
+    expect(cashDocumentSchema.safeParse(document).success).toBe(true);
+  });
+
+  it('rifiuta numeri duplicati, assenti, non positivi o un contatore non valido', () => {
+    const document = createEmptyDocument();
+    addQuote(document);
+    addQuote(document);
+    for (const number of [1, 0, -1, 1.5, undefined]) {
+      const invalid = structuredClone(document);
+      Object.assign(invalid.quotes[1]!, { number });
+      expect(cashDocumentSchema.safeParse(invalid).success).toBe(false);
+    }
+    document.nextQuoteNumber = 2;
+    expect(cashDocumentSchema.safeParse(document).success).toBe(false);
+  });
+
+  it('deriva il titolo da cliente e numero senza dipendere dalle voci', () => {
+    const document = createEmptyDocument();
+    document.nextQuoteNumber = 12;
+    const quote = addQuote(document);
+    expect(quoteTitle(quote)).toBe('Preventivo #12');
+    quote.client = {
+      source: 'fatture_in_cloud',
+      companyId: '1',
+      clientId: '2',
+      displayName: 'MCH Italia',
+    };
+    expect(quoteTitle(quote)).toBe('MCH Italia - Preventivo #12');
+    quote.items.push({
+      id: crypto.randomUUID(),
+      createdAt: quote.createdAt,
+      updatedAt: quote.updatedAt,
+      name: 'Server',
+      subItems: [],
+      variantGroups: [],
+      variantSelections: [],
+    });
+    expect(quoteTitle(quote)).toBe('MCH Italia - Preventivo #12');
+    quote.items.pop();
+    quote.client.displayName = 'Altro cliente';
+    expect(quoteTitle(quote)).toBe('Altro cliente - Preventivo #12');
+    delete quote.client;
+    expect(quoteTitle(quote)).toBe('Preventivo #12');
+    expect(quote.number).toBe(12);
   });
 
   it.each([

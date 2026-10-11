@@ -208,8 +208,10 @@ export function comprehensiveDocument(): CashDocument {
       },
     },
   };
+  document.nextQuoteNumber = 2;
   document.quotes = [
     {
+      number: 1,
       ...meta(),
       date: '2026-10-01',
       profileId: meta().id,
@@ -343,4 +345,17 @@ export function comprehensiveDocument(): CashDocument {
     ],
   };
   return document;
+}
+
+export function legacyDocument(
+  document: CashDocument,
+  schemaVersion: number,
+): Record<string, unknown> {
+  if (schemaVersion >= 12) return { ...document, schemaVersion };
+  const { nextQuoteNumber: _next, ...legacy } = document;
+  return {
+    ...legacy,
+    schemaVersion,
+    quotes: document.quotes.map(({ number: _number, ...quote }) => quote),
+  };
 }

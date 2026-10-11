@@ -1,10 +1,8 @@
 import {
   ArrowLeft,
   BookOpen,
-  ChevronDown,
   CloudUpload,
   FilePlus2,
-  Info,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -13,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateQuote } from '../../domain/calculations';
+import { quoteTitle } from '../../domain/quotes';
 import { type CashDocument, type QuoteItem } from '../../domain/model';
 import { siteMatchesClient } from '../../domain/locations';
 import { Analysis } from '@/components/Analysis';
@@ -55,11 +54,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -93,6 +87,10 @@ import {
 } from '@/components/ui/tooltip';
 import { useQuoteController } from '@/hooks/use-quote-controller';
 import { dateIt, decimalInputValue, moneyInputValue } from '@/lib/format';
+import {
+  missingAnalysisTargets,
+  type PartialMetric,
+} from '@/lib/quote-analysis-navigation';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 
@@ -150,6 +148,14 @@ export function QuotesView({
   const { quote } = controller;
   const [overlay, setOverlay] = useState<Overlay>();
   const [pendingUpdate, setPendingUpdate] = useState<PendingQuoteUpdate>();
+  const [pricePreview, setPricePreview] = useState<
+    Record<string, string | undefined>
+  >({});
+  const [analysisNavigation, setAnalysisNavigation] = useState<{
+    quoteId: string;
+    metric: PartialMetric;
+    itemId?: string;
+  }>();
   const ficReady =
     doc.settings.fic.enabled && hasToken && Boolean(doc.settings.fic.company);
 
@@ -164,7 +170,40 @@ export function QuotesView({
     );
 
   const hourly = quote.profileSnapshot?.hourlyTarget;
-  const total = hourly ? calculateQuote(quote.items, hourly) : undefined;
+  const previewItems = quote.items.map((item) =>
+    Object.hasOwn(pricePreview, item.id)
+      ? { ...item, chosenPrice: pricePreview[item.id] }
+      : item,
+  );
+  const total = calculateQuote(previewItems, hourly);
+  const missingTargets =
+    analysisNavigation?.quoteId === quote.id
+      ? missingAnalysisTargets(
+          analysisNavigation.itemId
+            ? previewItems.filter(
+                (item) => item.id === analysisNavigation.itemId,
+              )
+            : previewItems,
+          hourly,
+          analysisNavigation.metric,
+        )
+      : [];
+  const showMissing = (metric: PartialMetric, itemId?: string) => {
+    const targets = missingAnalysisTargets(
+      itemId ? previewItems.filter((item) => item.id === itemId) : previewItems,
+      hourly,
+      metric,
+    );
+    setAnalysisNavigation({ quoteId: quote.id, metric, itemId });
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targets[0]?.id ?? '');
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  };
+  const missingProfile = missingTargets.find(
+    (target) => target.id === 'quote-profile',
+  );
   const setQuoteValue = (updates: PendingQuoteUpdate) => {
     const result = controller.updateQuote(updates);
     if (result === 'year-mismatch') setPendingUpdate(updates);
@@ -180,9 +219,20 @@ export function QuotesView({
   };
 
   const itemActions: QuoteItemActions = {
+    showMissing,
+    clearMissing: () => setAnalysisNavigation(undefined),
     rename: (item) => setOverlay({ kind: 'item', item }),
-    updateChosenPrice: controller.updateChosenPrice,
-    updateReferencePrice: controller.updateReferencePrice,
+    previewChosenPrice: (itemId, value) =>
+      setPricePreview((previous) => ({ ...previous, [itemId]: value })),
+    updateChosenPrice: (itemId, value) => {
+      const saved = controller.updateChosenPrice(itemId, value);
+      setPricePreview((previous) => {
+        const next = { ...previous };
+        delete next[itemId];
+        return next;
+      });
+      return saved;
+    },
     editSub: (itemId, subId) => setOverlay({ kind: 'sub', itemId, subId }),
     saveSub: (itemId, subId) => setOverlay({ kind: 'save-sub', itemId, subId }),
     changeVariant: (itemId, group, optionId) => {
@@ -244,11 +294,7 @@ export function QuotesView({
           </Button>
           <div className="h-5 w-px bg-border" />
           <div>
-            <h2 className="font-semibold">
-              {quote.client?.displayName ??
-                quote.items[0]?.name ??
-                'Nuovo preventivo'}
-            </h2>
+            <h2 className="font-semibold">{quoteTitle(quote)}</h2>
             <p className="text-xs text-muted-foreground">
               {dateIt(quote.date)} · {quote.items.length}{' '}
               {quote.items.length === 1 ? 'voce' : 'voci'}
@@ -332,6 +378,12 @@ export function QuotesView({
             <FieldLabel htmlFor="quote-profile">Profilo</FieldLabel>
             <NativeSelect
               id="quote-profile"
+              className={
+                missingProfile ? 'ring-2 ring-primary ring-offset-2' : undefined
+              }
+              aria-describedby={
+                missingProfile ? 'quote-profile-missing' : undefined
+              }
               value={quote.profileId ?? ''}
               onChange={(event) =>
                 setQuoteValue({ profileId: event.target.value })
@@ -340,18 +392,25 @@ export function QuotesView({
               <NativeSelectOption value="">Incompleto</NativeSelectOption>
               {doc.profiles.map((profile) => (
                 <NativeSelectOption key={profile.id} value={profile.id}>
-                  {profile.year} ·{' '}
-                  {profile.confirmed ? 'confermato' : 'da verificare'}
+                  {profile.year}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
+            {missingProfile ? (
+              <p id="quote-profile-missing" className="text-xs text-primary">
+                {missingProfile.message}
+              </p>
+            ) : null}
           </Field>
           <Field>
             <FieldLabel>Cliente</FieldLabel>
             <Button
               className="w-full justify-start"
               variant="outline"
-              onClick={() => setOverlay({ kind: 'customer' })}
+              onClick={() => {
+                setOverlay({ kind: 'customer' });
+                if (ficReady) void controller.searchRemoteClients('');
+              }}
             >
               <UserRound />
               {quote.client?.displayName ?? 'Scegli cliente'}
@@ -413,6 +472,9 @@ export function QuotesView({
                 hourly={hourly}
                 doc={doc}
                 actions={itemActions}
+                missingTargets={missingTargets.filter(
+                  (target) => target.itemId === item.id,
+                )}
               />
             ))
           ) : (
@@ -457,6 +519,30 @@ export function QuotesView({
               </CardContent>
             </Card>
           )}
+          {quote.items.length ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="outline" className="w-full" />}
+              >
+                <Plus />
+                Aggiungi sezione
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {doc.catalog.templates.length ? (
+                  <DropdownMenuItem
+                    onClick={() => setOverlay({ kind: 'insert-template' })}
+                  >
+                    <BookOpen />
+                    Da template
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onClick={() => setOverlay({ kind: 'item' })}>
+                  <Plus />
+                  Sezione vuota
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
         <aside className="space-y-3 xl:sticky xl:top-24">
           <Card>
@@ -470,51 +556,17 @@ export function QuotesView({
               </div>
             </CardHeader>
             <CardContent>
-              {total ? (
-                <Analysis value={total} />
-              ) : (
+              <Analysis value={total} onShowMissing={showMissing} />
+              {!hourly ? (
                 <Alert>
-                  <AlertTitle>Analisi non disponibile</AlertTitle>
+                  <AlertTitle>Obiettivo orario non disponibile</AlertTitle>
                   <AlertDescription>
                     Associa un profilo confermato e calcolabile.
                   </AlertDescription>
                 </Alert>
-              )}
+              ) : null}
             </CardContent>
           </Card>
-          <Collapsible render={<Card />}>
-            <CollapsibleTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  className="h-auto w-full justify-between p-4"
-                />
-              }
-            >
-              <span className="flex items-center gap-2">
-                <Info className="size-4" />
-                Dettagli tecnici
-              </span>
-              <ChevronDown />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent className="space-y-2 border-t pt-4 text-xs text-muted-foreground">
-                <p>
-                  Profilo:{' '}
-                  {quote.profileSnapshot
-                    ? `${quote.profileSnapshot.year} · rev. ${quote.profileSnapshot.revision}`
-                    : 'non associato'}
-                </p>
-                <p>Revisione snapshot: {quote.snapshotRevision}</p>
-                <p>
-                  {quote.snapshotUpdatedAt
-                    ? `Aggiornato: ${quote.snapshotUpdatedAt}`
-                    : 'Snapshot mai aggiornato esplicitamente'}
-                </p>
-                <p>Tentativi export: {quote.exportAttempts.length}</p>
-              </CardContent>
-            </CollapsibleContent>
-          </Collapsible>
         </aside>
       </div>
 
@@ -528,6 +580,7 @@ export function QuotesView({
           doc={doc}
           hasToken={hasToken}
           results={controller.clientResults}
+          searching={controller.searchingClients}
           onSearch={controller.searchRemoteClients}
           onSelect={selectCustomer}
         />
@@ -717,8 +770,7 @@ function QuotesList({
                   onDoubleClick={() => onOpen(quote.id)}
                 >
                   <TableCell className="font-medium">
-                    {quote.items.map((item) => item.name).join(', ') ||
-                      'Preventivo incompleto'}
+                    {quoteTitle(quote)}
                   </TableCell>
                   <TableCell>{dateIt(quote.date)}</TableCell>
                   <TableCell>
@@ -734,7 +786,7 @@ function QuotesList({
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="Azioni preventivo"
+                            aria-label={`Azioni ${quoteTitle(quote)}`}
                           />
                         }
                       >
@@ -751,10 +803,7 @@ function QuotesList({
                             requestDelete({
                               kind: 'quote',
                               id: quote.id,
-                              label:
-                                quote.items
-                                  .map((item) => item.name)
-                                  .join(', ') || 'Preventivo incompleto',
+                              label: quoteTitle(quote),
                             })
                           }
                         >
