@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import {
   AlertTriangle,
   CalendarPlus,
@@ -6,7 +7,7 @@ import {
   Copy,
   MoreHorizontal,
 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import {
   previewProfile,
   type ProfileAnalysis,
@@ -54,10 +55,6 @@ import {
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -127,6 +124,7 @@ export function ProfileEditor({
   appState: AppState;
   onCopy: (id: string) => void;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [tab, setTab] = useState('goals');
   const [contributionRate, setContributionRate] = useState(
     Number(profile.fiscal.contributionRate) === 0
@@ -164,12 +162,17 @@ export function ProfileEditor({
   const ficProvidesRegime =
     importedFromFic && ficTaxProfile?.regime !== undefined;
 
-  const updatePreview = (event: FormEvent<HTMLFormElement>) => {
-    const draft = draftFromForm(profile, event.currentTarget, holidays);
+  const updatePreview = (
+    form: HTMLFormElement,
+    phase?: EconomicProfile['fiscal']['activityPhase'],
+  ) => {
+    const draft = draftFromForm(profile, form, holidays);
     if (!draft.ok) {
       setPreview({ error: draft.error.message });
       return;
     }
+    // Base UI commits the hidden form input after onValueChange returns.
+    if (phase !== undefined) draft.value.fiscal.activityPhase = phase;
     const result = previewProfile(draft.value, doc.businessCosts);
     setPreview(
       result.ok ? { value: result.value } : { error: result.error.message },
@@ -247,8 +250,9 @@ export function ProfileEditor({
       </CardHeader>
       <CardContent>
         <form
+          ref={formRef}
           onSubmit={submit}
-          onInput={updatePreview}
+          onInput={(event) => updatePreview(event.currentTarget)}
           className="space-y-5"
           noValidate
         >
@@ -550,19 +554,29 @@ export function ProfileEditor({
                         value={profile.fiscal.activityPhase}
                       />
                     ) : null}
-                    <NativeSelect
+                    <SelectField
                       id="activityPhase"
                       name="activityPhase"
                       defaultValue={profile.fiscal.activityPhase}
                       disabled={ficProvidesRegime}
-                    >
-                      <NativeSelectOption value="ordinary">
-                        Oltre i primi 5 periodi / non spettante
-                      </NativeSelectOption>
-                      <NativeSelectOption value="reduced_eligible">
-                        Primi 5 periodi · agevolazione spettante
-                      </NativeSelectOption>
-                    </NativeSelect>
+                      onValueChange={(value) => {
+                        if (formRef.current)
+                          updatePreview(
+                            formRef.current,
+                            value as EconomicProfile['fiscal']['activityPhase'],
+                          );
+                      }}
+                      options={[
+                        {
+                          value: 'ordinary',
+                          label: 'Oltre i primi 5 periodi / non spettante',
+                        },
+                        {
+                          value: 'reduced_eligible',
+                          label: 'Primi 5 periodi · agevolazione spettante',
+                        },
+                      ]}
+                    />
                   </Field>
                   <NumberField
                     id="reducedSubstituteTaxRate"
@@ -889,20 +903,17 @@ function HolidayDialog({
             </Field>
             <Field>
               <FieldLabel htmlFor="holiday-kind">Tipo</FieldLabel>
-              <NativeSelect
+              <SelectField
                 id="holiday-kind"
                 value={kind}
-                onChange={(event) =>
-                  setKind(event.target.value as LocalHoliday['kind'])
+                onValueChange={(value) =>
+                  setKind(value as LocalHoliday['kind'])
                 }
-              >
-                <NativeSelectOption value="recurring">
-                  Ricorrente ogni anno
-                </NativeSelectOption>
-                <NativeSelectOption value="specific">
-                  Specifica per un anno
-                </NativeSelectOption>
-              </NativeSelect>
+                options={[
+                  { value: 'recurring', label: 'Ricorrente ogni anno' },
+                  { value: 'specific', label: 'Specifica per un anno' },
+                ]}
+              />
             </Field>
             {kind === 'recurring' ? (
               <div className="grid grid-cols-2 gap-3">

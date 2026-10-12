@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { type TemplatePack } from '../../../domain/template-pack';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,11 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
-
 export type TemplateImportPreview = {
   fileName: string;
   pack: TemplatePack;
@@ -73,21 +69,20 @@ export function TemplateImportDialog({
                   <Badge variant="secondary">Nuovo</Badge>
                 )}
                 {conflict ? (
-                  <NativeSelect
+                  <SelectField
                     size="sm"
                     aria-label={`Scelta per il conflitto ${template.name}`}
                     value={
                       preview.importAnyway[templateIndex] ? 'import' : 'skip'
                     }
-                    onChange={(event) =>
-                      onChange(templateIndex, event.target.value === 'import')
+                    onValueChange={(value) =>
+                      onChange(templateIndex, value === 'import')
                     }
-                  >
-                    <NativeSelectOption value="skip">Salta</NativeSelectOption>
-                    <NativeSelectOption value="import">
-                      Importa comunque
-                    </NativeSelectOption>
-                  </NativeSelect>
+                    options={[
+                      { value: 'skip', label: 'Salta' },
+                      { value: 'import', label: 'Importa comunque' },
+                    ]}
+                  />
                 ) : null}
               </div>
             );

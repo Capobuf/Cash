@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/components/ui/selection-field';
 import {
   BriefcaseBusiness,
   ChevronDown,
@@ -56,10 +57,6 @@ import {
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
 import { decimalInputValue, eur, hours, moneyInputValue } from '@/lib/format';
 import type { DeleteTarget } from '../types';
@@ -131,7 +128,7 @@ export function QuoteItemCard({
             />
           }
         >
-          <ChevronDown className="transition-transform group-data-panel-open:rotate-180" />
+          <ChevronDown className="transition-transform duration-150 motion-reduce:transition-none group-data-panel-open:rotate-180" />
         </CollapsibleTrigger>
 
         <div className="min-w-0 space-y-2">
@@ -255,27 +252,21 @@ export function QuoteItemCard({
                       >
                         {group.name}
                       </label>
-                      <NativeSelect
+                      <SearchableSelect
                         id={`variant-${item.id}-${group.id}`}
                         className="w-full min-w-0"
                         value={selected}
-                        onChange={(event) =>
-                          actions.changeVariant(
-                            item.id,
-                            group,
-                            event.target.value,
-                          )
+                        onValueChange={(value) =>
+                          actions.changeVariant(item.id, group, value)
                         }
-                      >
-                        <NativeSelectOption value="" disabled>
-                          Scegli
-                        </NativeSelectOption>
-                        {group.options.map((option) => (
-                          <NativeSelectOption key={option.id} value={option.id}>
-                            {option.name}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
+                        options={[
+                          { value: '', label: 'Scegli', disabled: true },
+                          ...group.options.map((option) => ({
+                            value: option.id,
+                            label: option.name,
+                          })),
+                        ]}
+                      />
                     </div>
                   );
                 })}

@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import {
   Archive,
   ChartNoAxesCombined,
@@ -15,7 +16,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { UpdateNotice, UpdatesPanel } from '@/components/UpdatesPanel';
 import type { AppState } from '../state';
 import type { DeleteTarget, View } from '../types';
@@ -54,10 +56,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
 import {
   Sidebar,
@@ -174,6 +172,37 @@ export function GlobalError({ appState }: { appState: AppState }) {
   );
 }
 
+export function ArchiveLoading({ appState }: { appState: AppState }) {
+  return (
+    <main
+      className="grid min-h-screen place-items-center bg-background p-8"
+      aria-busy="true"
+    >
+      <Card className="w-full max-w-2xl">
+        <CardHeader>
+          <BrandLogo className="mb-2 size-16" />
+          <CardTitle>Caricamento archivio</CardTitle>
+          <CardDescription role="status">
+            Apertura dell’ultimo archivio di Cash…
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <GlobalError appState={appState} />
+          <div aria-hidden="true" className="space-y-4">
+            <Skeleton className="h-6 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+            <div className="grid grid-cols-3 gap-4">
+              {[0, 1, 2].map((index) => (
+                <Skeleton key={index} className="h-24" />
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
 export function Onboarding({ appState }: { appState: AppState }) {
   return (
     <main className="grid min-h-screen place-items-center bg-background p-8">
@@ -233,6 +262,16 @@ export function AppShell({
   onYearChange: (year: number) => void;
   children: ReactNode;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = contentRef.current;
+    if (!element) return;
+    // Restart only on section changes, without remounting the workspace.
+    element.classList.remove('section-enter');
+    if (view === 'dashboard') return;
+    void element.offsetWidth;
+    element.classList.add('section-enter');
+  }, [view]);
   const statusCritical =
     appState.status.includes('Errore') ||
     appState.status.includes('Conflitto') ||
@@ -260,19 +299,16 @@ export function AppShell({
             >
               Anno
             </label>
-            <NativeSelect
+            <SelectField
               id="app-year"
               className="w-full"
               value={selectedYear ?? ''}
               disabled={!years.length}
-              onChange={(event) => onYearChange(Number(event.target.value))}
-            >
-              {years.map((year) => (
-                <NativeSelectOption key={year} value={year}>
-                  {year}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              onValueChange={(value) => onYearChange(Number(value))}
+              options={[
+                ...years.map((year) => ({ value: String(year), label: year })),
+              ]}
+            />
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -372,7 +408,9 @@ export function AppShell({
             >
               <StatusIcon
                 className={
-                  appState.status === 'Salvataggio' ? 'animate-spin' : undefined
+                  appState.status === 'Salvataggio'
+                    ? 'animate-spin motion-reduce:animate-none'
+                    : undefined
                 }
               />
               {appState.status}
@@ -421,7 +459,9 @@ export function AppShell({
         <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 p-6 2xl:p-8">
           <GlobalError appState={appState} />
           <UpdateNotice onOpenSettings={onOpenUpdates} />
-          {children}
+          <div ref={contentRef} className="min-w-0">
+            {children}
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>

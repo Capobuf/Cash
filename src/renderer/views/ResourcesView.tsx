@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/components/ui/selection-field';
 import {
   Building2,
   Car,
@@ -33,10 +34,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Field, FieldLabel } from '@/components/ui/field';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -144,46 +141,43 @@ export function ResourcesView({
             <FieldLabel htmlFor="default-departure">
               Partenza predefinita
             </FieldLabel>
-            <NativeSelect
+            <SearchableSelect
               id="default-departure"
               value={doc.settings.defaultDepartureSiteId ?? ''}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 appState.mutate((document) => {
-                  document.settings.defaultDepartureSiteId =
-                    event.target.value || undefined;
+                  document.settings.defaultDepartureSiteId = value || undefined;
                 })
               }
-            >
-              <NativeSelectOption value="">Nessuno</NativeSelectOption>
-              {doc.sites.map((site) => (
-                <NativeSelectOption key={site.id} value={site.id}>
-                  {site.name}
-                  {site.client ? ' · Cliente' : ''}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                { value: '', label: 'Nessuno' },
+                ...doc.sites.map((site) => ({
+                  value: site.id,
+                  label: [site.name, site.client ? ' · Cliente' : ''].join(''),
+                })),
+              ]}
+            />
           </Field>
           <Field>
             <FieldLabel htmlFor="default-vehicle">
               Veicolo predefinito
             </FieldLabel>
-            <NativeSelect
+            <SearchableSelect
               id="default-vehicle"
               value={doc.settings.defaultVehicleId ?? ''}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 appState.mutate((document) => {
-                  document.settings.defaultVehicleId =
-                    event.target.value || undefined;
+                  document.settings.defaultVehicleId = value || undefined;
                 })
               }
-            >
-              <NativeSelectOption value="">Nessuno</NativeSelectOption>
-              {doc.vehicles.map((vehicle) => (
-                <NativeSelectOption key={vehicle.id} value={vehicle.id}>
-                  {vehicle.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                { value: '', label: 'Nessuno' },
+                ...doc.vehicles.map((vehicle) => ({
+                  value: vehicle.id,
+                  label: vehicle.name,
+                })),
+              ]}
+            />
           </Field>
         </div>
       </section>

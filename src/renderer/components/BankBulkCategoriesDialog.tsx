@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { useState } from 'react';
 import {
   changeBankManualCategories,
@@ -17,11 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
-
 export function BankBulkCategoriesDialog({
   expenseIds,
   doc,
@@ -59,27 +55,18 @@ export function BankBulkCategoriesDialog({
           <label htmlFor="bank-bulk-action" className="text-sm font-medium">
             Operazione
           </label>
-          <NativeSelect
+          <SelectField
             id="bank-bulk-action"
             value={action}
             disabled={readOnly}
-            onChange={(event) =>
-              setAction(event.target.value as BankCategoryAction)
-            }
-          >
-            <NativeSelectOption value="add">
-              Aggiungi categorie manuali
-            </NativeSelectOption>
-            <NativeSelectOption value="remove">
-              Rimuovi categorie manuali
-            </NativeSelectOption>
-            <NativeSelectOption value="replace">
-              Sostituisci categorie manuali
-            </NativeSelectOption>
-            <NativeSelectOption value="clear">
-              Rimuovi tutte le categorie manuali
-            </NativeSelectOption>
-          </NativeSelect>
+            onValueChange={(value) => setAction(value as BankCategoryAction)}
+            options={[
+              { value: 'add', label: 'Aggiungi categorie manuali' },
+              { value: 'remove', label: 'Rimuovi categorie manuali' },
+              { value: 'replace', label: 'Sostituisci categorie manuali' },
+              { value: 'clear', label: 'Rimuovi tutte le categorie manuali' },
+            ]}
+          />
         </div>
         {action !== 'clear' ? (
           <BankCategoryChecklist

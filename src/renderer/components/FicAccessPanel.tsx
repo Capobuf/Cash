@@ -1,3 +1,4 @@
+import { Spinner } from '@/components/ui/spinner';
 import { useState } from 'react';
 import type { FicAccessVerification } from '../../domain/integration';
 import type { AppState } from '../state';
@@ -78,6 +79,7 @@ export function FicAccessPanel({
         disabled={!enabled || !companyId || busy}
         onClick={() => void verify()}
       >
+        {busy ? <Spinner aria-hidden="true" /> : null}
         {busy ? 'Verifica in corso…' : 'Verifica permessi'}
       </Button>
       <p className="text-sm text-muted-foreground">

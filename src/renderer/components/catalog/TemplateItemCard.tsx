@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/components/ui/selection-field';
 import {
   ChevronDown,
   ChevronRight,
@@ -42,10 +43,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { eur, hours } from '@/lib/format';
 import { kindLabel, type Kind, reusableDetail } from './ReusableDialog';
 
@@ -178,7 +175,7 @@ export function TemplateItemCard({
           <CollapsibleTrigger
             render={<Button size="sm" variant="ghost" className="group" />}
           >
-            <ChevronDown className="transition-transform group-data-panel-open:rotate-180" />
+            <ChevronDown className="transition-transform duration-150 motion-reduce:transition-none group-data-panel-open:rotate-180" />
             Prezzo storico di riferimento
             {item.referencePrice?.amount ? (
               <Badge variant="outline">{eur(item.referencePrice.amount)}</Badge>
@@ -380,25 +377,23 @@ function TemplateVariants({
             <FieldLabel htmlFor={`variant-default-${group.id}`}>
               Opzione predefinita
             </FieldLabel>
-            <NativeSelect
+            <SearchableSelect
               id={`variant-default-${group.id}`}
               value={group.defaultOptionId ?? ''}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 update((groups) => {
                   const current = touch(groups[groupIndex]!);
-                  current.defaultOptionId = event.target.value || undefined;
+                  current.defaultOptionId = value || undefined;
                 })
               }
-            >
-              <NativeSelectOption value="">
-                Nessuna predefinita
-              </NativeSelectOption>
-              {group.options.map((option, optionIndex) => (
-                <NativeSelectOption key={option.id} value={option.id}>
-                  {option.name.trim() || `Opzione ${optionIndex + 1}`}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                { value: '', label: 'Nessuna predefinita' },
+                ...group.options.map((option, optionIndex) => ({
+                  value: option.id,
+                  label: option.name.trim() || `Opzione ${optionIndex + 1}`,
+                })),
+              ]}
+            />
           </Field>
 
           <div className="mt-4 divide-y rounded-lg border bg-card">
@@ -418,7 +413,7 @@ function TemplateVariants({
                       }
                     >
                       <ChevronRight
-                        className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        className={`transition-transform duration-150 motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}
                       />
                     </Button>
                     {expanded ? (

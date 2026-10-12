@@ -42,7 +42,7 @@ it.each(['VALIDATION', 'IO'] as const)(
       cash: {
         credentials: { hasFicToken: async () => ok(false) },
         fic: { setupInfo },
-        onCloseRequested: vi.fn(),
+        onCloseRequested: vi.fn(() => () => {}),
       },
     });
     renderToStaticMarkup(createElement(App));

@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/components/ui/selection-field';
 import { useState } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import {
@@ -38,11 +39,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
-
 export function BankCategoriesView({
   doc,
   appState,
@@ -361,34 +357,34 @@ export function BankCategoriesView({
               >
                 Categoria principale
               </label>
-              <NativeSelect
+              <SearchableSelect
                 id="bank-category-parent"
                 className="w-full"
                 value={editing?.parentId ?? ''}
                 disabled={readOnly || hasChildren || systemCategory}
                 aria-describedby="bank-category-parent-help"
-                onChange={(event) => {
+                onValueChange={(value) => {
                   if (editing)
                     setEditing({
                       ...editing,
-                      parentId: event.target.value || undefined,
+                      parentId: value || undefined,
                     });
                   setError(undefined);
                 }}
-              >
-                <NativeSelectOption value="">Nessuna</NativeSelectOption>
-                {bankCategoryTree(doc.bankExpenseCategories)
-                  .filter(
-                    (category) =>
-                      category.id !== editing?.id &&
-                      category.systemRole !== 'vat_taxes',
-                  )
-                  .map((category) => (
-                    <NativeSelectOption key={category.id} value={category.id}>
-                      {category.name}
-                    </NativeSelectOption>
-                  ))}
-              </NativeSelect>
+                options={[
+                  { value: '', label: 'Nessuna' },
+                  ...bankCategoryTree(doc.bankExpenseCategories)
+                    .filter(
+                      (category) =>
+                        category.id !== editing?.id &&
+                        category.systemRole !== 'vat_taxes',
+                    )
+                    .map((category) => ({
+                      value: category.id,
+                      label: category.name,
+                    })),
+                ]}
+              />
               <p
                 id="bank-category-parent-help"
                 className="text-xs text-muted-foreground"

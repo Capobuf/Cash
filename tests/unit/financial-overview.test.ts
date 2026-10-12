@@ -836,7 +836,7 @@ describe('panoramica finanziaria unificata', () => {
     expect(html).toContain('Cerca nella tabella');
     expect(html).toContain('Filtra la ricerca per colonna');
     expect(html).toContain('Righe per pagina');
-    for (const size of ['20', '50', '100'])
-      expect(html).toContain(`value="${size}"`);
+    expect(html).toMatch(/data-slot="select-value"[^>]*>20<\/span>/);
+    expect(html).toContain('aria-label="Pagina successiva"');
   });
 });

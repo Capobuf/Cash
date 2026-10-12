@@ -60,8 +60,10 @@ describe('ricerca, filtri e ordinamento delle regole bancarie', () => {
       }),
     );
     expect(html).toContain('Cerca testo o categoria...');
-    expect(html).toContain('Con corrispondenze');
-    expect(html).toContain('Senza corrispondenze');
+    expect(html).toContain('Tutte le regole');
+    expect(
+      html.match(/<button[^>]*id="bank-rule-matches-filter"[^>]*>/)?.[0],
+    ).not.toContain('disabled=""');
     expect(html).toContain('aria-sort="ascending"');
     expect(html).toContain('4 di 4 regole');
     expect(

@@ -29,6 +29,7 @@ vi.mock('react', async (original) => ({
 interface ControlProps {
   id?: string;
   children?: ReactNode;
+  onValueChange: (value: string) => void;
   onChange: (event: { target: { value: string } }) => void;
   onClick: () => void;
   onSubmit: (event: {
@@ -118,9 +119,9 @@ describe('site coordinate submission', () => {
         });
       };
       let tree = render();
-      find(tree, (e) => e.props.id === 'site-mode')!.props.onChange({
-        target: { value: 'coordinates' },
-      });
+      find(tree, (e) => e.props.id === 'site-mode')!.props.onValueChange(
+        'coordinates',
+      );
       tree = render();
       find(tree, (e) => e.props.id === 'site-coordinates')!.props.onChange({
         target: { value: '41.9028, 12.4964' },

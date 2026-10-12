@@ -100,6 +100,9 @@ export function ExpenseCategoryChart({
                 }
               />
               <Bar
+                isAnimationActive="auto"
+                animationDuration={220}
+                animationBegin={0}
                 dataKey="value"
                 fill="var(--color-value)"
                 radius={3}

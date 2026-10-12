@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Trash2 } from 'lucide-react';
 import type { BankExpenseRule, CashDocument } from '../../domain/model';
@@ -7,13 +8,9 @@ import {
   type BankRuleSort,
   type BankRuleSortColumn,
 } from '../lib/bank-rule-list';
-import { BankCategoryOptions } from './BankCategoryOptions';
+import { BankCategoryCombobox } from '@/components/BankCategoryCombobox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -89,16 +86,13 @@ export function BankRulesTable({
           >
             Categoria delle regole
           </label>
-          <NativeSelect
+          <BankCategoryCombobox
             id="bank-rule-category-filter"
+            categories={doc.bankExpenseCategories}
+            specialOptions={[{ value: 'all', label: 'Tutte le categorie' }]}
             value={categoryId}
-            onChange={(event) => setCategoryId(event.target.value)}
-          >
-            <NativeSelectOption value="all">
-              Tutte le categorie
-            </NativeSelectOption>
-            <BankCategoryOptions categories={doc.bankExpenseCategories} />
-          </NativeSelect>
+            onChange={setCategoryId}
+          />
         </div>
         <div className="space-y-2">
           <label
@@ -107,21 +101,16 @@ export function BankRulesTable({
           >
             Corrispondenze delle regole
           </label>
-          <NativeSelect
+          <SelectField
             id="bank-rule-matches-filter"
             value={matches}
-            onChange={(event) =>
-              setMatches(event.target.value as BankRuleMatchFilter)
-            }
-          >
-            <NativeSelectOption value="all">Tutte le regole</NativeSelectOption>
-            <NativeSelectOption value="matched">
-              Con corrispondenze
-            </NativeSelectOption>
-            <NativeSelectOption value="unmatched">
-              Senza corrispondenze
-            </NativeSelectOption>
-          </NativeSelect>
+            onValueChange={(value) => setMatches(value as BankRuleMatchFilter)}
+            options={[
+              { value: 'all', label: 'Tutte le regole' },
+              { value: 'matched', label: 'Con corrispondenze' },
+              { value: 'unmatched', label: 'Senza corrispondenze' },
+            ]}
+          />
         </div>
         <Button type="button" variant="outline" onClick={reset}>
           Reimposta filtri

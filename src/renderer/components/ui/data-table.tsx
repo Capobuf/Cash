@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowDown,
@@ -25,10 +26,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -167,24 +164,22 @@ export function DataTable<T>({
                 className="pl-8"
               />
             </div>
-            <NativeSelect
+            <SelectField
               value={filterColumn}
-              onChange={(event) => {
-                setFilterColumn(event.target.value);
+              onValueChange={(value) => {
+                setFilterColumn(value);
                 setPage(0);
               }}
               aria-label="Filtra la ricerca per colonna"
               className="w-auto min-w-44"
-            >
-              <NativeSelectOption value="all">
-                Tutte le colonne
-              </NativeSelectOption>
-              {columns.map((column) => (
-                <NativeSelectOption key={column.id} value={column.id}>
-                  {column.header}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                { value: 'all', label: 'Tutte le colonne' },
+                ...columns.map((column) => ({
+                  value: column.id,
+                  label: column.header,
+                })),
+              ]}
+            />
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
@@ -314,22 +309,22 @@ export function DataTable<T>({
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <label htmlFor={pageSizeId}>Righe per pagina</label>
-            <NativeSelect
+            <SelectField
               id={pageSizeId}
               size="sm"
               value={String(selectedPageSize)}
-              onChange={(event) => {
-                setSelectedPageSize(Number(event.target.value));
+              onValueChange={(value) => {
+                setSelectedPageSize(Number(value));
                 setPage(0);
               }}
               className="w-20"
-            >
-              {[20, 50, 100].map((size) => (
-                <NativeSelectOption key={size} value={String(size)}>
-                  {size}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                ...[20, 50, 100].map((size) => ({
+                  value: String(String(size)),
+                  label: size,
+                })),
+              ]}
+            />
             <Button
               variant="outline"
               size="icon-sm"

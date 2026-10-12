@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { useState, type FormEvent } from 'react';
 import { parseDecimalInput } from '../../../domain/decimal';
 import { parseDuration } from '../../../domain/duration';
@@ -19,10 +20,6 @@ import {
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { formReader, hours, moneyInputValue } from '@/lib/format';
 
 export function DefinitionDialog({
@@ -132,20 +129,19 @@ export function DefinitionDialog({
             {!lockKind && !value ? (
               <Field>
                 <FieldLabel htmlFor="definition-kind">Tipo</FieldLabel>
-                <NativeSelect
+                <SelectField
                   id="definition-kind"
                   value={kind}
-                  onChange={(event) => {
-                    setKind(event.target.value as SubItemDefinition['kind']);
+                  onValueChange={(value) => {
+                    setKind(value as SubItemDefinition['kind']);
                     setDurationError(undefined);
                   }}
-                >
-                  <NativeSelectOption value="time">Attività</NativeSelectOption>
-                  <NativeSelectOption value="expense">Spesa</NativeSelectOption>
-                  <NativeSelectOption value="travel">
-                    Trasferta
-                  </NativeSelectOption>
-                </NativeSelect>
+                  options={[
+                    { value: 'time', label: 'Attività' },
+                    { value: 'expense', label: 'Spesa' },
+                    { value: 'travel', label: 'Trasferta' },
+                  ]}
+                />
               </Field>
             ) : null}
             <Field>

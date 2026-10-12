@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { useState, type FormEvent } from 'react';
 import { parseDecimalInput } from '../../../domain/decimal';
 import { parseDuration } from '../../../domain/duration';
@@ -19,10 +20,6 @@ import {
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { eur, formReader, hours, moneyInputValue } from '@/lib/format';
 
 export type Kind = ReusableSubItem['kind'];
@@ -143,20 +140,19 @@ export function ReusableDialog({
             {!lockKind && !value ? (
               <Field>
                 <FieldLabel htmlFor="catalog-kind">Tipo</FieldLabel>
-                <NativeSelect
+                <SelectField
                   id="catalog-kind"
                   value={kind}
-                  onChange={(event) => {
-                    setKind(event.target.value as Kind);
+                  onValueChange={(value) => {
+                    setKind(value as Kind);
                     setDurationError(undefined);
                   }}
-                >
-                  <NativeSelectOption value="time">Attività</NativeSelectOption>
-                  <NativeSelectOption value="expense">Spesa</NativeSelectOption>
-                  <NativeSelectOption value="travel">
-                    Trasferta
-                  </NativeSelectOption>
-                </NativeSelect>
+                  options={[
+                    { value: 'time', label: 'Attività' },
+                    { value: 'expense', label: 'Spesa' },
+                    { value: 'travel', label: 'Trasferta' },
+                  ]}
+                />
               </Field>
             ) : null}
             <Field>

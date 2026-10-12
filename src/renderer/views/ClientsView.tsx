@@ -26,6 +26,8 @@ import { coordinatesInput } from '../../domain/locations';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Card,
   CardAction,
@@ -132,9 +134,11 @@ export function ClientsView({
   const [clients, setClients] = useState<FicClientSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [clientsError, setClientsError] = useState(false);
   const [selectedClient, setSelectedClient] = useState<FicClientSnapshot>();
   const [details, setDetails] = useState<FicClientDetails>();
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState(false);
   const [siteEditor, setSiteEditor] = useState<SiteEditor>(null);
   const clientsRequest = useRef(0);
   const detailRequest = useRef(0);
@@ -147,6 +151,7 @@ export function ClientsView({
       if (!companyId || !integrationReady) return;
       const request = ++clientsRequest.current;
       setLoading(true);
+      setClientsError(false);
       setClients([]);
       const result = await window.cash.fic.searchClients({
         companyId,
@@ -156,6 +161,7 @@ export function ClientsView({
       setLoading(false);
       setLoaded(true);
       if (!result.ok) {
+        setClientsError(true);
         appState.setError(result.error);
         return;
       }
@@ -171,7 +177,12 @@ export function ClientsView({
       setClients([]);
       setLoaded(false);
       setLoading(false);
+      setClientsError(false);
     }
+    return () => {
+      clientsRequest.current += 1;
+      detailRequest.current += 1;
+    };
   }, [integrationReady, loadClients]);
 
   const openDetails = async (client: FicClientSnapshot) => {
@@ -180,6 +191,7 @@ export function ClientsView({
     setSelectedClient(client);
     setDetails(undefined);
     setDetailsLoading(true);
+    setDetailsError(false);
     const result = await window.cash.fic.getClientDetails({
       companyId: client.companyId,
       clientId: client.clientId,
@@ -187,6 +199,7 @@ export function ClientsView({
     if (request !== detailRequest.current) return;
     setDetailsLoading(false);
     if (!result.ok) {
+      setDetailsError(true);
       appState.setError(result.error);
       return;
     }
@@ -231,7 +244,7 @@ export function ClientsView({
               disabled={!integrationReady || loading}
               onClick={() => void loadClients(query)}
             >
-              <RefreshCw className={loading ? 'animate-spin' : undefined} />
+              {loading ? <Spinner aria-hidden="true" /> : <RefreshCw />}
               Aggiorna
             </Button>
           </CardAction>
@@ -270,8 +283,8 @@ export function ClientsView({
               </Button>
             </form>
           ) : null}
-          {integrationReady && clients.length ? (
-            <Table>
+          {integrationReady && (loading || clients.length > 0) ? (
+            <Table aria-busy={loading}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Cliente</TableHead>
@@ -282,70 +295,94 @@ export function ClientsView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {clients.map((client) => {
-                  const siteCount = sitesForClient(doc, client).length;
-                  return (
-                    <TableRow
-                      key={client.clientId}
-                      className="cursor-pointer"
-                      tabIndex={0}
-                      aria-label={`Apri dettagli di ${client.displayName}`}
-                      onClick={() => void openDetails(client)}
-                      onKeyDown={(event) => openFromKeyboard(event, client)}
-                    >
-                      <TableCell className="font-medium">
-                        {client.displayName}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {client.vatNumber ?? 'Non indicata'}
-                      </TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center gap-1.5">
-                          <Building2 className="size-4 text-muted-foreground" />
-                          {siteCount}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">FIC</Badge>
-                      </TableCell>
-                      <TableCell
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Azioni per ${client.displayName}`}
-                              />
-                            }
+                {loading
+                  ? Array.from({ length: 5 }, (_, index) => (
+                      <TableRow key={index} aria-hidden="true">
+                        <TableCell>
+                          <Skeleton className="h-5 w-44" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-5 w-28" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-5 w-12" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-5 w-10" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="size-7" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  : clients.map((client) => {
+                      const siteCount = sitesForClient(doc, client).length;
+                      return (
+                        <TableRow
+                          key={client.clientId}
+                          className="cursor-pointer"
+                          tabIndex={0}
+                          aria-label={`Apri dettagli di ${client.displayName}`}
+                          onClick={() => void openDetails(client)}
+                          onKeyDown={(event) => openFromKeyboard(event, client)}
+                        >
+                          <TableCell className="font-medium">
+                            {client.displayName}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {client.vatNumber ?? 'Non indicata'}
+                          </TableCell>
+                          <TableCell>
+                            <span className="inline-flex items-center gap-1.5">
+                              <Building2 className="size-4 text-muted-foreground" />
+                              {siteCount}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">FIC</Badge>
+                          </TableCell>
+                          <TableCell
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
                           >
-                            <MoreHorizontal />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => void openDetails(client)}
-                            >
-                              Visualizza dettagli
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setSiteEditor({ client })}
-                            >
-                              <Plus />
-                              Aggiungi sede
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Azioni per ${client.displayName}`}
+                                  />
+                                }
+                              >
+                                <MoreHorizontal />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => void openDetails(client)}
+                                >
+                                  Visualizza dettagli
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => setSiteEditor({ client })}
+                                >
+                                  <Plus />
+                                  Aggiungi sede
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
               </TableBody>
             </Table>
           ) : null}
-          {integrationReady && loaded && !loading && !clients.length ? (
+          {integrationReady &&
+          loaded &&
+          !loading &&
+          !clientsError &&
+          !clients.length ? (
             <div className="grid min-h-56 place-items-center rounded-lg border border-dashed p-8 text-center">
               <div>
                 <Users className="mx-auto size-8 text-muted-foreground" />
@@ -357,11 +394,18 @@ export function ClientsView({
               </div>
             </div>
           ) : null}
-          {integrationReady && loading && !clients.length ? (
-            <div className="grid min-h-56 place-items-center rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              <RefreshCw className="mx-auto mb-3 size-7 animate-spin" />
+          {integrationReady && loading ? (
+            <p role="status" className="sr-only">
               Recupero clienti da Fatture in Cloud…
-            </div>
+            </p>
+          ) : null}
+          {integrationReady && clientsError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Recupero clienti non riuscito</AlertTitle>
+              <AlertDescription>
+                Riprova con Aggiorna o ripeti la ricerca.
+              </AlertDescription>
+            </Alert>
           ) : null}
         </CardContent>
       </Card>
@@ -371,6 +415,7 @@ export function ClientsView({
         client={selectedClient}
         details={details}
         loading={detailsLoading}
+        failed={detailsError}
         doc={doc}
         onClose={closeDetails}
         onAddSite={(client) => {
@@ -407,6 +452,7 @@ export function ClientDetailsDialog({
   client,
   details,
   loading,
+  failed = false,
   doc,
   onClose,
   onAddSite,
@@ -417,6 +463,7 @@ export function ClientDetailsDialog({
   client?: FicClientSnapshot;
   details?: FicClientDetails;
   loading: boolean;
+  failed?: boolean;
   doc: CashDocument;
   onClose: () => void;
   onAddSite: (client: FicClientSnapshot) => void;
@@ -447,7 +494,24 @@ export function ClientDetailsDialog({
             Dati correnti FIC e informazioni Cash collegate.
           </DialogDescription>
         </DialogHeader>
-        {loading ? <p>Recupero dettaglio cliente…</p> : null}
+        {loading ? (
+          <div aria-busy="true">
+            <p role="status" className="sr-only">
+              Recupero dettaglio cliente…
+            </p>
+            <div
+              aria-hidden="true"
+              className="grid grid-cols-2 gap-4 rounded-lg border p-4"
+            >
+              {Array.from({ length: 6 }, (_, index) => (
+                <div key={index} className="space-y-2">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-5 w-3/4" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {!loading && details ? (
           <div className="space-y-6">
             <section>
@@ -563,6 +627,14 @@ export function ClientDetailsDialog({
               </h3>
             </section>
           </div>
+        ) : null}
+        {!loading && failed ? (
+          <Alert variant="destructive">
+            <AlertTitle>Recupero dettaglio cliente non riuscito</AlertTitle>
+            <AlertDescription>
+              Chiudi il dialogo e riprova ad aprire il cliente.
+            </AlertDescription>
+          </Alert>
         ) : null}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

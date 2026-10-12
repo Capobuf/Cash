@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/components/ui/selection-field';
 import { useId, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { prepareBankExpenseCategory } from '../../domain/bank-expense-editing';
@@ -7,11 +8,6 @@ import type { AppState } from '../state';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
-
 export function BankQuickCategory({
   categories,
   appState,
@@ -107,27 +103,25 @@ export function BankQuickCategory({
             <label htmlFor={`${id}-parent`} className="text-sm font-medium">
               Categoria principale
             </label>
-            <NativeSelect
+            <SearchableSelect
               id={`${id}-parent`}
               className="w-full"
               value={parentId}
               disabled={readOnly}
-              onChange={(event) => {
-                setParentId(event.target.value);
+              onValueChange={(value) => {
+                setParentId(value);
                 setError(undefined);
               }}
-            >
-              <NativeSelectOption value="">
-                Nessuna — crea categoria principale
-              </NativeSelectOption>
-              {bankCategoryTree(categories)
-                .filter((category) => category.systemRole !== 'vat_taxes')
-                .map((category) => (
-                  <NativeSelectOption key={category.id} value={category.id}>
-                    {category.name}
-                  </NativeSelectOption>
-                ))}
-            </NativeSelect>
+              options={[
+                { value: '', label: 'Nessuna — crea categoria principale' },
+                ...bankCategoryTree(categories)
+                  .filter((category) => category.systemRole !== 'vat_taxes')
+                  .map((category) => ({
+                    value: category.id,
+                    label: category.name,
+                  })),
+              ]}
+            />
             <p className="text-xs text-muted-foreground">
               Scegli un padre per creare una sottocategoria.
             </p>

@@ -45,7 +45,7 @@ describe('editor del profilo', () => {
         );
       }
       expect(
-        markup.match(/<select[^>]*id="activityPhase"[^>]*>/)?.[0],
+        markup.match(/<button[^>]*id="activityPhase"[^>]*>/)?.[0],
       ).toContain('disabled');
       expect(
         markup.match(/<input[^>]*id="profitabilityCoefficient"[^>]*>/)?.[0],

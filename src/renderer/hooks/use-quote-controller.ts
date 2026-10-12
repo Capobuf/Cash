@@ -71,6 +71,7 @@ export function useQuoteController({
 }) {
   const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([]);
   const [searchingClients, setSearchingClients] = useState(false);
+  const [clientSearchError, setClientSearchError] = useState(false);
   const clientRequest = useRef(0);
   const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId);
   const archivePath = appState.session?.path;
@@ -352,11 +353,13 @@ export function useQuoteController({
     }
     const request = ++clientRequest.current;
     setSearchingClients(true);
+    setClientSearchError(false);
     setClientResults([]);
     try {
       const result = await window.cash.fic.searchClients({ companyId, query });
       if (request !== clientRequest.current || !isCurrent()) return;
       if (!result.ok) {
+        setClientSearchError(true);
         appState.setError(result.error);
         return;
       }
@@ -1027,6 +1030,11 @@ export function useQuoteController({
     quote,
     clientResults,
     searchingClients,
+    clientSearchError,
+    cancelClientSearch: () => {
+      clientRequest.current += 1;
+      setSearchingClients(false);
+    },
     newQuote,
     updateQuote,
     updateClient,

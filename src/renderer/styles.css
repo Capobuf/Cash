@@ -255,6 +255,22 @@
 }
 
 @layer components {
+  .section-enter {
+    animation: section-enter 200ms ease-out;
+  }
+
+  [data-slot='table-row'][tabindex],
+  [data-slot='sidebar-menu-button'],
+  [data-slot='sidebar-menu-sub-button'],
+  [data-slot='input-group'] {
+    transition-duration: 150ms;
+    transition-property: color, background-color, border-color;
+  }
+
+  [data-slot='collapsible-content'][data-open] {
+    animation: panel-enter 150ms ease-out;
+  }
+
   .dashboard-hero {
     position: relative;
     isolation: isolate;
@@ -306,6 +322,26 @@
   }
 }
 
+@keyframes section-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes dashboard-enter {
   from {
     opacity: 0;
@@ -328,14 +364,35 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dashboard-enter,
-  .dashboard-hero::before {
+  .dashboard-hero::before,
+  .section-enter,
+  [data-slot='collapsible-content'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='dialog-overlay'],
+  [data-slot='alert-dialog-overlay'],
+  [data-slot='dropdown-menu-content'],
+  [data-slot='dropdown-menu-sub-content'],
+  [data-slot='select-content'],
+  [data-slot='combobox-content'] {
     animation: none;
+    transition: none;
   }
 
   [data-slot='button'],
   [data-slot='button'] svg,
+  [data-slot='table-row'],
+  [data-slot='sidebar-menu-button'],
+  [data-slot='sidebar-menu-sub-button'],
+  [data-slot='tabs-trigger'],
+  [data-slot='input-group'],
+  [data-slot='select-trigger'],
   .dashboard-metrics > [data-slot='card'] {
     transition: none;
+  }
+
+  [data-slot='button'],
+  .dashboard-metrics > [data-slot='card'] {
     transform: none;
   }
 }

@@ -333,6 +333,9 @@ function MonthlyFlow({ overview: o }: { overview: FinancialOverview }) {
             />
             {o.analysis ? (
               <Bar
+                isAnimationActive="auto"
+                animationDuration={220}
+                animationBegin={0}
                 dataKey="collected"
                 fill="var(--color-collected)"
                 radius={3}
@@ -340,6 +343,9 @@ function MonthlyFlow({ overview: o }: { overview: FinancialOverview }) {
               />
             ) : null}
             <Bar
+              isAnimationActive="auto"
+              animationDuration={220}
+              animationBegin={0}
               dataKey="bank"
               fill="var(--color-bank)"
               radius={3}
@@ -347,6 +353,9 @@ function MonthlyFlow({ overview: o }: { overview: FinancialOverview }) {
             />
             {o.analysis ? (
               <Line
+                isAnimationActive="auto"
+                animationDuration={220}
+                animationBegin={0}
                 dataKey="margin"
                 stroke="var(--color-margin)"
                 strokeWidth={2}
