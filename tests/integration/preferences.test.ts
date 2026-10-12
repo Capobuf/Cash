@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +7,7 @@ import {
   readPreferences,
   rememberArchive,
   setFicClientId,
+  updatePreferences,
 } from '../../src/native/preferences';
 
 const native = vi.hoisted(() => ({ directory: '' }));
@@ -16,6 +18,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...fs,
     readFile: vi.fn(fs.readFile),
     writeFile: vi.fn(fs.writeFile),
+    rename: vi.fn(fs.rename),
   };
 });
 
@@ -148,5 +151,68 @@ describe('preferenze locali', () => {
     expect(await readFile(file, 'utf8')).toBe(
       '{"lastArchivePath":"Cash.json"}',
     );
+  });
+  it('serializes concurrent archive/FIC/backup/metadata updates and preserves unknown fields', async () => {
+    await writeFile(file, JSON.stringify({ custom: { value: 42 } }));
+    const backup = {
+      installationId: randomUUID(),
+      destination: native.directory,
+      enabled: true,
+      intervalHours: 24 as const,
+      retention: 10 as const,
+      futureOption: 'preserved',
+    };
+    const completedAt = new Date().toISOString();
+    const documentId = randomUUID();
+    const results = await Promise.all([
+      rememberArchive('Cash.sqlite'),
+      setFicClientId('client'),
+      updatePreferences({ backup }),
+      updatePreferences({
+        backupLast: {
+          completedAt,
+          path: 'copy.sqlite',
+          documentId,
+          revision: 42,
+        },
+      }),
+    ]);
+    expect(results.every((result) => result.ok)).toBe(true);
+    await updatePreferences({
+      backup: { ...backup, enabled: false, futureOption: 'preserved' },
+    });
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+      lastArchivePath: 'Cash.sqlite',
+      ficClientId: 'client',
+      custom: { value: 42 },
+      backup: { enabled: false, futureOption: 'preserved' },
+      backupLast: { documentId, revision: 42 },
+    });
+  });
+  it('preserves the previous preference file when atomic publication fails', async () => {
+    await writeFile(file, '{"theme":"dark"}');
+    vi.mocked(rename).mockRejectedValueOnce(
+      Object.assign(new Error('Denied'), { code: 'EACCES' }),
+    );
+    expect(await rememberArchive('Cash.sqlite')).toMatchObject({
+      ok: false,
+      error: { code: 'IO' },
+    });
+    expect(await readFile(file, 'utf8')).toBe('{"theme":"dark"}');
+  });
+  it('rejects invalid backup settings without touching existing preferences', async () => {
+    await writeFile(file, '{"theme":"dark"}');
+    expect(
+      await updatePreferences({
+        backup: {
+          installationId: randomUUID(),
+          destination: native.directory,
+          enabled: true,
+          intervalHours: 1,
+          retention: 3,
+        } as any,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'VALIDATION' } });
+    expect(await readFile(file, 'utf8')).toBe('{"theme":"dark"}');
   });
 });

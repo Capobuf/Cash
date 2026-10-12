@@ -9,6 +9,8 @@ import { createRoot } from 'react-dom/client';
 import { App } from '../../src/renderer/App';
 import { state, AppState } from '../../src/renderer/state';
 import { AppShell } from '../../src/renderer/components/Layout';
+import { BackupSettingsPanel } from '../../src/renderer/components/BackupSettingsPanel';
+import type { BackupConfig, BackupState } from '../../src/shared/backup';
 import { BankCategoryCombobox } from '../../src/renderer/components/BankCategoryCombobox';
 import { ProfileEditor } from '../../src/renderer/components/ProfileEditor';
 import { ClientsView } from '../../src/renderer/views/ClientsView';
@@ -130,6 +132,20 @@ export async function runUiChecks() {
   };
   Object.assign(window, {
     cash: {
+      backup: {
+        onState: () => () => {},
+        getState: async () =>
+          ok({
+            config: null,
+            running: false,
+            latest: null,
+            nextAt: null,
+            entries: [],
+            error: null,
+            warning: null,
+            destinationMissing: false,
+          }),
+      },
       archive: {
         openLast: () => opening.promise,
         create: async () => {
@@ -660,6 +676,7 @@ export async function runUiChecks() {
         view={view}
         onView={() => {}}
         onOpenUpdates={() => {}}
+        onOpenBackup={() => {}}
         years={[2026, 2025]}
         selectedYear={2026}
         onYearChange={() => {}}
@@ -825,6 +842,91 @@ export async function runUiChecks() {
     await render(null);
     results.push('financial-loading');
 
+    const config: BackupConfig = {
+      installationId: '78a2634a-ceab-43bb-911a-c36f7ed56378',
+      destination: 'C:\\Cash\\Backups',
+      enabled: false,
+      intervalHours: 24,
+      retention: 10,
+    };
+    const backup: BackupState = {
+      config,
+      running: false,
+      latest: null,
+      entries: [],
+      nextAt: null,
+      error: null,
+      warning: null,
+      destinationMissing: false,
+    };
+    appState.backup = backup;
+    appState.status = 'Salvato';
+    let manualBackups = 0;
+    window.cash.backup.run = async () => {
+      manualBackups++;
+      return ok(backup);
+    };
+    await render(<BackupSettingsPanel appState={appState} />);
+    check(
+      find('#backup-frequency').hasAttribute('disabled'),
+      'Frequency must be disabled with automatic backup off',
+    );
+    check(
+      !button('Esegui backup ora').disabled,
+      'Manual backup unavailable with automatic disabled',
+    );
+    check(
+      document.querySelector('[data-slot=empty]'),
+      'Missing backup empty state',
+    );
+    await click(button('Esegui backup ora'));
+    check(manualBackups === 1, 'Manual backup was not invoked');
+    appState.backup = { ...backup, running: true, phase: 'snapshot' };
+    await render(<BackupSettingsPanel appState={appState} />);
+    check(
+      button('Esegui backup ora').disabled &&
+        button('Ripristina da backup').disabled &&
+        button('Seleziona cartella').disabled,
+      'Incompatible backup actions remained enabled',
+    );
+    check(
+      document.body.innerText.includes('Creazione snapshot') &&
+        !document.querySelector('[data-slot=progress]'),
+      'Snapshot progress must be indeterminate',
+    );
+    appState.backup = {
+      ...backup,
+      running: true,
+      phase: 'copying',
+      totalBytes: 200,
+      bytesCopied: 50,
+    };
+    await render(<BackupSettingsPanel appState={appState} />);
+    check(
+      document
+        .querySelector('[role=progressbar]')
+        ?.getAttribute('aria-valuenow') === '25',
+      'Backup progress does not reflect copied bytes',
+    );
+    appState.backup = {
+      ...backup,
+      destinationMissing: true,
+      error: {
+        code: 'FILE_NOT_FOUND',
+        message: 'Cartella backup rimossa',
+        action: 'Ricrea o cambia cartella.',
+      },
+    };
+    await render(<BackupSettingsPanel appState={appState} />);
+    check(
+      document.body.innerText.includes('Cartella backup rimossa') &&
+        button('Ricrea cartella') &&
+        button('Cambia destinazione'),
+      'Missing corrective backup actions',
+    );
+    await render(null);
+    results.push('backup-controls');
+
     appState.bankExpenseImporting = true;
     appState.bankExpenseImportSummary = {
       imported: 1,
@@ -868,6 +970,7 @@ export async function renderMotionPreview(reduced: boolean) {
           view="clients"
           onView={() => {}}
           onOpenUpdates={() => {}}
+          onOpenBackup={() => {}}
           years={[2026, 2025]}
           selectedYear={2026}
           onYearChange={() => {}}

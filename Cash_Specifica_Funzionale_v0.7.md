@@ -4,7 +4,7 @@
 
 *Specifica canonica consolidata - v0.7*
 
-*30 settembre 2026; persistenza Windows aggiornata il 10 ottobre 2026*
+*30 settembre 2026; persistenza e backup Windows aggiornati il 12 ottobre 2026*
 
 | **Voce** | **Valore** |
 | --- | --- |
@@ -977,6 +977,14 @@ sincronizzata. Prima di aprirla su un’altra postazione la copia deve trovarsi 
 non sincronizzato. Le due copie sono archivi indipendenti: Cash non le sincronizza o fonde.
 Le credenziali delle integrazioni restano locali e devono essere configurate sulla postazione.
 
+Una nuova installazione offre **Ripristina da backup** nell’onboarding: la copia `.sqlite`
+viene verificata e ripristinata in un nuovo file locale non sincronizzato, senza sovrascrivere
+file preesistenti. Identità, revisione e UUID vengono conservati; solo le migrazioni SQLite
+già supportate possono aggiornare il formato. Credenziali e preferenze della vecchia postazione
+non vengono trasferite. Una cartella Drive per desktop è soltanto una destinazione filesystem
+per le copie: la scrittura locale non certifica il caricamento cloud e la rotazione può eliminare
+anche le copie sincronizzate remote.
+
 ### 21.6 Assenza di ciclo di vita commerciale
 
 Cash non gestisce stati del preventivo. Non esistono stati come Bozza, Inviato, Accettato, Rifiutato o Scaduto. Un preventivo salvato resta modificabile.
@@ -1006,7 +1014,7 @@ Il modello seguente descrive concetti funzionali e relazioni, senza imporre tabe
 | Trasferta | Sottovoce di una sola Voce preventivo con Partenza, Destinazione, A/R, Veicolo, Occorrenze previste, Distanza e Tempo per occorrenza e relativi risultati complessivi; i valori di percorso sono precompilabili tramite OpenRouteService o manuali. |
 | Configurazione OpenRouteService | Basic API key necessaria alle operazioni live di ricerca, geocodifica e routing; nelle Impostazioni è disponibile l'azione Verifica connessione. |
 | Configurazione Fatture in Cloud | Stato attivo/disattivo e riferimenti non segreti di azienda, prodotto e ultima verifica; il token resta fuori dal file dati. |
-| File dati | Schema 11, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, veicoli, Sedi, catalogo, preventivi, movimenti bancari, categorie e regole; snapshot finanziario e correzioni annuali `fiscalPaymentOverrides` opzionali. |
+| File dati | Schema 12, revisione, data/ora ultima modifica e raccolte di impostazioni, profili, costi, veicoli, Sedi, catalogo, preventivi, movimenti bancari, categorie e regole; snapshot finanziario e correzioni annuali `fiscalPaymentOverrides` opzionali. |
 | Snapshot finanziario Fatture in Cloud | Sorgente, azienda, acquiredAt, documenti emessi e ricevuti normalizzati con ID FIC e pagamenti; un solo snapshot sostituito integralmente, non entità modificabili locali. |
 | Riferimento esportazione | UUID del tentativo, azienda, data/ora, righe e impronta del payload, eventuale identificativo documento Fatture in Cloud ed esito da verificare; non è uno stato commerciale. |
 
@@ -1186,17 +1194,17 @@ file scaricati, ma non autenticano il produttore. Questa modalità è ammessa so
 in distribuzioni controllate. Prima della distribuzione non controllata occorre
 firmare gli eseguibili e riattivare la verifica della firma degli aggiornamenti.
 
-Lo schema applicativo è 11; lo schema SQLite usa un contatore distinto, `PRAGMA user_version`,
-attualmente 1. Gli schemi futuri sono aperti al più come intestazione in sola lettura.
+Lo schema applicativo è 12; lo schema SQLite usa un contatore distinto, `PRAGMA user_version`,
+attualmente 2. Gli schemi futuri sono aperti al più come intestazione in sola lettura.
 Le migrazioni SQL effettivamente supportate sono automatiche all’apertura, progressive e
 transazionali: backup consistente prima delle modifiche, validazione completa e integrità,
 aggiornamento di `user_version` solo dopo successo. Un errore esegue rollback, conserva il
 backup e blocca la scrittura con indicazione del recupero. Non si inizializzano database
 sconosciuti o versioni zero; non esistono versioni SQL precedenti alla prima rilasciata.
 
-Gli archivi JSON schema 1–11 sono esclusivamente sorgenti di importazione. Le trasformazioni
+Gli archivi JSON schema 1–12 sono esclusivamente sorgenti di importazione. Le trasformazioni
 storiche, compresi i blocker per Clienti locali, `oneWayKm` e Trasferte ambigue, sono riutilizzate
-per normalizzare allo schema applicativo 11. Non si inventano conferme, categorie manuali o
+per normalizzare allo schema applicativo 12. Non si inventano conferme, categorie manuali o
 importi fiscali. La rimozione dei campi funzionali già superati segue le trasformazioni esistenti.
 
 ## 25. Persistenza SQLite locale
@@ -1277,6 +1285,49 @@ e gli stessi UUID delle entità. Il ripristino è esplicito: conserva copie data
 corrente sia del backup e sostituisce i dati in una transazione con nuova identità e revisione 1.
 Un errore conserva archivio e backup; nessun recupero è automatico.
 
+Il backup locale pianificato è distinto dal rolling e rappresenta la revisione già salvata,
+senza cambiare identità, revisione, timestamp o UUID. La prima apertura di un archivio applica
+preferenze locali: automatico attivo, intervallo 24 ore, 10 copie e radice
+`%LOCALAPPDATA%\Cash\Backups`, con primo backup appena l’archivio è salvato. Sono disponibili
+6/12/24 ore e 7 giorni, con limiti di 5/10/20/30 copie. La verifica è sempre obbligatoria.
+La pianificazione opera solo con Cash aperto, all’avvio, alla ripresa e con un controllo leggero
+ogni 15 minuti. Scadenze UTC partono dal completamento; senza nuove revisioni e con una copia
+valida presente non si creano duplicati. Un backup manuale crea sempre una copia, anche con
+l’automatico disattivato. Dopo un errore di creazione si attende almeno un’ora prima del nuovo
+tentativo automatico. Non vengono avviati backup concorrenti né inclusi dati dirty.
+
+L’acquisizione usa `node:sqlite.backup()` nella stessa coda dei salvataggi; il lock applicativo
+termina dopo lo snapshot locale. Cash verifica application_id, schemi supportati, integrity_check,
+foreign_key_check, lettura/validazione completa, identità e revisione. La copia chiusa autonoma
+viene trasferita asincronamente in un temporaneo di destinazione; dimensione e SHA-256 devono
+corrispondere. Dopo ulteriore verifica SQLite la pubblicazione esclusiva mediante hard link
+impedisce sovrascritture. La cartella deve superare prove effettive di creazione, lettura,
+rinomina, eliminazione e link esclusivo; filesystem incompatibili falliscono esplicitamente.
+Le percentuali UI rappresentano solo byte realmente trasferiti, le altre fasi sono indeterminate.
+
+Le copie risiedono sotto `Cash-Backups/<UUID installazione>/<documentId>` e hanno nomi Cash con
+timestamp UTC, revisione e UUID casuale. La cronologia scansiona e verifica soltanto file completi
+riconosciuti. Dopo il successo del nuovo backup la rotazione elimina le copie valide più vecchie
+della stessa installazione/archivio, escludendo database attivi, rolling, recuperi, file sconosciuti
+e corrotti. Un errore di rotazione è un avviso distinto: la nuova copia resta valida. Anche un
+errore di registrazione nelle preferenze conserva la copia e permette riconciliazione da scansione.
+
+Il cambio destinazione non sposta né elimina copie precedenti e produce un backup iniziale nella
+nuova cartella verificata. Una radice configurata rimossa non viene ricreata implicitamente:
+la UI offre Ricrea cartella/Cambia destinazione. Cancellazioni esterne aggiornano la cronologia;
+temporanei propri residui dopo un’interruzione non sono copie valide e vengono puliti quando
+possibile, segnalando errori. Arresti forzati non garantiscono il completamento. Alla chiusura
+ordinaria con backup attivo si può attendere, interrompere cooperativamente o restare in Cash;
+segue sempre la protezione dirty esistente. L’installazione degli aggiornamenti attende la fine
+del backup/ripristino, senza alterare verifica o download ordinari.
+
+**Ripristina da backup** è distinto dal ripristino rolling: selezione nativa, verifica di una copia
+temporanea senza modificare l’originale, anteprima di identità/revisione/data/dimensione, conferma
+e scelta di un nuovo archivio locale non sincronizzato. Solo le migrazioni SQLite esistenti vengono
+applicate alla copia. Il risultato è verificato prima della pubblicazione senza sovrascritture;
+l’ultimo archivio cambia dopo il successo. Uno schema futuro richiede un aggiornamento e un file
+corrotto lascia invariata la sessione. La sostituzione di una sessione dirty usa la conferma esistente.
+
 ### 25.4 Conflitti e integrità
 
 Cash controlla documentId e revisione a focus, almeno ogni 30 secondi e dentro ogni transazione
@@ -1297,6 +1348,12 @@ con gli stessi identificatori e `@zowe/secrets-for-zowe-sdk`. Non entrano in SQL
 esportazioni o log. `preferences.json` rimane locale e compatibile, incluso lastArchivePath,
 Client ID FIC non segreto e preferenze locali sconosciute. Stato temporaneo UI e risultati live
 non persistiti restano fuori dall’archivio.
+
+Configurazione backup, UUID dell’installazione e metadati dell’ultima copia appartengono soltanto
+alle preferenze locali, non a CashDocument o SQLite. Gli aggiornamenti sono serializzati,
+conservano proprietà sconosciute e usano un temporaneo prima della pubblicazione del JSON.
+Errori di lettura/scrittura vengono propagati senza troncare il file precedente. La cronologia
+effettiva si ricostruisce dai file, senza un database separato.
 
 ## 26. Impostazioni
 
@@ -1342,6 +1399,7 @@ La selezione della fase evidenzia l'aliquota effettiva. In fase agevolata compar
 | Basic API key OpenRouteService | Inseribile nel contesto delle integrazioni o delle API; necessaria per ricerca, geocodifica, geocodifica inversa e routing. Lo stesso contesto offre l'azione **Verifica connessione**. |
 | Ultimo file dati | Solo scorciatoia di apertura; se manca viene chiesta una selezione. |
 | Preferenze finestra/tema | Non influenzano dati o calcoli. |
+| Backup locale | Scheda Backup separata da Archivio: stato, ultimo backup e revisione protetta, scadenza o attesa di nuove modifiche, destinazione, esecuzione manuale, apertura cartella, frequenza e rotazione, cronologia con verifica/ripristino/mostra nel filesystem. Errori persistenti offrono azioni correttive. |
 
 ### 26.2 Configurazione Fatture in Cloud
 

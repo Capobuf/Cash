@@ -93,6 +93,20 @@ export async function runWorkspaceChecks() {
   });
   Object.assign(window, {
     cash: {
+      backup: {
+        onState: () => () => {},
+        getState: async () =>
+          ok({
+            config: null,
+            running: false,
+            latest: null,
+            nextAt: null,
+            entries: [],
+            error: null,
+            warning: null,
+            destinationMissing: false,
+          }),
+      },
       archive: {
         save: async (
           _path: string,

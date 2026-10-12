@@ -499,6 +499,20 @@ describe('coordinatore autosalvataggio', () => {
       vi.stubGlobal('window', {
         cash: {
           archive: { save, openLast: async () => ok(original) },
+          backup: {
+            onState: () => () => {},
+            getState: async () =>
+              ok({
+                config: null,
+                running: false,
+                latest: null,
+                nextAt: null,
+                entries: [],
+                error: null,
+                warning: null,
+                destinationMissing: false,
+              }),
+          },
           onExternalChange: (callback: typeof externalChange) => {
             externalChange = callback;
           },

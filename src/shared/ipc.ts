@@ -11,6 +11,7 @@ import type {
   ArchiveInspection,
 } from './archive';
 import type { BankExpenseImport } from '../domain/model';
+import type { BackupApi } from './backup';
 import type {
   FicAccessVerification,
   FicActivationPreview,
@@ -31,6 +32,17 @@ import type {
 } from '../domain/model';
 
 export const IPC = {
+  backupState: 'cash:backup:state',
+  backupConfigure: 'cash:backup:configure',
+  backupSelectDirectory: 'cash:backup:select-directory',
+  backupRecreateDirectory: 'cash:backup:recreate-directory',
+  backupRun: 'cash:backup:run',
+  backupVerify: 'cash:backup:verify',
+  backupVerifyFile: 'cash:backup:verify-file',
+  backupRestore: 'cash:backup:restore-file',
+  backupOpenFolder: 'cash:backup:open-folder',
+  backupReveal: 'cash:backup:reveal',
+  backupChanged: 'cash:backup:changed',
   bankExpenseImport: 'cash:bank-expenses:import-file',
   archiveCreate: 'cash:archive:create',
   archiveOpen: 'cash:archive:open',
@@ -97,6 +109,7 @@ export interface CashUpdateStatus {
 }
 
 export interface CashNativeApi {
+  backup: BackupApi;
   bankExpenses: { importFile(): Promise<Result<BankExpenseImport>> };
   archive: {
     create(document: CashDocument): Promise<Result<ArchiveSession>>;

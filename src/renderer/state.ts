@@ -13,6 +13,7 @@ import {
   validationErrorFromIssues,
 } from '../domain/schema';
 import type { ArchiveSession } from '../shared/archive';
+import type { BackupState } from '../shared/backup';
 import { deduplicateBankExpenses } from '../domain/bank-expenses';
 import { quoteNumberingError } from '../domain/quotes';
 
@@ -29,6 +30,62 @@ export type ArchiveDecision = 'save' | 'recovery' | 'discard' | 'cancel';
 type Listener = () => void;
 
 export class AppState {
+  backup: BackupState | null = null;
+  backupLoading = false;
+  backupError: CashError | null = null;
+  private notifiedBackupProblem: string | null = null;
+  private backupVersion = 0;
+  private unsubscribeBackup?: () => void;
+  get archiveOperationPending(): boolean {
+    return this.restoringBackup;
+  }
+  acceptBackupState(next: BackupState): void {
+    this.backupVersion++;
+    this.backup = next;
+    this.backupLoading = false;
+    this.backupError = null;
+    const problem = next.error ?? next.warning;
+    const key = problem
+      ? JSON.stringify([problem.code, problem.message, problem.details])
+      : null;
+    if (
+      problem &&
+      problem.code !== 'CANCELLED' &&
+      key !== this.notifiedBackupProblem
+    )
+      toast.add({
+        type: 'error',
+        title: 'Backup da verificare',
+        description: `${problem.message} Consulta Impostazioni → Backup.`,
+      });
+    if (key !== null || !next.running) this.notifiedBackupProblem = key;
+    this.emit();
+  }
+  async refreshBackups(): Promise<void> {
+    const version = this.backupVersion;
+    this.backupLoading = !this.backup;
+    this.emit();
+    try {
+      const result = await window.cash.backup.getState();
+      if (result.ok && this.backupVersion === version)
+        this.acceptBackupState(result.value);
+      else if (!result.ok && this.backupVersion === version) {
+        this.backupError = result.error;
+        this.emit();
+      }
+    } catch (cause) {
+      this.backupError = {
+        code: 'IO',
+        source: 'backup',
+        message: 'Impossibile leggere lo stato del backup.',
+        action: 'Aggiorna la cronologia per riprovare.',
+        details: [String(cause)],
+      };
+    } finally {
+      this.backupLoading = false;
+      this.emit();
+    }
+  }
   session: ArchiveSession | null = null;
   status: SaveStatus = 'Nessun archivio';
   error: CashError | null = null;
@@ -63,6 +120,10 @@ export class AppState {
   }
 
   async initialize(): Promise<void> {
+    this.unsubscribeBackup?.();
+    this.unsubscribeBackup = window.cash.backup.onState((next) =>
+      this.acceptBackupState(next),
+    );
     window.cash.onExternalChange((error) => {
       this.error = error;
       this.status = 'Conflitto esterno';
@@ -77,6 +138,7 @@ export class AppState {
       this.error = result.error;
       this.emit();
     }
+    await this.refreshBackups();
   }
 
   async create(): Promise<void> {
@@ -506,6 +568,33 @@ export class AppState {
       });
     } finally {
       this.restoringBackup = false;
+      if (this.status === 'Modifiche non salvate') void this.save();
+    }
+  }
+
+  async restoreFromBackup(id?: string): Promise<void> {
+    if (this.restoringBackup || this.backup?.running) return;
+    await this.savePromise;
+    if (!(await this.mayReplaceSession())) return;
+    this.restoringBackup = true;
+    this.emit();
+    try {
+      const result = await window.cash.backup.restore(id);
+      if (result.ok) {
+        this.accept(result.value);
+        await this.refreshBackups();
+      } else if (result.error.code !== 'CANCELLED') this.setError(result.error);
+    } catch (cause) {
+      this.setError({
+        code: 'IO',
+        source: 'backup',
+        message:
+          'Ripristino non riuscito. Riapri l’archivio per verificarne lo stato.',
+        details: [String(cause)],
+      });
+    } finally {
+      this.restoringBackup = false;
+      this.emit();
       if (this.status === 'Modifiche non salvate') void this.save();
     }
   }

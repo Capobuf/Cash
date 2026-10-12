@@ -35,6 +35,20 @@ describe('apertura archivio con schema più recente', () => {
       const save = vi.fn();
       vi.stubGlobal('window', {
         cash: {
+          backup: {
+            onState: () => () => {},
+            getState: async () =>
+              ok({
+                config: null,
+                running: false,
+                latest: null,
+                nextAt: null,
+                entries: [],
+                error: null,
+                warning: null,
+                destinationMissing: false,
+              }),
+          },
           archive: {
             open,
             openLast: vi.fn().mockResolvedValue(ok(future)),

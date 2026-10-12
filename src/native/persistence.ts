@@ -393,6 +393,146 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
   saveQueue = result;
   return result;
 }
+
+export async function waitForArchiveSaves(): Promise<void> {
+  await saveQueue;
+}
+
+// Only snapshot acquisition shares the save queue; destination I/O runs later.
+export function snapshotArchive(
+  path: string,
+  destination: string,
+  token: ConcurrencyToken,
+): Promise<Result<ArchiveInspection>> {
+  return enqueue(async () => {
+    const connection = connections.get(resolve(path));
+    if (!connection || connection.closing) return conflict();
+    connection.busy = true;
+    try {
+      if (!matches(connection.db, token)) return conflict();
+      await stat(path);
+      await consistentBackup(path, destination, token);
+      return await verifyArchiveCopy(destination, token);
+    } catch (cause) {
+      return failure(cause, 'Snapshot della revisione salvata non riuscito.');
+    } finally {
+      connection.busy = false;
+      if (connection.closing) connection.db.close();
+    }
+  });
+}
+
+export async function verifyArchiveCopy(
+  path: string,
+  expected?: ConcurrencyToken,
+): Promise<Result<ArchiveInspection>> {
+  let db: DatabaseSync | undefined;
+  try {
+    const info = await stat(path);
+    db = readonly(path);
+    recognize(db);
+    const header = readHeader(db);
+    const storageVersion = version(db);
+    if (
+      storageVersion > STORAGE_VERSION ||
+      header.schemaVersion > CURRENT_SCHEMA_VERSION
+    )
+      return err({
+        code: 'SCHEMA_NEWER',
+        source: 'archive',
+        message:
+          'Il backup richiede una versione più recente di Cash. Aggiorna Cash.',
+      });
+    checkIntegrity(db, true);
+    if (
+      storageVersion !== STORAGE_VERSION ||
+      header.schemaVersion !== CURRENT_SCHEMA_VERSION
+    )
+      throw new Error('Il backup richiede una migrazione SQLite supportata.');
+    cashDocumentSchema.parse(readDocument(db));
+    if (expected && !matches(db, expected))
+      throw new Error(
+        'Identità o revisione del backup diversa da quella acquisita.',
+      );
+    return ok({ header, storageVersion, size: info.size });
+  } catch (cause) {
+    return failure(cause, 'Backup Cash non valido o non leggibile.');
+  } finally {
+    db?.close();
+  }
+}
+
+// The source is already a private, verified staging copy, never the user's backup.
+export async function prepareRestoreCopy(
+  path: string,
+): Promise<Result<ArchiveInspection>> {
+  const inspection = await inspectArchive(path);
+  if (!inspection.ok) return inspection;
+  if (
+    inspection.value.storageVersion > STORAGE_VERSION ||
+    inspection.value.header.schemaVersion > CURRENT_SCHEMA_VERSION
+  )
+    return err({
+      code: 'SCHEMA_NEWER',
+      source: 'archive',
+      message:
+        'Il backup richiede una versione più recente di Cash. Aggiorna Cash.',
+    });
+  try {
+    if (inspection.value.storageVersion < STORAGE_VERSION) {
+      const migrationBackup = await runSchemaMigrations(path);
+      if (migrationBackup) await rm(migrationBackup);
+    }
+    const db = new DatabaseSync(path);
+    try {
+      checkIntegrity(db, true);
+      readDocument(db);
+      if (
+        db.prepare('PRAGMA journal_mode=DELETE').get()!.journal_mode !==
+        'delete'
+      )
+        throw new Error('Copia ripristinata non autonoma.');
+    } finally {
+      db.close();
+    }
+    return await verifyArchiveCopy(path);
+  } catch (cause) {
+    return failure(cause, 'Verifica o migrazione del backup non riuscita.');
+  }
+}
+
+export async function restoreArchiveCopy(
+  source: string,
+  destination: string,
+): Promise<Result<ArchiveSession>> {
+  const valid = localPath(destination);
+  if (!valid.ok) return valid;
+  const verified = await verifyArchiveCopy(source);
+  if (!verified.ok) return verified;
+  const temp = temporaryPath(destination);
+  let result: Result<ArchiveSession>;
+  try {
+    await consistentBackup(source, temp, verified.value.header);
+    await link(temp, destination);
+    result = await openArchive(destination);
+  } catch (cause) {
+    result = failure(
+      cause,
+      'Ripristino non riuscito. Nessun archivio esistente è stato sovrascritto.',
+    );
+  } finally {
+    try {
+      await rm(temp, { force: true });
+    } catch (cause) {
+      closeArchive(destination);
+      result = failure(
+        cause,
+        'Pulizia del ripristino non riuscita. Il nuovo archivio è conservato; riaprilo esplicitamente.',
+      );
+    }
+  }
+  return result;
+}
 export function saveArchive(
   path: string,
   document: CashDocument,

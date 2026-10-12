@@ -217,7 +217,12 @@ export function UpdatesPanel({
         ) : null}
         {phase === 'ready' ? (
           <Button
-            disabled={pending || unsaved}
+            disabled={
+              pending ||
+              unsaved ||
+              appState.backup?.running ||
+              appState.archiveOperationPending
+            }
             onClick={() => void perform(() => window.cash.updates.install())}
           >
             <RotateCw />

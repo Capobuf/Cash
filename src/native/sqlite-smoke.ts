@@ -4,6 +4,8 @@ import { writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { createEmptyDocument, meta, type Result } from '../domain/model';
 import { addQuote } from '../domain/quotes';
+import { BackupManager } from './backups';
+import type { ArchiveSession } from '../shared/archive';
 import {
   createArchive,
   openArchive,
@@ -14,6 +16,8 @@ import {
   saveRecoveryCopy,
   importJsonArchive,
   backupPathFor,
+  restoreArchiveCopy,
+  verifyArchiveCopy,
 } from './persistence';
 
 function unwrap<T>(result: Result<T>): T {
@@ -55,6 +59,48 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
       [1, 3],
     );
     assert.equal(numbered.document!.nextQuoteNumber, 4);
+    let backupSession: ArchiveSession | null = numbered;
+    const manager = new BackupManager({
+      current: () => backupSession,
+      dirty: () => false,
+      blocked: () => false,
+      defaultDestination: join(directory, 'backups'),
+      stagingRoot: join(directory, 'staging'),
+      changed: () => {},
+    });
+    await manager.check();
+    const automatic = manager.snapshot.latest;
+    assert.ok(automatic, 'First automatic backup must be available');
+    assert.deepEqual(
+      unwrap(await verifyArchiveCopy(automatic.path)).header.documentId,
+      saved.token.documentId,
+    );
+    await manager.check();
+    assert.equal(manager.snapshot.entries.length, 1);
+    unwrap(
+      await manager.configure({
+        enabled: false,
+        intervalHours: 24,
+        retention: 5,
+      }),
+    );
+    for (let index = 0; index < 5; index++) unwrap(await manager.run());
+    assert.equal(manager.snapshot.entries.length, 5);
+    const source = manager.snapshot.latest!;
+    backupSession = null;
+    const staged = unwrap(await manager.stageRestore(source.path));
+    const cleanRestore = unwrap(
+      await restoreArchiveCopy(
+        staged.path,
+        join(directory, 'clean-restored.sqlite'),
+      ),
+    );
+    assert.deepEqual(cleanRestore.document, saved.document);
+    assert.deepEqual(cleanRestore.token, saved.token);
+    assert.equal(
+      (await restoreArchiveCopy(staged.path, cleanRestore.path)).ok,
+      false,
+    );
     const db = new DatabaseSync(path, { readOnly: true });
     try {
       assert.equal(
@@ -113,6 +159,10 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
             'decimal precision',
             'integrity',
             'quote numbering and non-reuse',
+            'automatic current revision backup',
+            'manual backup and safe rotation',
+            'clean installation restore preserving identity and revision',
+            'restore refuses overwrite',
           ],
         },
         null,

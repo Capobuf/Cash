@@ -15,6 +15,7 @@ import {
 } from '@/components/integrations/FicWizard';
 import { ResourcesView } from './ResourcesView';
 import { UpdatesPanel } from '@/components/UpdatesPanel';
+import { BackupSettingsPanel } from '@/components/BackupSettingsPanel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -111,6 +112,7 @@ export function SettingsView({
           </TabsTrigger>
           <TabsTrigger value="integrations">Integrazioni</TabsTrigger>
           <TabsTrigger value="archive">Archivio</TabsTrigger>
+          <TabsTrigger value="backup">Backup</TabsTrigger>
           <TabsTrigger value="application">Applicazione</TabsTrigger>
         </TabsList>
 
@@ -306,6 +308,9 @@ export function SettingsView({
         <TabsContent value="application">
           <UpdatesPanel appState={appState} />
         </TabsContent>
+        <TabsContent value="backup">
+          <BackupSettingsPanel appState={appState} />
+        </TabsContent>
 
         <TabsContent value="archive">
           <div className="grid grid-cols-2 gap-4">
@@ -334,12 +339,14 @@ export function SettingsView({
                   <Button
                     variant="outline"
                     onClick={() => void appState.open()}
+                    disabled={appState.archiveOperationPending}
                   >
                     Apri altro archivio
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => void appState.recovery()}
+                    disabled={appState.archiveOperationPending}
                   >
                     Copia di recupero
                   </Button>

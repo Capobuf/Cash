@@ -28,8 +28,30 @@ const native = vi.hoisted(() => ({
   showOpenDialog: vi.fn(),
   showSaveDialog: vi.fn(),
   requireFicToken: vi.fn(),
+  backupRunning: false,
+  backupFinish: vi.fn(),
+  backupCheck: vi.fn(),
+  closeWindow: vi.fn(),
+  backupStage: vi.fn(),
+  backupRelease: vi.fn(),
+  restoreArchiveCopy: vi.fn(),
+}));
+vi.mock('../../src/native/backups', () => ({
+  BackupManager: class {
+    get running() {
+      return native.backupRunning;
+    }
+    get busy() {
+      return native.backupRunning;
+    }
+    check = native.backupCheck;
+    finish = native.backupFinish;
+    stageRestore = native.backupStage;
+    releaseRestore = native.backupRelease;
+  },
 }));
 vi.mock('electron', () => ({
+  powerMonitor: { on: vi.fn() },
   app: {
     requestSingleInstanceLock: () => true,
     setAppUserModelId: vi.fn(),
@@ -63,6 +85,10 @@ vi.mock('electron', () => ({
     on(name: string, callback: (...args: any[]) => void) {
       native.windowEvents.set(name, callback);
     }
+    close() {
+      native.closeWindow();
+      native.windowEvents.get('close')?.({ preventDefault: vi.fn() });
+    }
   },
 }));
 vi.mock('../../src/native/persistence', () => ({
@@ -77,6 +103,8 @@ vi.mock('../../src/native/persistence', () => ({
     recovery: vi.fn(),
   },
   closeAllArchives: vi.fn(),
+  waitForArchiveSaves: vi.fn(async () => {}),
+  restoreArchiveCopy: native.restoreArchiveCopy,
 }));
 vi.mock('../../src/native/legacy-import', () => ({
   previewMigration: native.previewMigration,
@@ -111,6 +139,11 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   vi.useFakeTimers();
+  native.backupRunning = false;
+  native.backupCheck.mockResolvedValue(undefined);
+  native.backupFinish.mockImplementation(async () => {
+    native.backupRunning = false;
+  });
   native.handlers.clear();
   native.events.clear();
   native.windowEvents.clear();
@@ -239,6 +272,102 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+it.each([0, 1, 2])(
+  'handles close choice %s during backup and still protects dirty changes',
+  async (response) => {
+    await import('../../src/native/main');
+    await Promise.resolve();
+    native.backupRunning = true;
+    native.events.get(IPC.appDirty)!({}, true);
+    native.showMessageBox.mockResolvedValue({ response });
+    const preventDefault = vi.fn();
+    native.windowEvents.get('close')!({ preventDefault });
+    native.windowEvents.get('close')!({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+    expect(native.showMessageBox).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      response === 2
+        ? expect(native.backupFinish).not.toHaveBeenCalled()
+        : expect(native.closeWindow).toHaveBeenCalledOnce(),
+    );
+    if (response === 2)
+      expect(native.send).not.toHaveBeenCalledWith(IPC.appCloseRequested);
+    else {
+      expect(native.backupFinish).toHaveBeenCalledWith(response === 1);
+      expect(native.send).toHaveBeenCalledWith(IPC.appCloseRequested);
+    }
+  },
+);
+it('refuses update installation while a backup is active', async () => {
+  await import('../../src/native/main');
+  native.backupRunning = true;
+  expect(await native.handlers.get(IPC.updateInstall)!()).toMatchObject({
+    ok: false,
+    error: { code: 'CONFLICT', message: expect.stringContaining('backup') },
+  });
+});
+
+it.each(['cancel', 'invalid', 'success'] as const)(
+  'preserves the current native session until restore %s and releases staging',
+  async (outcome) => {
+    const document = createEmptyDocument();
+    const original: ArchiveSession = {
+      path: 'current.sqlite',
+      document,
+      token: { documentId: document.documentId, revision: 1 },
+      readOnly: false,
+    };
+    const restored = { ...original, path: 'restored.sqlite' };
+    native.openArchive.mockResolvedValue(ok(original));
+    native.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['selected-backup.sqlite'],
+    });
+    native.showSaveDialog.mockResolvedValue({
+      canceled: false,
+      filePath: restored.path,
+    });
+    native.showMessageBox.mockResolvedValue({
+      response: outcome === 'cancel' ? 0 : 1,
+    });
+    native.backupStage.mockResolvedValue(
+      outcome === 'invalid'
+        ? {
+            ok: false,
+            error: { code: 'SCHEMA_NEWER', message: 'Aggiorna Cash.' },
+          }
+        : ok({
+            path: 'private-staging.sqlite',
+            inspection: { header: document, storageVersion: 2, size: 4096 },
+          }),
+    );
+    native.backupRelease.mockResolvedValue(undefined);
+    native.restoreArchiveCopy.mockResolvedValue(ok(restored));
+    await import('../../src/native/main');
+    await native.handlers.get(IPC.archiveOpenLast)!();
+    native.rememberArchive.mockClear();
+    const result = await native.handlers.get(IPC.backupRestore)!({});
+    expect(result.ok).toBe(outcome === 'success');
+    if (outcome === 'success') {
+      expect(native.restoreArchiveCopy).toHaveBeenCalledWith(
+        'private-staging.sqlite',
+        restored.path,
+      );
+      expect(native.rememberArchive).toHaveBeenCalledWith(restored.path);
+    } else {
+      expect(native.restoreArchiveCopy).not.toHaveBeenCalled();
+      expect(native.rememberArchive).not.toHaveBeenCalled();
+      native.inspectArchive.mockResolvedValue(ok({}));
+      expect(
+        (await native.handlers.get(IPC.archiveInspect)!({}, original.path)).ok,
+      ).toBe(true);
+    }
+    expect(native.backupRelease).toHaveBeenCalledTimes(
+      outcome === 'invalid' ? 0 : 1,
+    );
+  },
+);
 
 it.each(['save', 'restore'] as const)(
   'keeps the replacement archive current when an earlier %s finishes',

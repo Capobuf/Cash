@@ -28,6 +28,7 @@ export interface CashError {
   message: string;
   field?: string;
   source?:
+    | 'backup'
     | 'archive'
     | 'MIMIT'
     | 'ISTAT'

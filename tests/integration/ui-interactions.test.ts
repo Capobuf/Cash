@@ -111,6 +111,7 @@ app.whenReady().then(async () => {
         'table',
         'bank-filters',
         'financial-loading',
+        'backup-controls',
         'bank-import',
         'reduced-motion',
       ];

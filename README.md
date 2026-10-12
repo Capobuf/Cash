@@ -5,7 +5,7 @@ La preventivazione costruisce offerte a partire da obiettivi economici,
 tempo, spese e trasferte. Il prezzo finale resta sempre una scelta dell’utente. L’app non è un software
 fiscale o contabile e non sostituisce il commercialista.
 
-La specifica canonica è [Cash_Specifica_Funzionale_v0.7.md](Cash_Specifica_Funzionale_v0.7.md), con persistenza Windows aggiornata il 10 ottobre 2026.
+La specifica canonica è [Cash_Specifica_Funzionale_v0.7.md](Cash_Specifica_Funzionale_v0.7.md), con persistenza e backup Windows aggiornati il 12 ottobre 2026.
 Gli artefatti in `specs/001-cash-mvp` sono documentazione storica e non definiscono i requisiti correnti.
 
 ## Avvio in sviluppo
@@ -56,10 +56,10 @@ non ancora persistite in un archivio indipendente, senza cambiare quello corrent
 viene caricato automaticamente. Errori e conflitti lasciano lo stato non salvato; la chiusura
 richiede una scelta esplicita se esistono modifiche pendenti.
 
-**Importazione JSON storico:** `Apri archivio` seleziona SQLite oppure JSON schema 1–11.
+**Importazione JSON storico:** `Apri archivio` seleziona SQLite oppure JSON schema 1–12.
 Se l’ultimo percorso locale è JSON, Cash propone la stessa importazione all’avvio. Dopo anteprima
 e conferma si sceglie un nuovo `.sqlite`; un file già esistente viene rifiutato. Le trasformazioni
-storiche già disponibili aggiornano i dati allo schema applicativo 11. I blocker per Clienti
+storiche già disponibili aggiornano i dati allo schema applicativo 12. I blocker per Clienti
 locali, `oneWayKm` e Trasferte ambigue impediscono conversioni arbitrarie. Cash crea un database
 temporaneo sul volume di destinazione, importa in transazione, ricostruisce e confronta l’intero
 documento normalizzato, verifica integrità e relazioni e pubblica il file chiuso senza sovrascrivere
@@ -67,8 +67,8 @@ la destinazione. UUID, identità, revisione, date, ordine e optional vengono con
 originale e i suoi backup restano byte per byte invariati. Il percorso nelle preferenze locali
 viene aggiornato solo dopo il successo; annullare lascia tutto invariato.
 
-Lo schema SQLite è alla versione **1**, indipendente dallo schema applicativo **11**. Le future
-migrazioni SQL supportate saranno applicate automaticamente all’apertura, dopo un backup coerente,
+Lo schema SQLite è alla versione **2**, indipendente dallo schema applicativo **12**. Le
+migrazioni SQL supportate sono applicate automaticamente all’apertura, dopo un backup coerente,
 in transazione con rollback e verifica integrale. Non esistono migrazioni da versioni SQL precedenti
 alla prima: SQLite sconosciuti, schema zero e file corrotti vengono rifiutati. Uno schema futuro è
 ispezionato in sola lettura, senza degradarlo o sovrascriverlo.
@@ -76,6 +76,52 @@ ispezionato in sola lettura, senza degradarlo o sovrascriverlo.
 Token FIC e API key OpenRouteService restano nel Gestore credenziali Windows tramite Zowe;
 non entrano nel database, nei backup o nei log. `preferences.json`, incluso il Client ID non segreto
 e le altre preferenze locali, resta separato e compatibile.
+
+### Backup automatico e ripristino da copia
+
+**Impostazioni → Backup** offre stato, configurazione, cronologia, verifica di una copia/file
+e **Ripristina da backup**. Alla prima apertura di un archivio, Cash attiva il backup ogni
+24 ore, conserva 10 copie e crea la prima copia nella radice `%LOCALAPPDATA%\Cash\Backups`.
+Le frequenze sono 6/12/24 ore o 7 giorni; la rotazione conserva 5/10/20/30 copie valide.
+Il backup manuale crea una copia anche senza nuove revisioni e con l’automatico disattivato.
+
+La pianificazione funziona **soltanto mentre Cash è aperto**. La scadenza parte dal completamento
+UTC dell’ultima copia valida; senza nuove revisioni salvate non vengono creati duplicati.
+Avvio e ripresa del PC rivalutano la scadenza, con al massimo una copia arretrata. Dopo un errore
+di creazione Cash attende almeno un’ora prima di un nuovo tentativo automatico. Le modifiche non
+salvate non sono protette: lo stato mostra separatamente la revisione della copia e quella salvata.
+
+La destinazione è una cartella filesystem, eventualmente su disco esterno o gestita da Drive per
+desktop. Cash verifica creazione, lettura, rinomina, cancellazione e pubblicazione esclusiva mediante
+hard link. Un filesystem privo di queste capacità è rifiutato senza fallback. Lo snapshot nativo
+SQLite viene acquisito nella coda dei salvataggi e chiuso nello staging locale; il trasferimento
+asincrono prosegue senza bloccare i salvataggi. SHA-256, dimensione, identità/revisione, schemi,
+integrità, relazioni e documento completo vengono verificati prima di pubblicare il file definitivo.
+
+Le copie sono organizzate in `Cash-Backups/<installazione>/<documentId>` sotto la radice scelta.
+La rotazione elimina solo copie complete e nuovamente verificate dello stesso archivio e della
+stessa installazione, dopo il successo della nuova copia. File sconosciuti, corrotti, temporanei,
+archivi attivi, backup rolling e copie di recupero sono esclusi. Il cambio di cartella non sposta
+le copie precedenti. Una cartella rimossa richiede **Ricrea cartella** o **Cambia destinazione**.
+La cronologia viene ricostruita dai file effettivi, compresi quelli pubblicati prima di un crash.
+Le preferenze usano aggiornamenti serializzati e pubblicazione temporanea, preservando i campi sconosciuti.
+
+Una copia scritta localmente **non prova il caricamento sul cloud**. Con Google Drive per desktop
+verifica il completamento della sincronizzazione; la rotazione può cancellare anche le copie remote.
+I filesystem Drive in mirroring/streaming richiedono una verifica reale sulla postazione: Cash
+non monitora Drive e non usa OAuth o API Google.
+
+**Ripristina da backup** è disponibile anche nell’onboarding di una nuova installazione. Seleziona
+un `.sqlite`, controlla l’anteprima verificata e scegli un nuovo archivio su disco locale non
+sincronizzato. Cash verifica e migra solo una copia temporanea, conserva identità/revisione e UUID,
+non modifica la sorgente e non sovrascrive destinazioni esistenti. Schemi futuri richiedono una
+versione aggiornata di Cash. Le credenziali FIC/ORS e le preferenze della vecchia postazione non
+vengono trasferite: riconfigura le credenziali Windows. Nessun ripristino è automatico.
+
+Durante un backup, chiudere Cash permette di attendere, interrompere cooperativamente o restare
+nell’app; al termine resta attiva la protezione delle modifiche non salvate. L’installazione degli
+aggiornamenti è bloccata finché il backup/ripristino è attivo. Un arresto forzato può lasciare
+temporanei, che vengono riconosciuti e puliti alla riapertura senza presentarli come copie valide.
 
 ## Uso offline e fonti live
 

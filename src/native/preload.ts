@@ -2,6 +2,26 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type CashNativeApi } from '../shared/ipc';
 
 const api: CashNativeApi = {
+  backup: {
+    getState: () => ipcRenderer.invoke(IPC.backupState),
+    configure: (input) => ipcRenderer.invoke(IPC.backupConfigure, input),
+    selectDirectory: () => ipcRenderer.invoke(IPC.backupSelectDirectory),
+    recreateDirectory: () => ipcRenderer.invoke(IPC.backupRecreateDirectory),
+    run: () => ipcRenderer.invoke(IPC.backupRun),
+    verify: (id) => ipcRenderer.invoke(IPC.backupVerify, id),
+    verifyFile: () => ipcRenderer.invoke(IPC.backupVerifyFile),
+    restore: (id) => ipcRenderer.invoke(IPC.backupRestore, id),
+    openFolder: () => ipcRenderer.invoke(IPC.backupOpenFolder),
+    reveal: (id) => ipcRenderer.invoke(IPC.backupReveal, id),
+    onState: (listener) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        state: Parameters<typeof listener>[0],
+      ) => listener(state);
+      ipcRenderer.on(IPC.backupChanged, wrapped);
+      return () => ipcRenderer.removeListener(IPC.backupChanged, wrapped);
+    },
+  },
   bankExpenses: { importFile: () => ipcRenderer.invoke(IPC.bankExpenseImport) },
   archive: {
     create: (document) => ipcRenderer.invoke(IPC.archiveCreate, document),

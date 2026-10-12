@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  powerMonitor,
+  shell,
+} from 'electron';
+import { BackupManager } from './backups';
 import { readBankExpenseFile } from './bank-expense-import';
 import { join } from 'node:path';
 import {
@@ -10,7 +18,12 @@ import {
   type Fuel,
   type Result,
 } from '../domain/model';
-import { archiveStorage, closeAllArchives } from './persistence';
+import {
+  archiveStorage,
+  closeAllArchives,
+  restoreArchiveCopy,
+  waitForArchiveSaves,
+} from './persistence';
 import { previewMigration } from './legacy-import';
 import type { ArchiveSession, ConcurrencyToken } from '../shared/archive';
 import { runSqliteSmoke } from './sqlite-smoke';
@@ -87,9 +100,31 @@ let current: ArchiveSession | null = null;
 let dirty = false;
 let closingApproved = false;
 let closePromptOpen = false;
+let backupClosePromptOpen = false;
+let restoreFileActive = false;
+let shuttingDown = false;
 const smokeArgument = process.argv.find((argument) =>
   argument.startsWith('--cash-storage-smoke='),
 );
+if (smokeArgument)
+  app.setPath('userData', smokeArgument.slice('--cash-storage-smoke='.length));
+const backups = new BackupManager({
+  current: () => current,
+  dirty: () => dirty,
+  blocked: () =>
+    restoreFileActive ||
+    backupClosePromptOpen ||
+    closePromptOpen ||
+    shuttingDown,
+  defaultDestination: process.env.LOCALAPPDATA
+    ? join(process.env.LOCALAPPDATA, 'Cash', 'Backups')
+    : '',
+  stagingRoot: join(app.getPath('userData'), 'backup-staging'),
+  changed: (state) => {
+    if (window && !window.isDestroyed())
+      window.webContents.send(IPC.backupChanged, state);
+  },
+});
 const hasSingleInstanceLock = smokeArgument
   ? true
   : app.requestSingleInstanceLock();
@@ -97,6 +132,7 @@ const hasSingleInstanceLock = smokeArgument
 function replaceCurrent(next: ArchiveSession): void {
   if (current && current.path !== next.path) closeArchive(current.path);
   current = next;
+  void backups.check();
 }
 
 if (process.platform === 'win32') app.setAppUserModelId('it.cash.desktop');
@@ -122,7 +158,7 @@ const ficLinkServices: FicLinkServices = {
   writeToken: setFicToken,
   deleteToken: deleteFicToken,
   save: (path, document, token) =>
-    selectedPathValid(path) && !current?.readOnly
+    selectedPathValid(path) && !current?.readOnly && !restoreFileActive
       ? saveArchive(path, document, token)
       : Promise.resolve(
           err({
@@ -148,6 +184,11 @@ async function observedOrs<T>(
   return result;
 }
 async function selectOpen() {
+  if (restoreFileActive)
+    return err({
+      code: 'CONFLICT',
+      message: 'Attendi il completamento del ripristino.',
+    });
   const choice = await dialog.showOpenDialog({
     title: 'Apri archivio Cash',
     properties: ['openFile'],
@@ -158,6 +199,11 @@ async function selectOpen() {
   return openWithMigration(choice.filePaths[0]);
 }
 async function openWithMigration(path: string) {
+  if (restoreFileActive)
+    return err({
+      code: 'CONFLICT',
+      message: 'Attendi il completamento del ripristino.',
+    });
   const result = await openArchive(path);
   if (!result.ok && result.error.code === 'MIGRATION_REQUIRED') {
     const preview = await previewMigration(path);
@@ -218,6 +264,166 @@ async function openWithMigration(path: string) {
 }
 
 function registerHandlers(): void {
+  ipcMain.handle(IPC.backupState, () => backups.refresh());
+  ipcMain.handle(IPC.backupConfigure, (_event, input) =>
+    backups.configure(input),
+  );
+  ipcMain.handle(IPC.backupRun, () => backups.run());
+  ipcMain.handle(IPC.backupVerify, (_event, id: string) => backups.verify(id));
+  ipcMain.handle(IPC.backupVerifyFile, async () => {
+    if (backups.busy || restoreFileActive)
+      return err({
+        code: 'CONFLICT',
+        source: 'backup',
+        message: 'Attendi il completamento dell’operazione corrente.',
+      });
+    restoreFileActive = true;
+    let staged: string | undefined;
+    try {
+      const choice = await dialog.showOpenDialog({
+        title: 'Verifica file backup Cash',
+        properties: ['openFile'],
+        filters: [{ name: 'Backup Cash SQLite', extensions: ['sqlite'] }],
+      });
+      if (choice.canceled || !choice.filePaths[0])
+        return err({ code: 'CANCELLED', message: 'Verifica annullata.' });
+      const verified = await backups.stageRestore(choice.filePaths[0]);
+      if (!verified.ok) return verified;
+      staged = verified.value.path;
+      return ok(verified.value.inspection);
+    } catch (cause) {
+      return err({
+        code: 'IO',
+        source: 'backup',
+        message: 'Verifica del file non riuscita.',
+        details: [String(cause)],
+      });
+    } finally {
+      if (staged) await backups.releaseRestore(staged);
+      restoreFileActive = false;
+    }
+  });
+  ipcMain.handle(IPC.backupRecreateDirectory, () =>
+    backups.recreateDirectory(),
+  );
+  ipcMain.handle(IPC.backupSelectDirectory, async () => {
+    const choice = await dialog.showOpenDialog({
+      title: 'Cartella dei backup Cash',
+      properties: ['openDirectory'],
+    });
+    if (choice.canceled || !choice.filePaths[0])
+      return err({ code: 'CANCELLED', message: 'Selezione annullata.' });
+    return backups.selectDirectory(choice.filePaths[0]);
+  });
+  ipcMain.handle(IPC.backupOpenFolder, async () => {
+    const destination = await backups.destination();
+    if (!destination.ok) return destination;
+    const message = await shell.openPath(destination.value);
+    return message
+      ? err({ code: 'IO', source: 'backup', message })
+      : ok(undefined);
+  });
+  ipcMain.handle(IPC.backupReveal, async (_event, id: string) => {
+    const entry = await backups.managedEntry(id);
+    if (!entry.ok) return entry;
+    shell.showItemInFolder(entry.value.path);
+    return ok(undefined);
+  });
+  ipcMain.handle(IPC.backupRestore, async (_event, id?: string) => {
+    if (
+      backups.busy ||
+      restoreFileActive ||
+      backupClosePromptOpen ||
+      closePromptOpen
+    )
+      return err({
+        code: 'CONFLICT',
+        source: 'backup',
+        message: 'Attendi il completamento dell’operazione corrente.',
+      });
+    restoreFileActive = true;
+    let previous: ArchiveSession | null;
+    let staged: string | undefined;
+    try {
+      await waitForArchiveSaves();
+      previous = current;
+      let source: string;
+      if (id !== undefined) {
+        const selected = await backups.managedEntry(id);
+        if (!selected.ok) return selected;
+        source = selected.value.path;
+      } else {
+        const choice = await dialog.showOpenDialog({
+          title: 'Ripristina da backup',
+          properties: ['openFile'],
+          filters: [{ name: 'Backup Cash SQLite', extensions: ['sqlite'] }],
+        });
+        if (choice.canceled || !choice.filePaths[0])
+          return err({ code: 'CANCELLED', message: 'Ripristino annullato.' });
+        source = choice.filePaths[0];
+      }
+      const prepared = await backups.stageRestore(source);
+      if (!prepared.ok) return prepared;
+      staged = prepared.value.path;
+      const { header, size } = prepared.value.inspection;
+      const confirmation = await dialog.showMessageBox({
+        type: 'question',
+        title: 'Ripristina da backup',
+        message: `Ripristinare la revisione ${header.revision}?`,
+        detail: `Archivio: ${header.documentId}\nDati aggiornati: ${new Date(header.updatedAt).toLocaleString('it-IT')}\nDimensione: ${size.toLocaleString('it-IT')} byte\n\nLa copia è stata verificata. Scegli un nuovo file su disco locale NON sincronizzato. Le credenziali FIC/ORS e le preferenze della vecchia postazione non sono incluse.`,
+        buttons: ['Annulla', 'Scegli destinazione e ripristina'],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (confirmation.response !== 1)
+        return err({ code: 'CANCELLED', message: 'Ripristino annullato.' });
+      const destination = await dialog.showSaveDialog({
+        title:
+          'Nuovo archivio locale ripristinato (fuori dalle cartelle sincronizzate)',
+        defaultPath: join(app.getPath('userData'), 'Cash-ripristinato.sqlite'),
+        filters: [{ name: 'Archivio Cash', extensions: ['sqlite'] }],
+      });
+      if (destination.canceled || !destination.filePath)
+        return err({ code: 'CANCELLED', message: 'Ripristino annullato.' });
+      if (current !== previous)
+        return err({
+          code: 'CONFLICT',
+          message:
+            'Archivio cambiato durante il ripristino. Ripeti l’operazione.',
+        });
+      const result = await restoreArchiveCopy(staged, destination.filePath);
+      if (!result.ok) return result;
+      if (current !== previous) {
+        closeArchive(result.value.path);
+        return err({
+          code: 'CONFLICT',
+          source: 'backup',
+          message:
+            'Archivio cambiato durante la creazione della copia ripristinata.',
+          action:
+            'La nuova copia è conservata. Riaprila esplicitamente oppure ripeti il ripristino.',
+        });
+      }
+      const remembered = await rememberArchive(result.value.path);
+      if (!remembered.ok) {
+        closeArchive(result.value.path);
+        return remembered;
+      }
+      replaceCurrent(result.value);
+      return result;
+    } catch (cause) {
+      return err({
+        code: 'IO',
+        source: 'backup',
+        message: 'Ripristino non riuscito. La sessione corrente è conservata.',
+        details: [String(cause)],
+      });
+    } finally {
+      if (staged) await backups.releaseRestore(staged);
+      restoreFileActive = false;
+      void backups.check();
+    }
+  });
   ipcMain.handle(IPC.bankExpenseImport, async () => {
     if (!current?.document || current.readOnly)
       return err({
@@ -246,6 +452,11 @@ function registerHandlers(): void {
     return result;
   });
   ipcMain.handle(IPC.archiveCreate, async (_event, document: CashDocument) => {
+    if (restoreFileActive)
+      return err({
+        code: 'CONFLICT',
+        message: 'Attendi il completamento del ripristino.',
+      });
     const choice = await dialog.showSaveDialog({
       title: 'Crea archivio Cash',
       defaultPath: join(app.getPath('userData'), 'Cash.sqlite'),
@@ -276,7 +487,7 @@ function registerHandlers(): void {
       document: CashDocument,
       token: ConcurrencyToken,
     ) => {
-      if (!selectedPathValid(path) || current?.readOnly)
+      if (!selectedPathValid(path) || current?.readOnly || restoreFileActive)
         return err({
           code: 'CONFLICT',
           source: 'archive',
@@ -293,6 +504,11 @@ function registerHandlers(): void {
   ipcMain.handle(
     IPC.archiveRecovery,
     async (_event, document: CashDocument) => {
+      if (restoreFileActive)
+        return err({
+          code: 'CONFLICT',
+          message: 'Attendi il completamento del ripristino.',
+        });
       const choice = await dialog.showSaveDialog({
         title: 'Salva copia di recupero',
         defaultPath: 'Cash.recovery.sqlite',
@@ -309,7 +525,12 @@ function registerHandlers(): void {
   ipcMain.handle(
     IPC.archiveRestore,
     async (_event, path: string, token: ConcurrencyToken) => {
-      if (!selectedPathValid(path) || current?.readOnly)
+      if (
+        !selectedPathValid(path) ||
+        current?.readOnly ||
+        restoreFileActive ||
+        backups.running
+      )
         return err({
           code: 'CONFLICT',
           source: 'archive',
@@ -464,7 +685,7 @@ function registerHandlers(): void {
       const saved = await commitFicActivation(input, {
         ...ficLinkServices,
         save: (path, document, token) =>
-          current === linkingSession
+          current === linkingSession && !restoreFileActive
             ? saveArchive(path, document, token)
             : Promise.resolve(
                 err({
@@ -498,7 +719,7 @@ function registerHandlers(): void {
       const saved = await removeFicLinkAtomically(input, {
         ...ficLinkServices,
         save: (path, document, token) =>
-          current === linkingSession
+          current === linkingSession && !restoreFileActive
             ? saveArchive(path, document, token)
             : Promise.resolve(
                 err({
@@ -736,6 +957,13 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.updateDownload, () => downloadCashUpdate());
   ipcMain.handle(IPC.updateOpenReleases, () => openCashReleases());
   ipcMain.handle(IPC.updateInstall, () => {
+    if (backups.busy || restoreFileActive || backupClosePromptOpen)
+      return err({
+        code: 'CONFLICT',
+        message:
+          'Attendi il completamento del backup o del ripristino prima di installare l’aggiornamento.',
+        action: 'Consulta Impostazioni → Backup.',
+      });
     if (dirty)
       return err({
         code: 'CONFLICT',
@@ -745,18 +973,19 @@ function registerHandlers(): void {
   });
   ipcMain.on(IPC.appDirty, (_event, value: boolean) => {
     dirty = value;
+    if (!dirty) void backups.check();
   });
   ipcMain.on(IPC.appResolveClose, (_event, choice: 'discard' | 'cancel') => {
     closePromptOpen = false;
     if (choice === 'discard') {
       closingApproved = true;
       window?.close();
-    }
+    } else shuttingDown = false;
   });
 }
 
 async function detectExternalChange(): Promise<void> {
-  if (!current || !window) return;
+  if (!current || !window || restoreFileActive) return;
   const observed = current;
   const disk = await inspectArchive(observed.path);
   if (current !== observed) return;
@@ -823,6 +1052,43 @@ async function createWindow(): Promise<void> {
     createdWindow.show();
   createdWindow.on('focus', () => void detectExternalChange());
   createdWindow.on('close', (event) => {
+    if (restoreFileActive) {
+      event.preventDefault();
+      return;
+    }
+    if (backups.running || backupClosePromptOpen) {
+      event.preventDefault();
+      if (!backupClosePromptOpen) {
+        backupClosePromptOpen = true;
+        void dialog
+          .showMessageBox(createdWindow, {
+            type: 'question',
+            title: 'Backup in corso',
+            message: 'Cash sta creando un backup.',
+            buttons: [
+              'Attendi completamento',
+              'Interrompi backup e chiudi',
+              'Resta in Cash',
+            ],
+            defaultId: 0,
+            cancelId: 2,
+          })
+          .then(async (choice) => {
+            if (choice.response === 2) {
+              backupClosePromptOpen = false;
+              return;
+            }
+            await backups.finish(choice.response === 1);
+            backupClosePromptOpen = false;
+            shuttingDown = true;
+            createdWindow.close();
+          })
+          .catch(() => {
+            backupClosePromptOpen = false;
+          });
+      }
+      return;
+    }
     if (!dirty || closingApproved) return;
     event.preventDefault();
     if (!closePromptOpen) {
@@ -861,8 +1127,10 @@ else {
       void checkCashUpdates();
     });
     setInterval(() => void detectExternalChange(), 30_000);
+    setInterval(() => void backups.check(), 15 * 60_000);
+    powerMonitor.on('resume', () => void backups.check());
   });
-  app.on('before-quit', () => closeAllArchives());
+  app.on('will-quit', () => closeAllArchives());
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });

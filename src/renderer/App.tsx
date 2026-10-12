@@ -473,6 +473,7 @@ function ArchiveWorkspace({
         view={view}
         onView={navigate}
         onOpenUpdates={() => navigate('settings', 'application')}
+        onOpenBackup={() => navigate('settings', 'backup')}
         years={years}
         selectedYear={financialYear}
         onYearChange={setSelectedYear}

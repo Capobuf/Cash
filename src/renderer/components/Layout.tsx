@@ -226,20 +226,34 @@ export function Onboarding({ appState }: { appState: AppState }) {
         <CardContent>
           <GlobalError appState={appState} />
         </CardContent>
-        <CardFooter className="justify-between gap-4">
+        <CardFooter className="flex-col items-start gap-4">
           <p className="text-sm text-muted-foreground">
             Crea un archivio SQLite su disco locale, fuori da cartelle
             sincronizzate. Apri archivio permette anche di importare un JSON
             storico.
           </p>
-          <div className="flex shrink-0 gap-2">
-            <Button variant="outline" onClick={() => void appState.open()}>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={appState.archiveOperationPending}
+              onClick={() => void appState.open()}
+            >
               {appState.session?.headerOnly
                 ? 'Apri un altro archivio'
                 : 'Apri archivio'}
             </Button>
-            <Button onClick={() => void appState.create()}>
+            <Button
+              disabled={appState.archiveOperationPending}
+              onClick={() => void appState.create()}
+            >
               Crea archivio
+            </Button>
+            <Button
+              variant="outline"
+              disabled={appState.archiveOperationPending}
+              onClick={() => void appState.restoreFromBackup()}
+            >
+              Ripristina da backup
             </Button>
           </div>
         </CardFooter>
@@ -253,6 +267,7 @@ export function AppShell({
   view,
   onView,
   onOpenUpdates,
+  onOpenBackup,
   years,
   selectedYear,
   onYearChange,
@@ -262,6 +277,7 @@ export function AppShell({
   view: View;
   onView: (view: View) => void;
   onOpenUpdates: () => void;
+  onOpenBackup: () => void;
   years: number[];
   selectedYear: number | undefined;
   onYearChange: (year: number) => void;
@@ -406,6 +422,14 @@ export function AppShell({
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {appState.backup?.error ||
+            appState.backup?.warning ||
+            appState.backupError ? (
+              <Button variant="outline" size="sm" onClick={onOpenBackup}>
+                <CircleAlert />
+                Backup da verificare
+              </Button>
+            ) : null}
             <Badge
               variant={statusCritical ? 'destructive' : 'outline'}
               role="status"
@@ -437,20 +461,33 @@ export function AppShell({
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>Archivio</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void appState.open()}>
+                  <DropdownMenuItem
+                    disabled={appState.archiveOperationPending}
+                    onClick={() => void appState.open()}
+                  >
                     Apri archivio
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={appState.status === 'Salvato'}
+                    disabled={
+                      appState.status === 'Salvato' ||
+                      appState.archiveOperationPending
+                    }
                     onClick={() => void appState.save()}
                   >
                     <Save />
                     Salva ora
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void appState.recovery()}>
+                  <DropdownMenuItem
+                    disabled={appState.archiveOperationPending}
+                    onClick={() => void appState.recovery()}
+                  >
                     Copia di recupero
                   </DropdownMenuItem>
                   <DropdownMenuItem
+                    disabled={
+                      appState.archiveOperationPending ||
+                      appState.backup?.running
+                    }
                     onClick={() => void appState.restoreBackup()}
                   >
                     Ripristina backup
