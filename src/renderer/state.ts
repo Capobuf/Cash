@@ -1,3 +1,4 @@
+import { toast } from '@/components/ui/toast';
 import {
   CURRENT_SCHEMA_VERSION,
   createEmptyDocument,
@@ -266,9 +267,15 @@ export class AppState {
         });
         return;
       }
-      this.mutate((document) => {
-        document.financialSnapshot = result.value;
-      });
+      if (
+        this.mutate((document) => {
+          document.financialSnapshot = result.value;
+        })
+      )
+        this.notifyFicSuccess(
+          'Dati Fatture in Cloud aggiornati',
+          'Lo snapshot finanziario è stato aggiornato.',
+        );
     } catch {
       this.financialSyncError = {
         code: 'SOURCE_UNAVAILABLE',
@@ -529,8 +536,33 @@ export class AppState {
     this.error = null;
     this.emit();
   }
+  notifyFicSuccess(title: string, description: string): void {
+    toast.add({ type: 'success', title, description });
+  }
   setError(error: CashError): void {
     this.error = error;
+    if (error.source === 'FattureInCloud') {
+      const persistent = ['EXPORT_UNCERTAIN', 'IO', 'CONFLICT'].includes(
+        error.code,
+      );
+      toast.add({
+        type:
+          error.code === 'EXPORT_UNCERTAIN' || error.code === 'RATE_LIMIT'
+            ? 'warning'
+            : 'error',
+        title:
+          error.code === 'RATE_LIMIT'
+            ? 'Limite API raggiunto'
+            : error.code === 'CREDENTIALS'
+              ? 'Collegamento Fatture in Cloud da verificare'
+              : error.code === 'EXPORT_UNCERTAIN'
+                ? 'Esito esportazione da verificare'
+                : 'Operazione Fatture in Cloud non riuscita',
+        description: persistent
+          ? 'Consulta il messaggio persistente e il tentativo nell’archivio prima di ripetere l’operazione.'
+          : [error.message, error.action].filter(Boolean).join(' '),
+      });
+    }
     this.emit();
   }
 }

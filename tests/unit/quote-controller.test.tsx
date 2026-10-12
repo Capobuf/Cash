@@ -487,6 +487,31 @@ describe('persistenza dell’esito export', () => {
     vi.unstubAllGlobals();
   });
 
+  it('registra un blocco prima della POST come rifiutato e conserva l’errore tipizzato', async () => {
+    const test = setup();
+    const error = {
+      code: 'RATE_LIMIT' as const,
+      source: 'FattureInCloud' as const,
+      message: 'Attendi 60 secondi.',
+    };
+    test.exportQuote.mockResolvedValue(
+      ok({
+        outcome: 'rejected',
+        requestSent: false,
+        diagnostic: 'Non inviato: Attendi 60 secondi.',
+        error,
+      }),
+    );
+    expect(await test.operations.performExport()).toBe(false);
+    expect(test.verifyProduct).not.toHaveBeenCalled();
+    expect(test.state.document?.quotes[0]?.exportAttempts[0]).toMatchObject({
+      outcome: 'rejected',
+      diagnostic: expect.stringContaining('Non inviato'),
+    });
+    expect(test.state.error).toEqual(error);
+    expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+
   it('restituisce successo solo dopo il salvataggio finale e registra la data della risposta', async () => {
     const test = setup();
     let started!: () => void;
@@ -823,7 +848,11 @@ it.each(['success', 'rejected', 'uncertain'] as const)(
     });
     if (outcome === 'success') expect(test.state.error).toBeNull();
     else {
-      expect(test.state.error?.details).toContain(diagnostic);
+      expect(
+        [test.state.error?.message, ...(test.state.error?.details ?? [])].join(
+          ' ',
+        ),
+      ).toContain(diagnostic);
       if (outcome === 'uncertain')
         expect(test.state.error?.action).toContain(
           'Controlla Fatture in Cloud',

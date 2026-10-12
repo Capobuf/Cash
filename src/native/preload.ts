@@ -33,6 +33,15 @@ const api: CashNativeApi = {
     route: (input) => ipcRenderer.invoke(IPC.orsRoute, input),
   },
   fic: {
+    getQuota: () => ipcRenderer.invoke(IPC.ficQuota),
+    onQuota: (listener) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        observation: Parameters<typeof listener>[0],
+      ) => listener(observation);
+      ipcRenderer.on(IPC.ficQuotaChanged, wrapped);
+      return () => ipcRenderer.removeListener(IPC.ficQuotaChanged, wrapped);
+    },
     verifyPermissions: (input) =>
       ipcRenderer.invoke(IPC.ficVerifyPermissions, input),
     syncFinancialData: (input) =>

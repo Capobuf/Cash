@@ -581,6 +581,8 @@ export function QuotesView({
           hasToken={hasToken}
           results={controller.clientResults}
           searching={controller.searchingClients}
+          hasMore={Boolean(controller.nextClientPage)}
+          onLoadMore={controller.loadMoreClients}
           onSearch={controller.searchRemoteClients}
           onSelect={selectCustomer}
         />
@@ -682,6 +684,8 @@ export function QuotesView({
           quote={quote}
           doc={doc}
           results={controller.clientResults}
+          hasMore={Boolean(controller.nextClientPage)}
+          onLoadMore={controller.loadMoreClients}
           onSearch={controller.searchRemoteClients}
           onClose={() => setOverlay(undefined)}
           onExport={controller.performExport}

@@ -92,7 +92,7 @@ export function FicWizard({
       );
       setBusy(false);
       if (!result.ok) {
-        ficUi.setConnectionError(true);
+        ficUi.setConnectionError(result.error.code === 'CREDENTIALS');
         appState.setError(result.error);
         return;
       }
@@ -110,7 +110,7 @@ export function FicWizard({
       });
       setBusy(false);
       if (!result.ok) {
-        ficUi.setConnectionError(true);
+        ficUi.setConnectionError(result.error.code === 'CREDENTIALS');
         appState.setError(result.error);
         return;
       }
@@ -130,7 +130,7 @@ export function FicWizard({
       });
       setBusy(false);
       if (!result.ok) {
-        ficUi.setConnectionError(true);
+        ficUi.setConnectionError(result.error.code === 'CREDENTIALS');
         appState.setError(result.error);
         return;
       }
@@ -165,6 +165,10 @@ export function FicWizard({
     ficUi.setHasToken(true);
     ficUi.setConnectionError(false);
     appState.acceptNativeSession(completed.value);
+    appState.notifyFicSuccess(
+      'Collegamento Fatture in Cloud attivato',
+      'La postazione è configurata per l’azienda selezionata.',
+    );
     onOpenChange(false);
     setStep(1);
     setToken('');

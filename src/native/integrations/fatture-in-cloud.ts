@@ -2,13 +2,18 @@ import { z } from 'zod';
 import {
   err,
   ok,
-  type CashErrorCode,
+  type CashError,
   type ExportLine,
   type FicClientDetails,
   type FicClientSnapshot,
   type FicTaxProfileSnapshot,
   type Result,
 } from '../../domain/model';
+import type {
+  FicQuotaObservation,
+  FicClientPage,
+  FicExportResult,
+} from '../../shared/fic';
 import { officialFetch } from './http';
 import { d, money } from '../../domain/decimal';
 import { financialSnapshotSchema } from '../../domain/schema';
@@ -16,14 +21,6 @@ import type { FicFinancialSnapshot } from '../../domain/model';
 import type { FicAccessVerification } from '../../domain/integration';
 
 const BASE = 'https://api-v2.fattureincloud.it';
-const httpErrorCode = (status: number): CashErrorCode =>
-  status === 401 || status === 403
-    ? 'CREDENTIALS'
-    : status === 429
-      ? 'RATE_LIMIT'
-      : status === 422
-        ? 'SOURCE_INVALID'
-        : 'SOURCE_UNAVAILABLE';
 const queryString = (value: string): string =>
   `'${value.replaceAll("'", "''")}'`;
 const clientSchema = z.object({
@@ -166,12 +163,6 @@ export async function verifyPermissions(
   const base = `/c/${encodeURIComponent(companyId)}`;
   const response = await ficFetch(`${base}/company/info`, token, {}, fetcher);
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return err({
-      code: httpErrorCode(response.value.status),
-      source: 'FattureInCloud',
-      message: `Permessi azienda non verificabili (HTTP ${response.value.status}).`,
-    });
   try {
     const company = companyInfoSchema.parse(
       ((await response.value.json()) as { data?: unknown }).data,
@@ -223,24 +214,16 @@ export async function verifyPermissions(
       for (const path of paths) {
         const probe = await ficFetch(`${base}${path}`, token, {}, fetcher);
         if (!probe.ok) {
-          status = 'unverifiable';
-          detail = probe.error.message;
+          if (probe.error.code === 'RATE_LIMIT') return probe;
+          status =
+            probe.error.code === 'CREDENTIALS' ? 'unavailable' : 'unverifiable';
+          detail = [probe.error.message, probe.error.action]
+            .filter(Boolean)
+            .join(' ');
           break;
         }
-        const http = probe.value.status;
         // Probes never retain remote documents or tax data.
         await probe.value.body?.cancel();
-        if (!probe.value.ok) {
-          status =
-            httpErrorCode(http) === 'CREDENTIALS'
-              ? 'unavailable'
-              : 'unverifiable';
-          detail =
-            http === 403
-              ? `Accesso non consentito per ${label}: verifica lo scope ${scope} e i permessi dell’utente sull’azienda (HTTP 403).`
-              : `Verifica ${label} non riuscita (HTTP ${http}).`;
-          break;
-        }
       }
       result.requiredAccess.push({ label, scope, status, detail });
     }
@@ -288,18 +271,6 @@ export async function getTaxProfile(
     fetcher,
   );
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return response.value.status === 401 || response.value.status === 403
-      ? err({
-          code: 'CREDENTIALS',
-          source: 'FattureInCloud',
-          message: `Accesso al profilo fiscale negato (HTTP ${response.value.status}); verificare lo scope settings:r e i permessi dell’utente sull’azienda.`,
-        })
-      : err({
-          code: httpErrorCode(response.value.status),
-          source: 'FattureInCloud',
-          message: `Profilo fiscale aziendale non disponibile (HTTP ${response.value.status}).`,
-        });
   try {
     const json = (await response.value.json()) as { data?: unknown };
     const profile = taxProfileSchema.parse(json.data);
@@ -346,45 +317,292 @@ export async function getTaxProfile(
   }
 }
 
+const quotas = new Map<string, FicQuotaObservation>();
+const quotaListeners = new Set<(observation: FicQuotaObservation) => void>();
+
+export function getFicQuota(companyId: string): FicQuotaObservation | null {
+  const observation = quotas.get(companyId);
+  return observation ? { ...observation } : null;
+}
+
+export function onFicQuota(
+  listener: (observation: FicQuotaObservation) => void,
+): () => void {
+  quotaListeners.add(listener);
+  return () => {
+    quotaListeners.delete(listener);
+  };
+}
+
+function integerHeader(headers: Headers, name: string): number | undefined {
+  const raw = headers.get(name)?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
+interface FicHttpFailure extends CashError {
+  requestSent: boolean;
+  httpStatus?: number;
+}
+
+function rateLimitError(waitMs?: number): CashError {
+  return {
+    code: 'RATE_LIMIT',
+    source: 'FattureInCloud',
+    message: `Limite API raggiunto.${waitMs !== undefined ? ` Attendi ${Math.ceil(waitMs / 1000)} secondi prima di riprovare.` : ' Tempo di attesa non disponibile.'}`,
+  };
+}
+
+async function ficHttpError(
+  response: Response,
+  path: string,
+  token: string,
+): Promise<FicHttpFailure> {
+  let payload: { error?: unknown; error_description?: unknown } = {};
+  try {
+    payload = (await response.json()) as typeof payload;
+  } catch {
+    // Non-JSON responses still establish their HTTP status; never display the raw body.
+  }
+  const object =
+    payload && typeof payload.error === 'object' && payload.error !== null
+      ? (payload.error as Record<string, unknown>)
+      : undefined;
+  const remoteCode =
+    typeof object?.code === 'string'
+      ? object.code
+      : typeof payload?.error === 'string'
+        ? payload.error
+        : '';
+  const clean = (value: unknown): string =>
+    typeof value === 'string'
+      ? value
+          .replaceAll(token, '[credenziale rimossa]')
+          .replace(/Bearer\s+\S+/gi, '[credenziale rimossa]')
+          .replace(/[\r\n\t]+/g, ' ')
+          .trim()
+          .slice(0, 240)
+      : '';
+  const remoteMessage = clean(object?.message ?? payload?.error_description);
+  const status = response.status;
+  const waitSeconds = integerHeader(response.headers, 'Retry-After');
+  // A 403 is not evidence of invalid credentials: quotas and expired licenses use it too.
+  const quota =
+    status === 429 ||
+    (status === 403 &&
+      remoteCode !== 'LICENSE_EXPIRED' &&
+      (waitSeconds !== undefined ||
+        integerHeader(response.headers, 'RateLimit-HourlyRemaining') === 0 ||
+        integerHeader(response.headers, 'RateLimit-MonthlyRemaining') === 0 ||
+        /rate.?limit|quota|too_many_requests/i.test(remoteCode)));
+  let error: CashError;
+  if (quota)
+    error = rateLimitError(
+      waitSeconds === undefined ? undefined : waitSeconds * 1000,
+    );
+  else if (status === 401)
+    error = {
+      code: 'CREDENTIALS',
+      message: 'Collegamento Fatture in Cloud non valido.',
+      action: 'Controlla il token nelle Impostazioni → Integrazioni.',
+    };
+  else if (status === 403 && remoteCode === 'LICENSE_EXPIRED')
+    error = {
+      code: 'SOURCE_UNAVAILABLE',
+      message: 'La licenza Fatture in Cloud è scaduta.',
+      action: 'Verifica la licenza dell’azienda in Fatture in Cloud.',
+    };
+  else if (status === 403) {
+    const scope = path.includes('/products')
+      ? 'products:r'
+      : path.includes('/tax_profile')
+        ? 'settings:r'
+        : path.includes('/entities/clients')
+          ? 'entity.clients:r'
+          : path.includes('/received_documents')
+            ? 'received_documents:r'
+            : path.includes('type=invoice')
+              ? 'issued_documents.invoices:r'
+              : path.includes('type=credit_note')
+                ? 'issued_documents.credit_notes:r'
+                : path.includes('/issued_documents')
+                  ? 'issued_documents.quotes:a'
+                  : undefined;
+    const permissionEvidence =
+      /permission|forbidden|access_denied|insufficient_scope|unauthorized/i.test(
+        `${remoteCode} ${remoteMessage}`,
+      );
+    error = {
+      code: permissionEvidence ? 'CREDENTIALS' : 'SOURCE_UNAVAILABLE',
+      message: permissionEvidence
+        ? 'Accesso non consentito da Fatture in Cloud.'
+        : 'Fatture in Cloud ha rifiutato la richiesta; causa non identificata.',
+      action: `Verifica ${scope ? `lo scope ${scope}, ` : 'gli scope, '}i permessi dell’utente sull’azienda e la licenza.`,
+    };
+  } else
+    error = {
+      code:
+        status === 400 || status === 422
+          ? 'SOURCE_INVALID'
+          : status === 409
+            ? 'CONFLICT'
+            : 'SOURCE_UNAVAILABLE',
+      message:
+        status === 400
+          ? 'Richiesta rifiutata da Fatture in Cloud.'
+          : status === 422
+            ? 'Operazione rifiutata da Fatture in Cloud: dati non validi.'
+            : status === 404
+              ? 'Risorsa Fatture in Cloud non trovata.'
+              : status === 409
+                ? 'Conflitto con i dati presenti in Fatture in Cloud.'
+                : 'Fatture in Cloud temporaneamente non disponibile.',
+    };
+  const validation: string[] = [];
+  const visit = (value: unknown, field = '', depth = 0) => {
+    if (
+      depth > 5 ||
+      validation.length >= 5 ||
+      /token|authorization|password|secret/i.test(field)
+    )
+      return;
+    if (typeof value === 'string') {
+      const message = clean(value);
+      if (message) validation.push(`${field}: ${message}`);
+    } else if (Array.isArray(value))
+      value.slice(0, 5).forEach((item) => visit(item, field, depth + 1));
+    else if (value && typeof value === 'object')
+      Object.entries(value)
+        .slice(0, 20)
+        .forEach(([key, item]) =>
+          visit(item, field ? `${field}.${key}` : key, depth + 1),
+        );
+  };
+  if (status === 422) visit(object?.validation_result);
+  return {
+    ...error,
+    source: 'FattureInCloud',
+    requestSent: true,
+    httpStatus: status,
+    message: `${error.message} (HTTP ${status})${remoteMessage ? ` ${remoteMessage}` : ''}${validation.length ? ` ${validation.join('; ').slice(0, 600)}` : ''}`,
+  };
+}
+
 async function ficFetch(
   path: string,
   token: string,
   init: RequestInit = {},
   fetcher: typeof fetch = fetch,
-): Promise<Result<Response>> {
-  const response = await officialFetch(
-    `${BASE}${path}`,
-    {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(init.headers ?? {}),
+): Promise<
+  { ok: true; value: Response } | { ok: false; error: FicHttpFailure }
+> {
+  const companyPart = /^\/c\/([^/]+)\//.exec(path)?.[1];
+  const companyId = companyPart ? decodeURIComponent(companyPart) : undefined;
+  const isGet = (init.method ?? 'GET').toUpperCase() === 'GET';
+  for (let attempt = 0; attempt < (isGet ? 3 : 1); attempt++) {
+    const suspendedUntil = companyId
+      ? quotas.get(companyId)?.suspendedUntil
+      : undefined;
+    const remaining = suspendedUntil
+      ? Date.parse(suspendedUntil) - Date.now()
+      : 0;
+    // A local cooldown rejection is certain: no POST has been dispatched.
+    if (remaining > 0)
+      return {
+        ok: false,
+        error: { ...rateLimitError(remaining), requestSent: false },
+      };
+    const response = await officialFetch(
+      `${BASE}${path}`,
+      {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          ...(init.headers ?? {}),
+        },
       },
-    },
-    fetcher,
-  );
-  return response.ok
-    ? response
-    : { ok: false, error: { ...response.error, source: 'FattureInCloud' } };
+      fetcher,
+    );
+    if (!response.ok) {
+      if (isGet && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+        continue;
+      }
+      return {
+        ok: false,
+        error: {
+          code: response.error.code,
+          message: response.error.message,
+          action: response.error.action,
+          source: 'FattureInCloud',
+          requestSent: true,
+        },
+      };
+    }
+    const http = response.value;
+    const waitSeconds = integerHeader(http.headers, 'Retry-After');
+    const error = http.ok ? undefined : await ficHttpError(http, path, token);
+    if (companyId) {
+      const previousCooldown = quotas.get(companyId)?.suspendedUntil;
+      const waitUntil =
+        error?.code === 'RATE_LIMIT' &&
+        waitSeconds !== undefined &&
+        waitSeconds <= 8_640_000_000
+          ? new Date(Date.now() + waitSeconds * 1000).toISOString()
+          : undefined;
+      const observation: FicQuotaObservation = {
+        companyId,
+        observedAt: new Date().toISOString(),
+        hourlyRemaining: integerHeader(
+          http.headers,
+          'RateLimit-HourlyRemaining',
+        ),
+        hourlyLimit: integerHeader(http.headers, 'RateLimit-HourlyLimit'),
+        monthlyRemaining: integerHeader(
+          http.headers,
+          'RateLimit-MonthlyRemaining',
+        ),
+        monthlyLimit: integerHeader(http.headers, 'RateLimit-MonthlyLimit'),
+        ...(waitUntil || previousCooldown
+          ? {
+              suspendedUntil:
+                waitUntil && (!previousCooldown || waitUntil > previousCooldown)
+                  ? waitUntil
+                  : previousCooldown,
+            }
+          : {}),
+      };
+      quotas.set(companyId, observation);
+      for (const listener of quotaListeners) listener({ ...observation });
+    }
+    if (!error) return { ok: true, value: http };
+    if (isGet && attempt < 2) {
+      if (
+        error.code === 'RATE_LIMIT' &&
+        waitSeconds !== undefined &&
+        waitSeconds <= 5
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+        continue;
+      }
+      if (http.status >= 500 && http.status <= 599) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+        continue;
+      }
+    }
+    return { ok: false, error };
+  }
+  throw new Error('FIC attempt limit exceeded');
 }
-
 export async function listCompanies(
   token: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Result<Array<{ id: string; name: string }>>> {
   const response = await ficFetch('/user/companies', token, {}, fetcher);
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return err({
-      code: httpErrorCode(response.value.status),
-      source: 'FattureInCloud',
-      message:
-        httpErrorCode(response.value.status) === 'CREDENTIALS'
-          ? `Token non valido o non autorizzato (HTTP ${response.value.status}).`
-          : `Elenco aziende non disponibile (HTTP ${response.value.status}).`,
-    });
   try {
     const json = (await response.value.json()) as {
       data?: { companies?: unknown[] };
@@ -424,12 +642,6 @@ export async function verifyActivation(
     fetcher,
   );
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return err({
-      code: httpErrorCode(response.value.status),
-      source: 'FattureInCloud',
-      message: `Azienda o autorizzazioni non verificabili (HTTP ${response.value.status}).`,
-    });
   try {
     const json = (await response.value.json()) as { data?: unknown };
     const company = companyInfoSchema.parse(json.data);
@@ -476,24 +688,12 @@ export async function listConsultingProducts(
 ): Promise<Result<Array<{ id: string; name: string }>>> {
   const query = `name = ${queryString('Consulenza')}`;
   const response = await ficFetch(
-    `/c/${encodeURIComponent(companyId)}/products?per_page=100&q=${encodeURIComponent(query)}`,
+    `/c/${encodeURIComponent(companyId)}/products?per_page=100&fields=id,name&q=${encodeURIComponent(query)}`,
     token,
     {},
     fetcher,
   );
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return response.value.status === 401 || response.value.status === 403
-      ? err({
-          code: 'CREDENTIALS',
-          source: 'FattureInCloud',
-          message: `Accesso ai prodotti negato (HTTP ${response.value.status}); verificare lo scope products:r e i permessi dell’utente sull’azienda.`,
-        })
-      : err({
-          code: httpErrorCode(response.value.status),
-          source: 'FattureInCloud',
-          message: `Richiesta prodotti rifiutata da Fatture in Cloud (HTTP ${response.value.status}).`,
-        });
   try {
     const json = (await response.value.json()) as { data?: unknown[] };
     return ok(
@@ -521,62 +721,53 @@ export async function searchClients(
   query: string,
   token: string,
   fetcher: typeof fetch = fetch,
-): Promise<Result<FicClientSnapshot[]>> {
+  page = 1,
+): Promise<Result<FicClientPage>> {
+  if (!Number.isSafeInteger(page) || page < 1)
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Pagina clienti non valida.',
+    });
   const normalized = query.trim();
   const filter = normalized
     ? `&q=${encodeURIComponent(`name contains ${queryString(normalized)}`)}`
     : '';
-  const clients: FicClientSnapshot[] = [];
-  const seen = new Set<string>();
-  let lastPage = 1;
-  for (let page = 1; page <= lastPage; page++) {
-    const response = await ficFetch(
-      `/c/${encodeURIComponent(companyId)}/entities/clients?per_page=50&page=${page}${filter}`,
-      token,
-      {},
-      fetcher,
-    );
-    if (!response.ok) return response;
-    if (!response.value.ok)
-      return response.value.status === 401 || response.value.status === 403
-        ? permissionsError(['entity.clients:r'])
-        : err({
-            code: httpErrorCode(response.value.status),
-            source: 'FattureInCloud',
-            message: `Ricerca clienti rifiutata alla pagina ${page} (HTTP ${response.value.status}).`,
-          });
-    try {
-      const result = clientPageSchema.parse(await response.value.json());
-      if (
-        result.current_page !== page ||
-        result.last_page < page ||
-        (page > 1 && result.last_page !== lastPage)
-      )
-        throw new Error('Paginazione clienti incoerente.');
-      lastPage = result.last_page;
-      for (const client of result.data) {
-        const clientId = String(client.id);
-        if (seen.has(clientId))
-          throw new Error('ID cliente duplicato nella stessa lettura.');
-        seen.add(clientId);
-        clients.push({
-          source: 'fatture_in_cloud',
-          companyId,
-          clientId,
-          displayName: client.name,
-          ...(client.vat_number ? { vatNumber: client.vat_number } : {}),
-        });
-      }
-    } catch (cause) {
-      return err({
-        code: 'SOURCE_INVALID',
-        source: 'FattureInCloud',
-        message: `Risposta clienti non valida alla pagina ${page}.`,
-        details: [String(cause)],
+  const response = await ficFetch(
+    `/c/${encodeURIComponent(companyId)}/entities/clients?per_page=100&fields=id,name,vat_number&page=${page}${filter}`,
+    token,
+    {},
+    fetcher,
+  );
+  if (!response.ok) return response;
+  try {
+    const result = clientPageSchema.parse(await response.value.json());
+    if (result.current_page !== page || result.last_page < page)
+      throw new Error('Paginazione clienti incoerente.');
+    const clients = new Map<string, FicClientSnapshot>();
+    for (const client of result.data) {
+      const clientId = String(client.id);
+      clients.set(clientId, {
+        source: 'fatture_in_cloud',
+        companyId,
+        clientId,
+        displayName: client.name,
+        ...(client.vat_number ? { vatNumber: client.vat_number } : {}),
       });
     }
+    return ok({
+      clients: [...clients.values()],
+      page,
+      ...(page < result.last_page ? { nextPage: page + 1 } : {}),
+    });
+  } catch (cause) {
+    return err({
+      code: 'SOURCE_INVALID',
+      source: 'FattureInCloud',
+      message: `Risposta clienti non valida alla pagina ${page}.`,
+      details: [String(cause)],
+    });
   }
-  return ok(clients);
 }
 
 function displayFicValue(value: unknown): string | undefined {
@@ -604,18 +795,6 @@ export async function getClientDetails(
     fetcher,
   );
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return response.value.status === 401 || response.value.status === 403
-      ? err({
-          code: 'CREDENTIALS',
-          source: 'FattureInCloud',
-          message: `Accesso al cliente negato (HTTP ${response.value.status}); verificare lo scope entity.clients:r e i permessi dell’utente sull’azienda.`,
-        })
-      : err({
-          code: httpErrorCode(response.value.status),
-          source: 'FattureInCloud',
-          message: `Dettaglio cliente non disponibile (HTTP ${response.value.status}).`,
-        });
   try {
     const json = (await response.value.json()) as { data?: unknown };
     const client = clientDetailsSchema.parse(json.data);
@@ -649,23 +828,17 @@ export async function verifyProduct(
   companyDefaultVat?: VerifiedProduct['vat'],
 ): Promise<Result<VerifiedProduct>> {
   const response = await ficFetch(
-    `/c/${encodeURIComponent(companyId)}/products/${encodeURIComponent(productId)}?fieldset=detailed`,
+    `/c/${encodeURIComponent(companyId)}/products/${encodeURIComponent(productId)}?fields=id,name,default_vat`,
     token,
     {},
     fetcher,
   );
   if (!response.ok) return response;
-  if (!response.value.ok)
-    return response.value.status === 401 || response.value.status === 403
-      ? permissionsError(['products:r'])
-      : err({
-          code: httpErrorCode(response.value.status),
-          source: 'FattureInCloud',
-          message: `Prodotto non verificabile (HTTP ${response.value.status}).`,
-        });
   try {
     const json = (await response.value.json()) as { data?: unknown };
     const product = productSchema.parse(json.data);
+    if (String(product.id) !== productId)
+      throw new Error('Prodotto diverso da quello richiesto.');
     if (product.name.trim().toLocaleLowerCase('it') !== 'consulenza')
       return err({
         code: 'VALIDATION',
@@ -815,15 +988,6 @@ async function listPendingDocuments(
       fetcher,
     );
     if (!response.ok) return response;
-    if (!response.value.ok) {
-      if (response.value.status === 401 || response.value.status === 403)
-        return permissionsError(['received_documents:r']);
-      return err({
-        code: httpErrorCode(response.value.status),
-        source: 'FattureInCloud',
-        message: `Acquisizione documenti da registrare ${source}, pagina ${page} non riuscita (HTTP ${response.value.status}).`,
-      });
-    }
     try {
       const result = pendingPage.parse(await response.value.json());
       if (
@@ -879,11 +1043,6 @@ async function listFinancialDocuments(
   const issued = type === 'invoice' || type === 'credit_note';
   const endpoint = issued ? 'issued_documents' : 'received_documents';
   const fields = `id,type,date,entity,amount_gross,payments_list,${issued ? 'number,numeration,subject,stamp_duty' : 'invoice_number,description,category'}`;
-  const scope = issued
-    ? type === 'invoice'
-      ? 'issued_documents.invoices:r'
-      : 'issued_documents.credit_notes:r'
-    : 'received_documents:r';
   const documents: z.infer<typeof remoteFinancialDocument>[] = [];
   let lastPage = 1;
   for (let page = 1; page <= lastPage; page++) {
@@ -894,15 +1053,6 @@ async function listFinancialDocuments(
       fetcher,
     );
     if (!response.ok) return response;
-    if (!response.value.ok) {
-      if (response.value.status === 401 || response.value.status === 403)
-        return permissionsError([scope]);
-      return err({
-        code: httpErrorCode(response.value.status),
-        source: 'FattureInCloud',
-        message: `Sincronizzazione ${type}, pagina ${page} non riuscita (HTTP ${response.value.status}).`,
-      });
-    }
     try {
       const result = financialPage.parse(await response.value.json());
       if (
@@ -941,19 +1091,6 @@ export async function syncFinancialData(
     fetcher,
   );
   if (!response.ok) return response;
-  if (!response.value.ok) {
-    if (response.value.status === 401 || response.value.status === 403)
-      return permissionsError([
-        'issued_documents.invoices:r',
-        'issued_documents.credit_notes:r',
-        'received_documents:r',
-      ]);
-    return err({
-      code: httpErrorCode(response.value.status),
-      source: 'FattureInCloud',
-      message: `Verifica azienda non disponibile (HTTP ${response.value.status}).`,
-    });
-  }
   try {
     const company = companyInfoSchema.parse(
       ((await response.value.json()) as { data?: unknown }).data,
@@ -1083,13 +1220,7 @@ export async function exportQuote(
   },
   token: string,
   fetcher: typeof fetch = fetch,
-): Promise<
-  Result<{
-    outcome: 'success' | 'rejected' | 'uncertain';
-    remoteDocumentId?: string;
-    diagnostic?: string;
-  }>
-> {
+): Promise<Result<FicExportResult>> {
   const payload = {
     data: {
       type: 'quote',
@@ -1111,33 +1242,17 @@ export async function exportQuote(
     { method: 'POST', body: JSON.stringify(payload) },
     fetcher,
   );
-  if (!response.ok)
-    return ok({ outcome: 'uncertain', diagnostic: response.error.message });
-  if (!response.value.ok) {
-    let diagnostic = `HTTP ${response.value.status}`;
-    try {
-      const payload = z
-        .object({
-          error: z.object({ message: z.string().optional() }).optional(),
-          message: z.string().optional(),
-        })
-        .safeParse(await response.value.json());
-      const message = payload.success
-        ? (payload.data.error?.message ?? payload.data.message)
-        : undefined;
-      if (message?.trim()) diagnostic += `: ${message.trim()}`;
-    } catch {
-      // An absent or non-JSON body does not change the known HTTP outcome.
-    }
+  if (!response.ok) {
+    const { httpStatus, requestSent } = response.error;
+    const rejected =
+      !requestSent ||
+      (httpStatus !== undefined &&
+        [400, 401, 403, 404, 405, 409, 422, 429].includes(httpStatus));
     return ok({
-      // Only documented request rejections establish that creation failed.
-      // Server errors and unknown statuses can follow a committed operation.
-      outcome: [400, 401, 403, 404, 405, 409, 422, 429].includes(
-        response.value.status,
-      )
-        ? 'rejected'
-        : 'uncertain',
-      diagnostic,
+      outcome: rejected ? 'rejected' : 'uncertain',
+      requestSent,
+      diagnostic: `${!requestSent ? 'Non inviato: ' : ''}${response.error.message}`,
+      error: response.error,
     });
   }
   try {

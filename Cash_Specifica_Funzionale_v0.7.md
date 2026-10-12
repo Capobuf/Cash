@@ -429,7 +429,7 @@ Cash non crea giornate di lavoro, visite pianificate, probabilità, range di tra
 
 ### 10.1 Clienti
 
-Fatture in Cloud è l'unica sorgente dell'anagrafica clienti. Quando l'integrazione è attiva, la schermata **Clienti** recupera automaticamente l'elenco corrente dall'azienda configurata e lo presenta in tabella, permettendo di aggiornarlo o cercarlo in tempo reale. Cash non crea, modifica, elimina o mantiene una copia locale autonoma dei clienti.
+Fatture in Cloud è l'unica sorgente dell'anagrafica clienti. Quando l'integrazione è attiva, la schermata **Clienti** recupera automaticamente soltanto la prima pagina dell’elenco corrente dall’azienda configurata (`per_page=100`, `fields=id,name,vat_number`). Mostra immediatamente i risultati in tabella; le pagine successive vengono richieste solo con **Carica altri**, accodando senza duplicare gli ID. La ricerca avviene lato API su submit esplicito e riparte dalla pagina 1, anche nella scelta del cliente per i preventivi. Le risposte di contesti precedenti sono ignorate e un errore su una pagina successiva conserva i risultati già validi. Cash non crea, modifica, elimina o mantiene una copia locale autonoma dei clienti.
 
 Il clic su una riga apre il dettaglio completo del cliente: Cash recupera il fieldset dettagliato corrente da Fatture in Cloud e mostra ogni informazione proveniente dal servizio con l'etichetta `FIC`. Nello stesso dettaglio mostra separatamente le informazioni dell'app collegate al cliente, incluse Sedi e preventivi. Il menu azioni `…` della riga consente almeno di aprire il dettaglio e aggiungere rapidamente una Sede associata.
 
@@ -1356,6 +1356,63 @@ La scheda dell'integrazione mostra sempre uno stato comprensibile:
 
 L'attivazione viene salvata come `Attiva` soltanto dopo il completamento riuscito della procedura guidata; annullarla lascia la configurazione precedente invariata. Cambiare azienda invalida il prodotto selezionato e richiede una nuova selezione. Disattivare e rimuovere il collegamento hanno gli effetti distinti descritti nella sezione 20.1.
 
+### 26.2.1 Quote API, errori e notifiche
+
+La Card Fatture in Cloud contiene **Utilizzo API**: residui e limiti orari e mensili
+letti dagli header `RateLimit-HourlyRemaining`, `RateLimit-HourlyLimit`,
+`RateLimit-MonthlyRemaining`, `RateLimit-MonthlyLimit` di risposte riuscite o fallite.
+Ogni osservazione include azienda e data/ora; i dati non sono in tempo reale e non
+vengono stimati sottraendo le chiamate locali. Gli header assenti/malformati sono non
+disponibili, separatamente per ogni quota; le barre rappresentano la percentuale
+**disponibile** rispetto al limite effettivo. Il processo principale conserva solo in
+memoria tali dati e l’eventuale scadenza di `Retry-After`, senza token né payload.
+Al riavvio le quote sono sconosciute. Lettura locale e aggiornamenti IPC tipizzati
+non richiedono HTTP, polling o pulsanti di aggiornamento; `/user/companies` non
+aggiorna le quote di un’azienda. Osservazioni di altre aziende sono scartate.
+
+I [limiti documentati](https://developers.fattureincloud.it/docs/basics/limits-and-quotas/)
+sono 300 richieste ogni 5 minuti su finestra mobile condivisa fra app e utenti della
+stessa azienda, 1.000/ora e 40.000/mese. Le quote lunghe differiscono fra app pubbliche
+e private e quella mensile delle app private è condivisa dall’azienda. Gli header
+effettivi restano la fonte autorevole; il residuo breve non è esposto dalle API.
+Una quota osservata esaurita conserva la data del rilevamento; Cash non inferisce
+il reset dall’orologio locale. L’attesa nota viene mostrata con il termine indicato.
+
+Gli [errori FIC](https://developers.fattureincloud.it/docs/basics/errors/) sono
+interpretati centralmente, inclusi body non JSON e i due formati error/error_description
+oppure error.code/message/validation_result. 400/422 sono errori di richiesta o
+validazione con dettagli leggibili e limitati; 401 indica autenticazione; 403 con
+evidenza di quota è RATE_LIMIT, con LICENSE_EXPIRED indica licenza scaduta, con
+evidenza di autorizzazione invita a verificare scope e permessi. Un 403 ambiguo non
+attribuisce una causa certa. 404 indica risorsa assente, 409 conflitto, 5xx errore remoto.
+Nessun body completo o segreto viene presentato nelle notifiche.
+
+Le GET hanno al massimo tre tentativi complessivi per errori di rete/5xx, con backoff
+250 e 500 ms. Per 429/403 da quota rispettano Retry-After espresso in secondi; un
+retry automatico è consentito solo con attesa nota fino a 5 secondi e tentativi residui.
+Attese più lunghe terminano l’operazione con errore esplicito. Nessun retry degli
+errori permanenti né delle POST. Il cooldown noto per azienda impedisce nuove
+richieste prima dell’invio e interrompe verifiche e sincronizzazioni; dati locali e
+snapshot offline restano utilizzabili. Il modulo HTTP delle altre integrazioni non cambia.
+
+Gli esiti di operazioni remote significative sono notificati con un solo Toast shadcn
+Base UI globale, compatibile con CSPProvider, tramite gli errori applicativi tipizzati.
+Non ci sono notifiche per singole pagine, GET interne o rerender. Conflitti dell’archivio,
+errori di salvataggio ed esportazioni incerte conservano messaggi persistenti; il Toast
+rinvia al messaggio critico senza duplicarlo integralmente. Chiudere il Toast non
+modifica lo stato dell’operazione.
+
+Prima dell’esportazione Cash valida localmente cliente, azienda, righe, prezzi e
+descrizioni, costruisce le righe definitive e salva atomicamente il tentativo con
+fingerprint. Il processo principale verifica una sola volta il prodotto Consulenza e
+l’IVA corrente (leggendo anche il profilo fiscale soltanto se necessario), controlla
+nuovamente il contesto e invia la POST. Errori nella verifica o un cooldown prima
+della POST producono un esito rifiutato certo con diagnosi **Non inviato**. Rifiuti HTTP
+400/401/403/404/405/409/422/429 sono certi; timeout, errori di rete, 5xx o risposta di
+creazione priva di identificativo sono incerti e richiedono verifica manuale.
+Non si reinviano automaticamente preventivi. Tentativi, fingerprint, controlli di
+concorrenza e persistenza atomica degli esiti restano obbligatori.
+
 ### 26.3 Clienti e Sedi
 
 La pagina recupera e cerca in una tabella i clienti dell'azienda Fatture in Cloud configurata. Il menu `…` permette l'aggiunta rapida di una Sede; il clic sulla riga apre tutte le informazioni FIC, chiaramente etichettate, e le informazioni Cash collegate, incluse Sedi e preventivi. Un gruppo separato **Altre sedi** nelle Impostazioni gestisce fornitori, laboratorio, magazzini e luoghi indipendenti. La modifica o eliminazione di un cliente avviene esclusivamente in Fatture in Cloud e non altera automaticamente Sedi o snapshot già salvati in Cash.
@@ -1734,7 +1791,7 @@ In Impostazioni → Integrazioni il comando **Verifica permessi** presenta due s
 
 I permessi dell’utente sull’azienda e gli scope concessi all’Access Token sono livelli distinti. Cash non decodifica il token né pretende di interrogare una lista raw degli scope manuali: il contratto ufficiale consultato non offre una lista di introspezione utilizzabile a questo scopo. I Badge degli scope richiesti sono requisiti di configurazione, non prova degli accessi concessi.
 
-La verifica esegue GET non distruttive: clienti, prodotti, fatture, note di credito, expense, passive_credit_note e tutti e tre i tipi pending con per_page=1 e fields=id; per il profilo fiscale usa settings/tax_profile. Una risposta 2xx conferma l’accesso effettivo a quella lettura; 401/403 lo rendono non disponibile. Un 403 invita a verificare scope richiesto e permessi azienda senza attribuire una causa non dimostrata. Errori di rete, rate limit o server sono non verificabili, non prove di un permesso mancante. Nessun retry automatico o fallback.
+La verifica esegue GET non distruttive: clienti, prodotti, fatture, note di credito, expense, passive_credit_note e tutti e tre i tipi pending con per_page=1 e fields=id; per il profilo fiscale usa settings/tax_profile. Una risposta 2xx conferma l’accesso effettivo a quella lettura; 401 o un 403 con evidenza di permessi negati lo rendono non disponibile. Un 403 ambiguo non dimostra credenziali errate: invita a verificare scope, permessi e licenza. Errori di rete o server sono non verificabili. Un rate limit interrompe le sonde successive e viene restituito come RATE_LIMIT, distinto da permessi mancanti. Si applica soltanto la politica GET limitata della sezione 26.2.1; nessun fallback.
 
 Per issued_documents.quotes:a viene mostrato il permesso azienda rilevato; l’accesso write non è verificabile direttamente senza un’operazione di esportazione. Nessun preventivo fittizio viene creato. L’esito è datato e resta live, in memoria, riferito alla sola azienda e sessione consultata.
 

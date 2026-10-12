@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   createEmptyDocument,
+  meta,
   ok,
   type CashDocument,
 } from '../../src/domain/model';
+import { createPendingAttempt } from '../../src/domain/export';
 import type { ArchiveSession } from '../../src/shared/archive';
 import { IPC } from '../../src/shared/ipc';
 
@@ -25,6 +27,7 @@ const native = vi.hoisted(() => ({
   createArchive: vi.fn(),
   showOpenDialog: vi.fn(),
   showSaveDialog: vi.fn(),
+  requireFicToken: vi.fn(),
 }));
 vi.mock('electron', () => ({
   app: {
@@ -98,7 +101,7 @@ vi.mock('../../src/native/credentials', () => ({
   deleteFicToken: vi.fn(),
   hasFicToken: vi.fn(),
   hasOrsApiKey: vi.fn(),
-  requireFicToken: vi.fn(),
+  requireFicToken: native.requireFicToken,
   requireOrsApiKey: vi.fn(),
   setFicToken: vi.fn(),
   setOrsApiKey: vi.fn(),
@@ -407,3 +410,107 @@ it.each(['FILE_NOT_FOUND', 'IO', 'VALIDATION'])(
     );
   },
 );
+
+async function prepareFicExport() {
+  const document = createEmptyDocument();
+  document.settings.fic = {
+    enabled: true,
+    company: { id: '1', name: 'Studio' },
+    product: { id: '2', name: 'Consulenza' },
+  };
+  const attempt = await createPendingAttempt('1', [
+    {
+      itemIds: ['item'],
+      description: 'Servizio',
+      amount: '100.00',
+      quantity: 1,
+    },
+  ]);
+  document.quotes.push({
+    ...meta(),
+    number: 1,
+    date: '2026-10-12',
+    items: [],
+    snapshotRevision: 0,
+    exportAttempts: [attempt],
+    client: {
+      source: 'fatture_in_cloud',
+      companyId: '1',
+      clientId: '3',
+      displayName: 'Cliente',
+    },
+  });
+  const session: ArchiveSession = {
+    path: 'Cash.sqlite',
+    document,
+    readOnly: false,
+    token: { documentId: document.documentId, revision: document.revision },
+  };
+  native.openArchive.mockResolvedValue(ok(session));
+  native.requireFicToken.mockResolvedValue(ok('secret'));
+  await import('../../src/native/main');
+  await native.handlers.get(IPC.archiveOpenLast)!();
+  const input = {
+    companyId: '1',
+    clientId: '3',
+    productId: '2',
+    lines: attempt.lines,
+    attemptId: attempt.id,
+  };
+  return { input, document };
+}
+
+it('esporta con una sola verifica prodotto e una POST, con IVA corrente', async () => {
+  const { input } = await prepareFicExport();
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (init?.method === 'POST') {
+      expect(JSON.parse(String(init.body)).data.items_list[0].vat.id).toBe(8);
+      return new Response(JSON.stringify({ data: { id: 90 } }));
+    }
+    return new Response(
+      JSON.stringify({
+        data: { id: 2, name: 'Consulenza', default_vat: { id: 8 } },
+      }),
+    );
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect(await native.handlers.get(IPC.ficExport)!({}, input)).toMatchObject({
+    ok: true,
+    value: { outcome: 'success', remoteDocumentId: '90' },
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it.each([404, 422, 403])(
+  'nessuna POST e rifiuto certo dopo verifica preliminare HTTP %s',
+  async (status) => {
+    const { input } = await prepareFicExport();
+    const fetcher = vi.fn<typeof fetch>(
+      async () => new Response('{}', { status }),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    expect(await native.handlers.get(IPC.ficExport)!({}, input)).toMatchObject({
+      ok: true,
+      value: {
+        outcome: 'rejected',
+        requestSent: false,
+        diagnostic: expect.stringContaining('Non inviato'),
+      },
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+  },
+);
+
+it('validazione locale prima della rete e lettura quote senza HTTP', async () => {
+  const { input } = await prepareFicExport();
+  const fetcher = vi.fn<typeof fetch>();
+  vi.stubGlobal('fetch', fetcher);
+  expect(
+    await native.handlers.get(IPC.ficExport)!({}, { ...input, lines: [] }),
+  ).toMatchObject({
+    ok: true,
+    value: { outcome: 'rejected', requestSent: false },
+  });
+  expect(await native.handlers.get(IPC.ficQuota)!()).toEqual(ok(null));
+  expect(fetcher).not.toHaveBeenCalled();
+});

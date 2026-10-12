@@ -1,3 +1,4 @@
+import { useFicClients } from '@/hooks/use-fic-clients';
 import {
   Building2,
   Cloud,
@@ -8,7 +9,6 @@ import {
   Users,
 } from 'lucide-react';
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -129,49 +129,33 @@ export function ClientsView({
   requestDelete: (target: DeleteTarget) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [clients, setClients] = useState<FicClientSnapshot[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
   const [selectedClient, setSelectedClient] = useState<FicClientSnapshot>();
   const [details, setDetails] = useState<FicClientDetails>();
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [siteEditor, setSiteEditor] = useState<SiteEditor>(null);
-  const clientsRequest = useRef(0);
   const detailRequest = useRef(0);
   const companyId = doc.settings.fic.company?.id;
   const integrationReady =
     doc.settings.fic.enabled && hasToken && Boolean(companyId);
 
-  const loadClients = useCallback(
-    async (search: string) => {
-      if (!companyId || !integrationReady) return;
-      const request = ++clientsRequest.current;
-      setLoading(true);
-      setClients([]);
-      const result = await window.cash.fic.searchClients({
-        companyId,
-        query: search,
-      });
-      if (request !== clientsRequest.current) return;
-      setLoading(false);
-      setLoaded(true);
-      if (!result.ok) {
-        appState.setError(result.error);
-        return;
-      }
-      setClients(result.value);
-    },
-    [appState, companyId, integrationReady],
-  );
-
+  const {
+    results: clients,
+    loading,
+    loaded,
+    nextPage,
+    search: loadClients,
+    loadMore,
+  } = useFicClients({
+    companyId,
+    enabled: integrationReady,
+    appState,
+    contextKey: `${doc.documentId}:${appState.archiveContext}:${appState.session?.path}:${companyId}:${integrationReady}`,
+  });
   useEffect(() => {
     if (integrationReady) void loadClients('');
-    else {
-      clientsRequest.current += 1;
-      setClients([]);
-      setLoaded(false);
-      setLoading(false);
-    }
+    return () => {
+      detailRequest.current++;
+    };
   }, [integrationReady, loadClients]);
 
   const openDetails = async (client: FicClientSnapshot) => {
@@ -269,6 +253,15 @@ export function ClientsView({
                 {loading ? 'Ricerca…' : 'Cerca'}
               </Button>
             </form>
+          ) : null}
+          {nextPage ? (
+            <Button
+              variant="outline"
+              disabled={loading}
+              onClick={() => void loadMore()}
+            >
+              {loading ? 'Caricamento…' : 'Carica altri'}
+            </Button>
           ) : null}
           {integrationReady && clients.length ? (
             <Table>

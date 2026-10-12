@@ -43,6 +43,8 @@ export function ExportDialog({
   doc,
   results,
   onSearch,
+  hasMore = false,
+  onLoadMore,
   onClose,
   onExport,
   error,
@@ -51,6 +53,8 @@ export function ExportDialog({
   doc: CashDocument;
   results: FicClientSnapshot[];
   onSearch: (query: string) => Promise<void>;
+  hasMore?: boolean;
+  onLoadMore?: () => Promise<void>;
   onClose: () => void;
   error?: CashError | null;
   onExport: (
@@ -186,6 +190,18 @@ export function ExportDialog({
                 ))}
               </div>
             </ScrollArea>
+            {hasMore ? (
+              <Button
+                variant="outline"
+                disabled={searching}
+                onClick={() => {
+                  setSearching(true);
+                  void onLoadMore?.().finally(() => setSearching(false));
+                }}
+              >
+                {searching ? 'Caricamento…' : 'Carica altri'}
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {step === 2 ? (

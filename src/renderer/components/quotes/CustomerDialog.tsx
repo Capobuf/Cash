@@ -32,6 +32,8 @@ export function CustomerDialog({
   results,
   searching = false,
   onSearch,
+  hasMore = false,
+  onLoadMore,
   onSelect,
 }: {
   open: boolean;
@@ -42,6 +44,8 @@ export function CustomerDialog({
   results: FicClientSnapshot[];
   searching?: boolean;
   onSearch: (query: string) => Promise<void>;
+  hasMore?: boolean;
+  onLoadMore?: () => Promise<void>;
   onSelect: (clientId: string | FicClientSnapshot) => boolean;
 }) {
   return (
@@ -114,6 +118,17 @@ export function CustomerDialog({
                 )}
               </div>
             </ScrollArea>
+            {hasMore ? (
+              <Button
+                variant="outline"
+                disabled={searching}
+                onClick={() => {
+                  void onLoadMore?.();
+                }}
+              >
+                {searching ? 'Caricamento…' : 'Carica altri'}
+              </Button>
+            ) : null}
           </div>
         ) : (
           <Alert>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FicAccessVerification } from '../../domain/integration';
 import type { AppState } from '../state';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +47,13 @@ export function FicAccessPanel({
   enabled: boolean;
   appState: AppState;
 }) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<FicAccessVerification>();
   const verify = async () => {
@@ -55,15 +62,23 @@ export function FicAccessPanel({
     setReport(undefined);
     try {
       const result = await window.cash.fic.verifyPermissions({ companyId });
-      if (result.ok) setReport(result.value);
-      else appState.setError(result.error);
+      if (!active.current) return;
+      if (result.ok) {
+        setReport(result.value);
+        appState.notifyFicSuccess(
+          'Verifica accessi completata',
+          'Consulta il report per gli accessi disponibili e quelli da verificare.',
+        );
+      } else appState.setError(result.error);
     } catch {
+      if (!active.current) return;
       appState.setError({
+        source: 'FattureInCloud',
         code: 'SOURCE_UNAVAILABLE',
         message: 'Verifica permessi non riuscita. Ripeti l’operazione.',
       });
     } finally {
-      setBusy(false);
+      if (active.current) setBusy(false);
     }
   };
   const currentReport =

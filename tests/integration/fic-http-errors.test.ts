@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getClientDetails,
   getTaxProfile,
@@ -13,12 +13,20 @@ import {
 
 const failures = [
   [401, 'CREDENTIALS'],
-  [403, 'CREDENTIALS'],
+  [403, 'SOURCE_UNAVAILABLE'],
   [429, 'RATE_LIMIT'],
   [422, 'SOURCE_INVALID'],
   [500, 'SOURCE_UNAVAILABLE'],
   [503, 'SOURCE_UNAVAILABLE'],
 ] as const;
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
+async function settled<T extends Promise<unknown>>(
+  promise: T,
+): Promise<Awaited<T>> {
+  await vi.runAllTimersAsync();
+  return promise as Awaited<T>;
+}
 const response = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status });
 const company = {
@@ -76,23 +84,23 @@ describe('classificazione HTTP FIC', () => {
     ],
   ] as const)('%s', (_, operation) => {
     it.each(failures)(
-      'classifica HTTP %s come %s senza ritentare',
+      'classifica HTTP %s come %s con retry solo per 5xx',
       async (status, code) => {
         const fetcher = vi.fn<typeof fetch>(async () => response({}, status));
-        const result = await operation(fetcher);
+        const result = await settled(operation(fetcher));
         expect(result).toMatchObject({
           ok: false,
           error: { code, source: 'FattureInCloud' },
         });
         if (result.ok) throw new Error('Expected HTTP failure');
-        if (code !== 'CREDENTIALS') {
+        if (code !== 'CREDENTIALS' && status !== 403) {
           expect(result.error.message).toContain(`HTTP ${status}`);
           expect(result.error.message).not.toMatch(
             /token|scope|autorizzato|accesso.*negato/i,
           );
           expect(result.error.action).toBeUndefined();
         }
-        expect(fetcher).toHaveBeenCalledOnce();
+        expect(fetcher).toHaveBeenCalledTimes(status >= 500 ? 3 : 1);
       },
     );
   });
@@ -113,10 +121,10 @@ describe('classificazione HTTP FIC', () => {
             });
           });
           expect(
-            await verifyActivation('token', '1', '2', fetcher),
+            await settled(verifyActivation('token', '1', '2', fetcher)),
           ).toMatchObject({ ok: false, error: { code } });
           expect(fetcher).toHaveBeenCalledTimes(
-            endpoint === 'tax_profile' ? 2 : 3,
+            (endpoint === 'tax_profile' ? 2 : 3) + (status >= 500 ? 2 : 0),
           );
         },
       );
@@ -146,7 +154,7 @@ describe('classificazione HTTP FIC', () => {
             ? response({ data: company })
             : response({ data: [], current_page: 1, last_page: 1 });
         });
-        const result = await syncFinancialData('1', 'token', fetcher);
+        const result = await settled(syncFinancialData('1', 'token', fetcher));
         expect(result).toMatchObject({
           ok: false,
           error: { code, source: 'FattureInCloud' },
@@ -158,7 +166,7 @@ describe('classificazione HTTP FIC', () => {
             url.searchParams.get('type') === type
           );
         });
-        expect(failedCalls).toHaveLength(1);
+        expect(failedCalls).toHaveLength(status >= 500 ? 3 : 1);
       },
     );
   });
@@ -173,7 +181,15 @@ describe('classificazione HTTP FIC', () => {
           ? response({ data: company })
           : response({}, status);
       });
-      const result = await verifyPermissions('1', 'token', fetcher);
+      const result = await settled(verifyPermissions('1', 'token', fetcher));
+      if (code === 'RATE_LIMIT') {
+        expect(result).toMatchObject({
+          ok: false,
+          error: { code: 'RATE_LIMIT' },
+        });
+        expect(fetcher).toHaveBeenCalledTimes(2);
+        return;
+      }
       if (!result.ok) throw new Error(result.error.message);
       const readAccess = result.value.requiredAccess.filter(
         (access) => access.scope !== 'issued_documents.quotes:a',
@@ -189,7 +205,7 @@ describe('classificazione HTTP FIC', () => {
         scope: 'issued_documents.quotes:a',
         status: 'unverifiable',
       });
-      expect(fetcher).toHaveBeenCalledTimes(7);
+      expect(fetcher).toHaveBeenCalledTimes(status >= 500 ? 19 : 7);
     },
   );
 
@@ -200,10 +216,10 @@ describe('classificazione HTTP FIC', () => {
       [() => listConsultingProducts('token', '1', fetcher), 'products:r'],
       [() => getClientDetails('1', '2', 'token', fetcher), 'entity.clients:r'],
     ] as const) {
-      const result = await operation();
+      const result = await settled(operation());
       if (result.ok) throw new Error('Expected denial');
-      expect(result.error.message).toContain(scope);
-      expect(result.error.message).toContain('permessi');
+      expect(result.error.action).toContain(scope);
+      expect(result.error.action).toContain('permessi');
     }
   });
 });
