@@ -1300,9 +1300,12 @@ L’acquisizione usa `node:sqlite.backup()` nella stessa coda dei salvataggi; il
 termina dopo lo snapshot locale. Cash verifica application_id, schemi supportati, integrity_check,
 foreign_key_check, lettura/validazione completa, identità e revisione. La copia chiusa autonoma
 viene trasferita asincronamente in un temporaneo di destinazione; dimensione e SHA-256 devono
-corrispondere. Dopo ulteriore verifica SQLite la pubblicazione esclusiva mediante hard link
-impedisce sovrascritture. La cartella deve superare prove effettive di creazione, lettura,
-rinomina, eliminazione e link esclusivo; filesystem incompatibili falliscono esplicitamente.
+corrispondere. Dopo ulteriore verifica SQLite la pubblicazione mediante hard link o, se non
+supportato, copia esclusiva nativa impedisce sovrascritture. Il file definitivo viene verificato
+prima di registrare il successo e avviare la rotazione. La copia esclusiva non è atomica:
+un’interruzione può lasciare un file incompleto, escluso dai backup validi e dalla rotazione.
+La cartella deve superare prove effettive di creazione, lettura, rinomina, eliminazione e
+pubblicazione senza sovrascrittura; filesystem incompatibili falliscono esplicitamente.
 Le percentuali UI rappresentano solo byte realmente trasferiti, le altre fasi sono indeterminate.
 
 Le copie risiedono sotto `Cash-Backups/<UUID installazione>/<documentId>` e hanno nomi Cash con

@@ -15,6 +15,8 @@ import { BankCategoryCombobox } from '../../src/renderer/components/BankCategory
 import { ProfileEditor } from '../../src/renderer/components/ProfileEditor';
 import { ClientsView } from '../../src/renderer/views/ClientsView';
 import { FinancialAnalysisView } from '../../src/renderer/views/FinancialAnalysisView';
+import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
+import { calculateFinancialOverview } from '../../src/domain/financial-overview';
 import { BankMovementsView } from '../../src/renderer/views/BankMovementsView';
 import { BankRulesTable } from '../../src/renderer/components/BankRulesTable';
 import { CustomerDialog } from '../../src/renderer/components/quotes/CustomerDialog';
@@ -949,6 +951,117 @@ export async function runUiChecks() {
     await act(async () => {
       root.unmount();
     });
+  }
+}
+
+export async function runFinancialFlowChecks() {
+  const root = createRoot(document.getElementById('root')!);
+  const doc = createEmptyDocument();
+  doc.fiscalPaymentOverrides = [{ year: 2026, total: '5000.00' }];
+  doc.bankExpenses = [
+    {
+      ...meta(),
+      date: '2026-01-01',
+      description: 'Spese operative',
+      amount: '10000.00',
+      categoryIds: [],
+    },
+  ];
+  doc.financialSnapshot = {
+    source: 'fatture_in_cloud',
+    company: { id: 'company', name: 'Studio' },
+    acquiredAt: '2026-10-01T12:00:00Z',
+    issuedDocuments: Array.from({ length: 6 }, (_, index) => ({
+      id: `invoice-${index}`,
+      type: 'invoice',
+      date: '2026-01-01',
+      amountGross: '10000.00',
+      stampDuty: '0.00',
+      entityId: `client-${index}`,
+      entityName: `Cliente ${index + 1} con denominazione estesa`,
+      payments: [
+        { amount: '10000.00', status: 'paid', paidDate: '2026-01-01' },
+      ],
+    })),
+    receivedDocuments: [],
+  };
+  const overview = calculateFinancialOverview(doc, 2026, '2026-10-01');
+  const settled = async () => {
+    await act(async () => {
+      for (let frame = 0; frame < 4; frame++)
+        await new Promise(requestAnimationFrame);
+    });
+  };
+  const card = () =>
+    document.querySelector<HTMLElement>(
+      '[aria-label="Flussi"] [data-slot="card"]',
+    )!;
+  const checkFit = () => {
+    const chart = card().querySelector<HTMLElement>('[data-slot="chart"]')!;
+    const viewport = chart.parentElement!;
+    const area = viewport.getBoundingClientRect();
+    const diagram = chart.getBoundingClientRect();
+    if (
+      !viewport.clientWidth ||
+      !viewport.clientHeight ||
+      getComputedStyle(viewport).overflow !== 'hidden' ||
+      diagram.left < area.left - 1 ||
+      diagram.right > area.right + 1 ||
+      diagram.top < area.top - 1 ||
+      diagram.bottom > area.bottom + 1 ||
+      card().scrollWidth > card().clientWidth
+    )
+      throw new Error('Financial flow overflows or clips the diagram');
+  };
+  try {
+    for (const width of [320, 800, 1280]) {
+      await act(async () => {
+        root.render(
+          <div style={{ width }}>
+            <FinancialOverviewDashboard overview={overview} />
+          </div>,
+        );
+      });
+      await settled();
+      checkFit();
+    }
+    await act(async () => {
+      card().querySelector<HTMLButtonElement>('button')!.click();
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error('Financial flow did not enter fullscreen')),
+          2000,
+        );
+        document.addEventListener(
+          'fullscreenchange',
+          () => {
+            clearTimeout(timeout);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    });
+    await settled();
+    if (
+      document.fullscreenElement !== card() ||
+      card().querySelector('button')?.getAttribute('aria-pressed') !== 'true'
+    )
+      throw new Error('Financial flow fullscreen state is incorrect');
+    checkFit();
+    await act(async () => {
+      await document.exitFullscreen();
+    });
+    await settled();
+    if (
+      card().querySelector('button')?.getAttribute('aria-pressed') !== 'false'
+    )
+      throw new Error('Financial flow did not restore its fullscreen button');
+    checkFit();
+    return 'financial-flow';
+  } finally {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    await act(async () => root.unmount());
   }
 }
 

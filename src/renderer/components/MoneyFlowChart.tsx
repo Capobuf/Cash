@@ -88,6 +88,7 @@ export function MoneyFlowChart({
   layoutHeight = height,
   minWidth = 1120,
   nodePadding = 52,
+  fitToContainer = false,
 }: {
   flow: {
     nodes: { name: string }[];
@@ -98,7 +99,23 @@ export function MoneyFlowChart({
   layoutHeight?: number;
   minWidth?: number;
   nodePadding?: number;
+  fitToContainer?: boolean;
 }) {
+  const container = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(minWidth);
+  useLayoutEffect(() => {
+    if (!fitToContainer || !container.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setContainerWidth(entry.contentRect.width);
+    });
+    setContainerWidth(container.current.clientWidth);
+    observer.observe(container.current);
+    return () => observer.disconnect();
+  }, [fitToContainer]);
+  const chartWidth = Math.max(1, containerWidth, minWidth);
+  const scale = fitToContainer
+    ? Math.min(containerWidth / chartWidth, height / layoutHeight, 1)
+    : 1;
   const [hovered, setHovered] = useState<HoveredFlow>();
   useEffect(() => {
     const clear = () => setHovered(undefined);
@@ -111,15 +128,32 @@ export function MoneyFlowChart({
   }, []);
   return (
     <div
-      className="overflow-auto"
-      style={{ maxHeight: height }}
+      ref={container}
+      className={
+        fitToContainer
+          ? 'relative min-w-0 w-full overflow-hidden'
+          : 'overflow-auto'
+      }
+      style={fitToContainer ? { height } : { maxHeight: height }}
       onPointerLeave={() => setHovered(undefined)}
       onScroll={() => setHovered(undefined)}
     >
       <ChartContainer
         config={{}}
         className="w-full aspect-auto"
-        style={{ height: layoutHeight, minWidth }}
+        style={
+          fitToContainer
+            ? {
+                position: 'absolute',
+                width: chartWidth,
+                height: layoutHeight,
+                left: (containerWidth - chartWidth * scale) / 2,
+                top: (height - layoutHeight * scale) / 2,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+              }
+            : { height: layoutHeight, minWidth }
+        }
         role="img"
         aria-label={label}
       >

@@ -8,7 +8,9 @@ import {
   rm,
   open,
   link,
+  copyFile,
 } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -35,6 +37,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...fs,
     open: vi.fn(fs.open),
     link: vi.fn(fs.link),
+    copyFile: vi.fn(fs.copyFile),
     rm: vi.fn(fs.rm),
     writeFile: vi.fn(fs.writeFile),
     readdir: vi.fn(fs.readdir),
@@ -67,6 +70,7 @@ beforeEach(async () => {
     );
   vi.mocked(open).mockImplementation(fs.open);
   vi.mocked(link).mockImplementation(fs.link);
+  vi.mocked(copyFile).mockImplementation(fs.copyFile);
   vi.mocked(rm).mockImplementation(fs.rm);
   vi.mocked(writeFile).mockImplementation(fs.writeFile);
   vi.mocked(readdir).mockImplementation(fs.readdir);
@@ -290,11 +294,92 @@ it('rejects destination filesystems without exclusive publication before changin
   vi.mocked(link).mockRejectedValueOnce(
     Object.assign(new Error('No hard links'), { code: 'ENOTSUP' }),
   );
+  vi.mocked(copyFile).mockRejectedValueOnce(
+    Object.assign(new Error('Exclusive copy denied'), { code: 'EACCES' }),
+  );
   expect((await manager.selectDirectory(folder)).ok).toBe(false);
   expect(unwrap(await readPreferences()).backup!.destination).toBe(
     previous.destination,
   );
   expect(await readdir(folder)).toEqual([]);
+});
+it.each(['EISDIR', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EPERM'])(
+  'creates verified backups and rotates with exclusive copies when hard links fail with %s',
+  async (code) => {
+    await manager.check();
+    const previous = manager.snapshot.latest!;
+    const previousBytes = await readFile(previous.path);
+    const destination = join(root, 'drive');
+    await mkdir(destination);
+    vi.mocked(link).mockRejectedValue(
+      Object.assign(new Error('Hard links unavailable'), { code }),
+    );
+    unwrap(await manager.selectDirectory(destination));
+    unwrap(
+      await manager.configure({
+        enabled: false,
+        intervalHours: 24,
+        retention: 5,
+      }),
+    );
+    for (let index = 0; index < 5; index++) unwrap(await manager.run());
+    expect(manager.snapshot.error).toBeNull();
+    expect(manager.snapshot.entries).toHaveLength(5);
+    for (const entry of manager.snapshot.entries) {
+      expect(entry.verification).toBe('valid');
+      expect(unwrap(await verifyArchiveCopy(entry.path)).header).toMatchObject(
+        current!.token,
+      );
+    }
+    expect(await readFile(previous.path)).toEqual(previousBytes);
+    expect(unwrap(await readPreferences()).backup!.destination).toBe(
+      destination,
+    );
+    expect(vi.mocked(copyFile).mock.calls.length).toBeGreaterThan(0);
+    for (const [, , flags] of vi.mocked(copyFile).mock.calls)
+      expect(flags).toBe(constants.COPYFILE_EXCL);
+    expect(await readdir(destination)).toEqual(['Cash-Backups']);
+  },
+);
+it('preserves an existing final file when exclusive copy publication collides', async () => {
+  await manager.check();
+  const previous = manager.snapshot.latest!;
+  const previousBytes = await readFile(previous.path);
+  const original = vi.mocked(copyFile).getMockImplementation()!;
+  let collision: string | undefined;
+  vi.mocked(link).mockRejectedValue(
+    Object.assign(new Error('No hard links'), { code: 'EISDIR' }),
+  );
+  vi.mocked(copyFile).mockImplementation(async (...args) => {
+    if (String(args[1]).endsWith('.sqlite')) {
+      collision = String(args[1]);
+      await writeFile(collision, 'existing file');
+    }
+    return original(...args);
+  });
+  expect((await manager.run()).ok).toBe(false);
+  expect(collision).toBeDefined();
+  expect(await readFile(collision!, 'utf8')).toBe('existing file');
+  expect(await readFile(previous.path)).toEqual(previousBytes);
+});
+it('removes a corrupted exclusive publication without rotating previous backups', async () => {
+  await manager.check();
+  const previous = manager.snapshot.latest!;
+  const previousBytes = await readFile(previous.path);
+  const original = vi.mocked(copyFile).getMockImplementation()!;
+  vi.mocked(link).mockRejectedValue(
+    Object.assign(new Error('No hard links'), { code: 'EISDIR' }),
+  );
+  vi.mocked(copyFile).mockImplementation(async (...args) => {
+    await original(...args);
+    if (String(args[1]).endsWith('.sqlite'))
+      await writeFile(args[1], 'corrupted publication');
+  });
+  expect((await manager.run()).ok).toBe(false);
+  expect(await readFile(previous.path)).toEqual(previousBytes);
+  unwrap(await manager.refresh());
+  expect(manager.snapshot.entries).toHaveLength(1);
+  expect(manager.snapshot.latest!.path).toBe(previous.path);
 });
 it('reports rotation failure separately, leaving the new backup and all failed deletions valid', async () => {
   await manager.check();

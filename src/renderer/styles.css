@@ -156,7 +156,7 @@
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
   --shadow-offset-y: 2px;
-  --letter-spacing: -0.025em;
+  --letter-spacing: 0em;
   --spacing: 0.27rem;
   --shadow-2xs: 0px 2px 3px 0px hsl(0 0% 0% / 0.08);
   --shadow-xs: 0px 2px 3px 0px hsl(0 0% 0% / 0.08);
@@ -171,7 +171,7 @@
   --shadow-xl:
     0px 2px 3px 0px hsl(0 0% 0% / 0.16), 0px 8px 10px -1px hsl(0 0% 0% / 0.16);
   --shadow-2xl: 0px 2px 3px 0px hsl(0 0% 0% / 0.4);
-  --tracking-normal: -0.025em;
+  --tracking-normal: 0em;
   color-scheme: light;
 }
 
@@ -218,7 +218,7 @@
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
   --shadow-offset-y: 2px;
-  --letter-spacing: -0.025em;
+  --letter-spacing: 0em;
   --spacing: 0.27rem;
   --shadow-2xs: 0px 2px 12px 0px hsl(0 0% 0% / 0.17);
   --shadow-xs: 0px 2px 12px 0px hsl(0 0% 0% / 0.17);

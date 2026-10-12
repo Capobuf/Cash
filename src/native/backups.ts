@@ -82,6 +82,27 @@ async function directoryExists(path: string): Promise<void> {
     throw new Error('La destinazione non è una cartella.');
 }
 
+async function publishBackup(
+  source: string,
+  destination: string,
+): Promise<void> {
+  try {
+    await link(source, destination);
+  } catch (cause) {
+    // Virtual/external filesystems can reject hard links even for ordinary files.
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (
+      !code ||
+      !['EISDIR', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EPERM'].includes(
+        code,
+      )
+    )
+      throw cause;
+    // This copy is not atomic. Only a successfully verified file is a valid backup.
+    await copyFile(source, destination, constants.COPYFILE_EXCL);
+  }
+}
+
 export async function validateBackupDirectory(path: string): Promise<void> {
   await directoryExists(path);
   const first = join(path, `.Cash-${randomUUID()}.incomplete`);
@@ -101,17 +122,26 @@ export async function validateBackupDirectory(path: string): Promise<void> {
     await rename(first, second);
     if (!(await readFile(second)).equals(bytes))
       throw new Error('Rinomina nella cartella non verificabile.');
-    // Exclusive publication is required: rename alone can overwrite an existing file.
+    // Both publication methods must refuse to overwrite an existing file.
     try {
-      await link(second, published);
+      await publishBackup(second, published);
+      let refusedOverwrite = false;
+      try {
+        await publishBackup(second, published);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
+        refusedOverwrite = true;
+      }
+      if (!refusedOverwrite)
+        throw new Error('La cartella non impedisce le sovrascritture.');
     } catch (cause) {
       throw {
         code: 'IO',
         source: 'backup',
         message:
-          'La destinazione non consente la pubblicazione esclusiva di un backup completo.',
+          'La destinazione non consente di creare un backup senza sovrascrivere file esistenti.',
         action:
-          'Controlla i permessi o scegli una cartella che supporti i link esclusivi, per esempio su NTFS.',
+          'Verifica i permessi e la disponibilità della cartella oppure scegli un’altra destinazione.',
         details: [String(cause)],
       } satisfies CashError;
     }
@@ -593,9 +623,7 @@ export class BackupManager {
       const publicationAt = new Date().toISOString();
       const id = `Cash-${publicationAt.replace(/[-:.]/g, '')}-rev${token.revision}-${randomUUID()}.sqlite`;
       const finalPath = join(folder, id);
-      // A hard link publishes the already closed file with no overwrite race.
-      // Filesystems without exclusive links fail explicitly during the probe.
-      await link(partial, finalPath);
+      await publishBackup(partial, finalPath);
       try {
         const published = await checksum(finalPath);
         unwrap(await verifyArchiveCopy(finalPath, token));

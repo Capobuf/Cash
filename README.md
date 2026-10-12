@@ -93,7 +93,9 @@ salvate non sono protette: lo stato mostra separatamente la revisione della copi
 
 La destinazione è una cartella filesystem, eventualmente su disco esterno o gestita da Drive per
 desktop. Cash verifica creazione, lettura, rinomina, cancellazione e pubblicazione esclusiva mediante
-hard link. Un filesystem privo di queste capacità è rifiutato senza fallback. Lo snapshot nativo
+hard link o, se non supportato, copia esclusiva nativa senza sovrascrittura. La copia esclusiva
+non è atomica: un’interruzione può lasciare un file incompleto, che non supera la verifica e
+non viene considerato un backup valido né eliminato dalla rotazione. Lo snapshot nativo
 SQLite viene acquisito nella coda dei salvataggi e chiuso nello staging locale; il trasferimento
 asincrono prosegue senza bloccare i salvataggi. SHA-256, dimensione, identità/revisione, schemi,
 integrità, relazioni e documento completo vengono verificati prima di pubblicare il file definitivo.

@@ -58,6 +58,7 @@ app.whenReady().then(async () => {
   try {
     const result = await window.webContents.executeJavaScript(readFileSync(${JSON.stringify(bundlePath)}, 'utf8') + '\\nWorkspaceChecks.runUiChecks()');
     await window.webContents.executeJavaScript("const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'styles.css'; document.head.append(link); new Promise(resolve => link.onload = resolve)");
+    result.push(await window.webContents.executeJavaScript('WorkspaceChecks.runFinancialFlowChecks()', true));
     // Exercise both motion preferences independently of the runner's OS settings.
     window.webContents.debugger.attach('1.3');
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
@@ -113,6 +114,7 @@ app.whenReady().then(async () => {
         'financial-loading',
         'backup-controls',
         'bank-import',
+        'financial-flow',
         'reduced-motion',
       ];
       expect(JSON.parse(result!.slice('WORKSPACE_RESULT:'.length))).toEqual(

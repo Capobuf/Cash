@@ -372,19 +372,12 @@ export function BackupSettingsPanel({ appState }: { appState: AppState }) {
               </Button>
             </div>
             <FieldDescription>
-              La pianificazione funziona soltanto mentre Cash è aperto. Senza
-              nuove revisioni salvate non crea duplicati automatici. Il backup
-              manuale resta disponibile anche con l’automatico disattivato.
+              Backup automatici delle nuove modifiche salvate, mentre Cash è
+              aperto.
             </FieldDescription>
           </Field>
           <p className="text-sm text-muted-foreground">
-            {backup?.latest
-              ? 'Il backup è stato creato nella cartella selezionata. '
-              : ''}
-            Se utilizzi Google Drive per desktop, verifica che la
-            sincronizzazione cloud sia terminata. La rotazione locale può
-            eliminare anche le copie sincronizzate nel cloud. Il database attivo
-            deve rimanere su disco locale non sincronizzato.
+            Con Google Drive, controlla che la sincronizzazione sia completata.
           </p>
         </CardContent>
       </Card>

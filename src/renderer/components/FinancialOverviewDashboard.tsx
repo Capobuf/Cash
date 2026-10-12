@@ -1,4 +1,12 @@
-import { useMemo, type ReactNode } from 'react';
+import {
+  Children,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import {
   Bar,
   CartesianGrid,
@@ -24,6 +32,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import {
   ChartContainer,
   ChartLegend,
@@ -98,8 +107,9 @@ function Kpi({
   value?: string;
   action?: ReactNode;
   className?: string;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
+  const content = Children.toArray(children);
   return (
     <Card size="sm" className={`min-w-0 ${className ?? ''}`}>
       <CardHeader>
@@ -109,9 +119,11 @@ function Kpi({
         </CardTitle>
         {action ? <CardAction>{action}</CardAction> : null}
       </CardHeader>
-      <CardContent className="space-y-2 text-xs text-muted-foreground">
-        {children}
-      </CardContent>
+      {content.length ? (
+        <CardContent className="space-y-2 text-xs text-muted-foreground">
+          {content}
+        </CardContent>
+      ) : null}
     </Card>
   );
 }
@@ -152,7 +164,6 @@ function OverviewKpis({
           {availabilityDeficit ? (
             <Badge variant="destructive">Disavanzo</Badge>
           ) : null}
-          <p>Incassato − Uscite dal conto − Ancora da versare</p>
           {o.estimatedAvailability === undefined ? (
             <p>
               {o.fiscalPaymentUnavailableReason ??
@@ -165,7 +176,6 @@ function OverviewKpis({
             value={a?.percentCollectedVsTarget}
             label="Incassato rispetto all’obiettivo"
           />
-          <p>Pagamenti FIC avvenuti nell’anno.</p>
         </Kpi>
         <Kpi title="Uscite dal conto" value={o.bankExpenses}>
           <p>
@@ -178,7 +188,6 @@ function OverviewKpis({
           ) : null}
         </Kpi>
         <Kpi title="Margine dopo le uscite" value={o.marginAfterOutflows}>
-          <p>Incassato − Uscite dal conto</p>
           {marginDeficit ? (
             <Badge variant="destructive">Uscite superiori agli incassi</Badge>
           ) : null}
@@ -205,10 +214,7 @@ function OverviewKpis({
             </p>
           ) : null}
         </Kpi>
-        <Kpi title="Imposte P.IVA già pagate" value={o.fiscalSituation.paid}>
-          <p>Movimenti della categoria di sistema nel {o.year}.</p>
-          <p>Già comprese nelle Uscite dal conto.</p>
-        </Kpi>
+        <Kpi title="Imposte P.IVA già pagate" value={o.fiscalSituation.paid} />
         <Kpi
           title="Ancora da versare"
           value={o.fiscalReserve}
@@ -238,26 +244,93 @@ function OverviewKpis({
 
 function AnnualFlow({ overview }: { overview: FinancialOverview }) {
   const flow = useMemo(() => buildFinancialOverviewFlow(overview), [overview]);
+  const flowCard = useRef<HTMLDivElement>(null);
+  const flowArea = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenHeight, setFullscreenHeight] = useState(480);
+  const [fullscreenError, setFullscreenError] = useState('');
+  useEffect(() => {
+    const sync = () =>
+      setFullscreen(document.fullscreenElement === flowCard.current);
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+  useEffect(() => {
+    if (!fullscreen || !flowArea.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry)
+        setFullscreenHeight(Math.max(1, Math.floor(entry.contentRect.height)));
+    });
+    observer.observe(flowArea.current);
+    return () => observer.disconnect();
+  }, [fullscreen]);
+  const toggleFullscreen = async () => {
+    setFullscreenError('');
+    try {
+      if (document.fullscreenElement === flowCard.current)
+        await document.exitFullscreen();
+      else await flowCard.current?.requestFullscreen();
+    } catch {
+      setFullscreenError(
+        'Impossibile attivare la modalità a pieno schermo. Riprova.',
+      );
+    }
+  };
   return (
-    <Card className="min-w-0">
-      <CardHeader>
+    <Card
+      ref={flowCard}
+      className={`min-w-0 ${fullscreen ? 'h-screen w-screen rounded-none' : ''}`}
+    >
+      <CardHeader className="shrink-0">
         <CardTitle>Flusso finanziario</CardTitle>
+        <CardAction>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={
+              fullscreen ? 'Esci da pieno schermo' : 'Apri a pieno schermo'
+            }
+            title={
+              fullscreen
+                ? 'Esci da pieno schermo (Esc)'
+                : 'Apri a pieno schermo'
+            }
+            aria-pressed={fullscreen}
+            onClick={() => void toggleFullscreen()}
+          >
+            {fullscreen ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+        </CardAction>
         <CardDescription>
           Origine degli incassi → uscite dal conto e margine
           {overview.fiscalPaymentOverride !== undefined
             ? ' → versamenti residui e disponibilità.'
             : '.'}
         </CardDescription>
+        {fullscreenError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {fullscreenError}
+          </p>
+        ) : null}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent
+        className={`flex min-w-0 flex-col gap-4 overflow-hidden ${fullscreen ? 'min-h-0 flex-1' : ''}`}
+      >
         {flow.links.length ? (
-          <MoneyFlowChart
-            flow={flow}
-            label="Ripartizione degli incassi annuali tra uscite, margine e disponibilità"
-          />
+          <div ref={flowArea} className={fullscreen ? 'min-h-0 flex-1' : ''}>
+            <MoneyFlowChart
+              flow={flow}
+              height={fullscreen ? fullscreenHeight : 480}
+              fitToContainer
+              label="Ripartizione degli incassi annuali tra uscite, margine e disponibilità"
+            />
+          </div>
         ) : null}
         {flow.message ? (
-          <p className="text-sm text-muted-foreground">{flow.message}</p>
+          <p className="shrink-0 text-sm text-muted-foreground">
+            {flow.message}
+          </p>
         ) : null}
       </CardContent>
     </Card>
