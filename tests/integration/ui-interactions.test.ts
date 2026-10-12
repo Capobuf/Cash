@@ -58,6 +58,9 @@ app.whenReady().then(async () => {
   try {
     const result = await window.webContents.executeJavaScript(readFileSync(${JSON.stringify(bundlePath)}, 'utf8') + '\\nWorkspaceChecks.runUiChecks()');
     await window.webContents.executeJavaScript("const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'styles.css'; document.head.append(link); new Promise(resolve => link.onload = resolve)");
+    // Exercise both motion preferences independently of the runner's OS settings.
+    window.webContents.debugger.attach('1.3');
+    await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await window.webContents.executeJavaScript('WorkspaceChecks.renderMotionPreview(false)');
     const painted = async () => window.webContents.executeJavaScript("Promise.all(document.getAnimations().filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))).then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     const screenshots = process.env.CASH_UI_SCREENSHOTS;
@@ -72,7 +75,6 @@ app.whenReady().then(async () => {
       await painted();
       writeFileSync(join(screenshots, 'combobox-dark.png'), (await window.webContents.capturePage()).toPNG());
     }
-    window.webContents.debugger.attach('1.3');
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     const reduced = await window.webContents.executeJavaScript("Array.from(document.querySelectorAll('.section-enter, [data-slot=skeleton], [data-slot=spinner]')).every(element => getComputedStyle(element).animationName === 'none') && !!document.querySelector('[role=status]')");
     if (!reduced) throw new Error('Reduced motion did not disable animations or lost loading status');
