@@ -1,3 +1,5 @@
+import { Spinner } from '@/components/ui/spinner';
+import { SearchableSelect } from '@/components/ui/selection-field';
 import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { templateRequiresTravel } from '../../../domain/catalog';
@@ -32,10 +34,6 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { eur, hours } from '@/lib/format';
 import { ChoiceButton } from './ChoiceButton';
@@ -106,35 +104,35 @@ export function CatalogPickerDialog({
                   <FieldLabel htmlFor={`catalog-site-${itemId}`}>
                     Sede
                   </FieldLabel>
-                  <NativeSelect
+                  <SearchableSelect
                     id={`catalog-site-${itemId}`}
                     value={siteId}
-                    onChange={(event) => setSiteId(event.target.value)}
-                  >
-                    <NativeSelectOption value="">Scegli</NativeSelectOption>
-                    {doc.sites.map((site) => (
-                      <NativeSelectOption key={site.id} value={site.id}>
-                        {site.name}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    onValueChange={(value) => setSiteId(value)}
+                    options={[
+                      { value: '', label: 'Scegli' },
+                      ...doc.sites.map((site) => ({
+                        value: site.id,
+                        label: site.name,
+                      })),
+                    ]}
+                  />
                 </Field>
                 <Field>
                   <FieldLabel htmlFor={`catalog-vehicle-${itemId}`}>
                     Veicolo
                   </FieldLabel>
-                  <NativeSelect
+                  <SearchableSelect
                     id={`catalog-vehicle-${itemId}`}
                     value={vehicleId}
-                    onChange={(event) => setVehicleId(event.target.value)}
-                  >
-                    <NativeSelectOption value="">Scegli</NativeSelectOption>
-                    {doc.vehicles.map((vehicle) => (
-                      <NativeSelectOption key={vehicle.id} value={vehicle.id}>
-                        {vehicle.name}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    onValueChange={(value) => setVehicleId(value)}
+                    options={[
+                      { value: '', label: 'Scegli' },
+                      ...doc.vehicles.map((vehicle) => ({
+                        value: vehicle.id,
+                        label: vehicle.name,
+                      })),
+                    ]}
+                  />
                 </Field>
               </>
             ) : (
@@ -163,6 +161,7 @@ export function CatalogPickerDialog({
               });
             }}
           >
+            {busy ? <Spinner aria-hidden="true" /> : null}
             {busy ? 'Inserimento…' : 'Aggiungi copia'}
           </Button>
         </DialogFooter>
@@ -314,28 +313,23 @@ export function InsertTemplateDialog({
                                     >
                                       {group.name}
                                     </FieldLabel>
-                                    <NativeSelect
+                                    <SearchableSelect
                                       id={`template-choice-${group.id}`}
                                       value={choices[group.id] ?? ''}
-                                      onChange={(event) =>
+                                      onValueChange={(value) =>
                                         setChoices((current) => ({
                                           ...current,
-                                          [group.id]: event.target.value,
+                                          [group.id]: value,
                                         }))
                                       }
-                                    >
-                                      <NativeSelectOption value="">
-                                        Scegli opzione
-                                      </NativeSelectOption>
-                                      {group.options.map((candidate) => (
-                                        <NativeSelectOption
-                                          key={candidate.id}
-                                          value={candidate.id}
-                                        >
-                                          {candidate.name}
-                                        </NativeSelectOption>
-                                      ))}
-                                    </NativeSelect>
+                                      options={[
+                                        { value: '', label: 'Scegli opzione' },
+                                        ...group.options.map((candidate) => ({
+                                          value: candidate.id,
+                                          label: candidate.name,
+                                        })),
+                                      ]}
+                                    />
                                   </Field>
                                 );
                               })}
@@ -351,42 +345,35 @@ export function InsertTemplateDialog({
                         <FieldLabel htmlFor="template-site">
                           Sede per le trasferte
                         </FieldLabel>
-                        <NativeSelect
+                        <SearchableSelect
                           id="template-site"
                           value={siteId}
-                          onChange={(event) => setSiteId(event.target.value)}
-                        >
-                          <NativeSelectOption value="">
-                            Scegli sede
-                          </NativeSelectOption>
-                          {doc.sites.map((site) => (
-                            <NativeSelectOption key={site.id} value={site.id}>
-                              {site.name}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
+                          onValueChange={(value) => setSiteId(value)}
+                          options={[
+                            { value: '', label: 'Scegli sede' },
+                            ...doc.sites.map((site) => ({
+                              value: site.id,
+                              label: site.name,
+                            })),
+                          ]}
+                        />
                       </Field>
                       <Field>
                         <FieldLabel htmlFor="template-vehicle">
                           Veicolo
                         </FieldLabel>
-                        <NativeSelect
+                        <SearchableSelect
                           id="template-vehicle"
                           value={vehicleId}
-                          onChange={(event) => setVehicleId(event.target.value)}
-                        >
-                          <NativeSelectOption value="">
-                            Scegli veicolo
-                          </NativeSelectOption>
-                          {doc.vehicles.map((vehicle) => (
-                            <NativeSelectOption
-                              key={vehicle.id}
-                              value={vehicle.id}
-                            >
-                              {vehicle.name}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
+                          onValueChange={(value) => setVehicleId(value)}
+                          options={[
+                            { value: '', label: 'Scegli veicolo' },
+                            ...doc.vehicles.map((vehicle) => ({
+                              value: vehicle.id,
+                              label: vehicle.name,
+                            })),
+                          ]}
+                        />
                       </Field>
                     </div>
                   ) : null}
@@ -416,6 +403,7 @@ export function InsertTemplateDialog({
               );
             }}
           >
+            {busy ? <Spinner aria-hidden="true" /> : null}
             {busy
               ? 'Inserimento…'
               : `Inserisci ${template?.items.length ?? 0} ${template?.items.length === 1 ? 'voce' : 'voci'}`}
@@ -485,33 +473,33 @@ export function VariantChangeDialog({
           <div className="grid grid-cols-2 gap-3">
             <Field>
               <FieldLabel htmlFor="change-site">Sede</FieldLabel>
-              <NativeSelect
+              <SearchableSelect
                 id="change-site"
                 value={siteId}
-                onChange={(event) => setSiteId(event.target.value)}
-              >
-                <NativeSelectOption value="">Scegli sede</NativeSelectOption>
-                {doc.sites.map((site) => (
-                  <NativeSelectOption key={site.id} value={site.id}>
-                    {site.name}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={(value) => setSiteId(value)}
+                options={[
+                  { value: '', label: 'Scegli sede' },
+                  ...doc.sites.map((site) => ({
+                    value: site.id,
+                    label: site.name,
+                  })),
+                ]}
+              />
             </Field>
             <Field>
               <FieldLabel htmlFor="change-vehicle">Veicolo</FieldLabel>
-              <NativeSelect
+              <SearchableSelect
                 id="change-vehicle"
                 value={vehicleId}
-                onChange={(event) => setVehicleId(event.target.value)}
-              >
-                <NativeSelectOption value="">Scegli veicolo</NativeSelectOption>
-                {doc.vehicles.map((vehicle) => (
-                  <NativeSelectOption key={vehicle.id} value={vehicle.id}>
-                    {vehicle.name}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={(value) => setVehicleId(value)}
+                options={[
+                  { value: '', label: 'Scegli veicolo' },
+                  ...doc.vehicles.map((vehicle) => ({
+                    value: vehicle.id,
+                    label: vehicle.name,
+                  })),
+                ]}
+              />
             </Field>
           </div>
         ) : null}
@@ -521,6 +509,7 @@ export function VariantChangeDialog({
             disabled={busy || (needsTravel && (!siteId || !vehicleId))}
             onClick={apply}
           >
+            {busy ? <Spinner aria-hidden="true" /> : null}
             {busy ? 'Applicazione…' : 'Conferma cambio'}
           </AlertDialogAction>
         </AlertDialogFooter>

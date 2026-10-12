@@ -114,6 +114,9 @@ function AnalysisChart({
               <ChartLegend content={<ChartLegendContent />} />
               {Object.keys(config).map((key) => (
                 <Bar
+                  isAnimationActive="auto"
+                  animationDuration={220}
+                  animationBegin={0}
                   key={key}
                   dataKey={key}
                   fill={`var(--color-${key})`}
@@ -232,6 +235,9 @@ function RankingChart({
               ) : null}
               {series.map((item) => (
                 <Bar
+                  isAnimationActive="auto"
+                  animationDuration={220}
+                  animationBegin={0}
                   key={item.key}
                   dataKey={item.key}
                   fill={`var(--color-${item.key})`}

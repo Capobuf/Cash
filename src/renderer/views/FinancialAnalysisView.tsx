@@ -6,6 +6,8 @@ import type { AppState } from '../state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Empty,
   EmptyDescription,
@@ -86,15 +88,23 @@ export function FinancialAnalysisView({
             disabled={!canSync || appState.financialSyncing}
             onClick={() => void appState.syncFinancialData()}
           >
-            <RefreshCw
-              className={appState.financialSyncing ? 'animate-spin' : undefined}
-            />
+            {appState.financialSyncing ? (
+              <Spinner aria-hidden="true" />
+            ) : (
+              <RefreshCw />
+            )}
             {appState.financialSyncing
               ? 'Aggiornamento in corso…'
               : 'Aggiorna dati Fatture in Cloud'}
           </Button>
         </ItemActions>
       </Item>
+      {appState.financialSyncing ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Sincronizzazione Fatture in Cloud in corso…
+          {snapshot ? ' Lo snapshot precedente resta consultabile.' : ''}
+        </p>
+      ) : null}
       {unavailable ? (
         <Alert>
           <AlertTitle>Aggiornamento live non disponibile</AlertTitle>
@@ -164,7 +174,19 @@ export function FinancialAnalysisView({
           </AlertDescription>
         </Alert>
       )}
-      {!snapshot ? (
+      {!snapshot && appState.financialSyncing ? (
+        <div aria-busy="true" className="space-y-3 rounded-lg border p-6">
+          <p role="status" className="text-sm text-muted-foreground">
+            Acquisizione del primo snapshot Fatture in Cloud…
+          </p>
+          <div aria-hidden="true" className="space-y-3">
+            <Skeleton className="h-6 w-48" />
+            {[0, 1, 2].map((index) => (
+              <Skeleton key={index} className="h-8 w-full" />
+            ))}
+          </div>
+        </div>
+      ) : !snapshot ? (
         <Empty className="border">
           <EmptyHeader>
             <EmptyTitle>Nessun dato finanziario sincronizzato</EmptyTitle>

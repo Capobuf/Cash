@@ -20,6 +20,8 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { formReader } from '@/lib/format';
 import { ChoiceButton } from './ChoiceButton';
 
@@ -31,6 +33,7 @@ export function CustomerDialog({
   hasToken,
   results,
   searching = false,
+  searchError = false,
   onSearch,
   onSelect,
 }: {
@@ -41,6 +44,7 @@ export function CustomerDialog({
   hasToken: boolean;
   results: FicClientSnapshot[];
   searching?: boolean;
+  searchError?: boolean;
   onSearch: (query: string) => Promise<void>;
   onSelect: (clientId: string | FicClientSnapshot) => boolean;
 }) {
@@ -82,6 +86,7 @@ export function CustomerDialog({
                 />
               </InputGroup>
               <Button type="submit" disabled={searching}>
+                {searching ? <Spinner aria-hidden="true" /> : null}
                 {searching ? 'Ricerca…' : 'Cerca'}
               </Button>
             </form>
@@ -90,7 +95,31 @@ export function CustomerDialog({
               aria-busy={searching}
             >
               <div className="p-2">
-                {results.length ? (
+                {searching ? (
+                  <div className="space-y-2">
+                    <p role="status" className="sr-only">
+                      Caricamento clienti…
+                    </p>
+                    {Array.from({ length: 4 }, (_, index) => (
+                      <div
+                        key={index}
+                        className="space-y-2 rounded-lg border p-3"
+                        aria-hidden="true"
+                      >
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-3 w-1/3" />
+                      </div>
+                    ))}
+                  </div>
+                ) : searchError ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>Ricerca clienti non riuscita</AlertTitle>
+                    <AlertDescription>
+                      Ripeti la ricerca per recuperare i clienti da Fatture in
+                      Cloud.
+                    </AlertDescription>
+                  </Alert>
+                ) : results.length ? (
                   results.map((client) => (
                     <ChoiceButton
                       key={client.clientId}
@@ -107,9 +136,7 @@ export function CustomerDialog({
                   ))
                 ) : (
                   <p className="p-8 text-center text-sm text-muted-foreground">
-                    {searching
-                      ? 'Caricamento clienti…'
-                      : 'Nessun cliente trovato.'}
+                    Nessun cliente trovato.
                   </p>
                 )}
               </div>

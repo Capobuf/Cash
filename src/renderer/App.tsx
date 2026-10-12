@@ -6,7 +6,12 @@ import { BankCategoriesView } from './views/BankCategoriesView';
 import { touch, type CashDocument } from '../domain/model';
 import { copyProfileToYear } from '../domain/profiles';
 import { addQuote } from '../domain/quotes';
-import { AppShell, DeleteDialog, Onboarding } from '@/components/Layout';
+import {
+  AppShell,
+  ArchiveLoading,
+  DeleteDialog,
+  Onboarding,
+} from '@/components/Layout';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -59,6 +64,7 @@ export function selectableYears(
 
 export function App() {
   const appState = useAppState(state);
+  const [initializing, setInitializing] = useState(true);
   const [view, setView] = useState<View>('dashboard');
   const [decisionResolver, setDecisionResolver] = useState<
     ((choice: ArchiveDecision) => void) | null
@@ -80,7 +86,21 @@ export function App() {
 
   useEffect(() => {
     state.setArchiveDecisionHandler(requestArchiveDecision);
-    void state.initialize();
+    let active = true;
+    void state
+      .initialize()
+      .catch((error: unknown) => {
+        state.setError({
+          code: 'IO',
+          source: 'archive',
+          message: 'Impossibile inizializzare l’archivio.',
+          details: [error instanceof Error ? error.message : String(error)],
+          action: 'Prova ad aprire nuovamente l’archivio.',
+        });
+      })
+      .finally(() => {
+        if (active) setInitializing(false);
+      });
     void window.cash.credentials.hasFicToken().then((result) => {
       setHasFicToken(result.ok && result.value);
       setFicConnectionError(!result.ok);
@@ -89,7 +109,7 @@ export function App() {
       if (result.ok) setFicSetupInfo(result.value);
       else state.setError(result.error);
     });
-    return window.cash.onCloseRequested(() => {
+    const unsubscribe = window.cash.onCloseRequested(() => {
       void requestArchiveDecision().then(async (choice) => {
         if (choice === 'save') {
           await state.save();
@@ -104,11 +124,17 @@ export function App() {
           window.cash.resolveClose(choice === 'discard' ? 'discard' : 'cancel');
       });
     });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   return (
     <>
-      {appState.document ? (
+      {initializing && !appState.document ? (
+        <ArchiveLoading appState={appState} />
+      ) : appState.document ? (
         <ArchiveWorkspace
           key={appState.document.documentId}
           doc={appState.document}

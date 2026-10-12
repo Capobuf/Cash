@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/components/ui/selection-field';
 import { MapPin, Plus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import {
@@ -42,10 +43,6 @@ import {
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { formReader, hours, moneyInputValue } from '@/lib/format';
 import type { TravelInput, SimpleSubInput } from '@/hooks/use-quote-controller';
 import type { AppState } from '../../state';
@@ -311,65 +308,52 @@ export function SubItemDialog({
                       <FieldLabel htmlFor="travel-departure">
                         Partenza
                       </FieldLabel>
-                      <NativeSelect
+                      <SearchableSelect
                         id="travel-departure"
                         value={departureSiteId}
-                        onChange={(event) =>
-                          setDepartureSiteId(event.target.value)
-                        }
-                      >
-                        <NativeSelectOption value="">
-                          Scegli sede
-                        </NativeSelectOption>
-                        {doc.sites.map((site) => (
-                          <NativeSelectOption key={site.id} value={site.id}>
-                            {site.name}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
+                        onValueChange={(value) => setDepartureSiteId(value)}
+                        options={[
+                          { value: '', label: 'Scegli sede' },
+                          ...doc.sites.map((site) => ({
+                            value: site.id,
+                            label: site.name,
+                          })),
+                        ]}
+                      />
                     </Field>
                     <Field>
                       <FieldLabel htmlFor="travel-destination">
                         Destinazione
                       </FieldLabel>
-                      <NativeSelect
+                      <SearchableSelect
                         id="travel-destination"
                         value={destinationSiteId}
-                        onChange={(event) =>
-                          setDestinationSiteId(event.target.value)
-                        }
-                      >
-                        <NativeSelectOption value="">
-                          Scegli sede
-                        </NativeSelectOption>
-                        {doc.sites.map((site) => (
-                          <NativeSelectOption key={site.id} value={site.id}>
-                            {site.name}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
+                        onValueChange={(value) => setDestinationSiteId(value)}
+                        options={[
+                          { value: '', label: 'Scegli sede' },
+                          ...doc.sites.map((site) => ({
+                            value: site.id,
+                            label: site.name,
+                          })),
+                        ]}
+                      />
                     </Field>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
                     <Field>
                       <FieldLabel htmlFor="travel-vehicle">Veicolo</FieldLabel>
-                      <NativeSelect
+                      <SearchableSelect
                         id="travel-vehicle"
                         value={vehicleId}
-                        onChange={(event) => setVehicleId(event.target.value)}
-                      >
-                        <NativeSelectOption value="">
-                          Scegli veicolo
-                        </NativeSelectOption>
-                        {doc.vehicles.map((vehicle) => (
-                          <NativeSelectOption
-                            key={vehicle.id}
-                            value={vehicle.id}
-                          >
-                            {vehicle.name} · {vehicle.fuel}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
+                        onValueChange={(value) => setVehicleId(value)}
+                        options={[
+                          { value: '', label: 'Scegli veicolo' },
+                          ...doc.vehicles.map((vehicle) => ({
+                            value: vehicle.id,
+                            label: [vehicle.name, '·', vehicle.fuel].join(''),
+                          })),
+                        ]}
+                      />
                     </Field>
                     <Button
                       type="button"

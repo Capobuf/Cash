@@ -114,9 +114,7 @@ describe('azioni della voce del preventivo', () => {
 
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('Configurazione iniziale / storage / RAID');
-    expect(html).toContain(
-      `value="${item.variantSelections[0]!.optionId}" selected=""`,
-    );
+    expect(html).toContain(`value="${item.variantSelections[0]!.optionId}"`);
     expect(html).toContain('Attività e costi');
     expect(html).toContain('Completa le attività.');
   });

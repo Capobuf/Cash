@@ -9,6 +9,25 @@ import {
 } from '../../src/renderer/components/quotes/CatalogInsertDialogs';
 import { AppState } from '../../src/renderer/state';
 
+vi.mock('@/components/ui/selection-field', () => ({
+  SearchableSelect: ({
+    id,
+    value,
+    options,
+  }: {
+    id: string;
+    value: string;
+    options: { value: string; label: string }[];
+  }) =>
+    createElement(
+      'div',
+      { id, 'data-selected-value': value },
+      options.map((option) =>
+        createElement('span', { key: option.value }, option.label),
+      ),
+    ),
+}));
+
 vi.mock('@/components/ui/dialog', () => {
   const content = ({ children }: { children: ReactNode }) => children;
   return Object.fromEntries(
@@ -122,12 +141,12 @@ describe('destinazioni delle trasferte', () => {
       for (const [element, id] of views) {
         const markup = renderToStaticMarkup(element);
         const select = markup.match(
-          new RegExp(`<select[^>]*id="${id}"[^>]*>[\\s\\S]*?</select>`),
+          new RegExp(`<div[^>]*id="${id}"[^>]*>[\\s\\S]*?</div>`),
         )?.[0];
         expect(select).toContain('Fornitore ABC');
         expect(select).toContain('Sede cliente');
         if (withClient)
-          expect(select).toContain(`value="${main.id}" selected=""`);
+          expect(select).toContain(`data-selected-value="${main.id}"`);
       }
     },
   );

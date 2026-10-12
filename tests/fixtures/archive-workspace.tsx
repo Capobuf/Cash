@@ -203,9 +203,13 @@ export async function runWorkspaceChecks() {
     });
   };
   const selectYear = async (year: number) => {
+    await clickSelector('#app-year');
+    const option = [
+      ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+    ].find((entry) => entry.textContent?.trim() === String(year));
+    check(option, 'Missing year option: ' + year);
     await act(async () => {
-      (find('#app-year') as HTMLSelectElement).value = String(year);
-      find('#app-year').dispatchEvent(new Event('change', { bubbles: true }));
+      option!.click();
     });
   };
   const clickMenu = async (text: string) => {
@@ -261,7 +265,7 @@ export async function runWorkspaceChecks() {
       'Old catalog draft remains',
     );
     check(
-      (find('#app-year') as HTMLSelectElement).value ===
+      find('#app-year [data-slot="select-value"]').textContent?.trim() ===
         String(new Date().getFullYear()),
       'Archive year selection survived replacement',
     );
@@ -276,7 +280,8 @@ export async function runWorkspaceChecks() {
       'Ordinary update remounted workspace',
     );
     check(
-      (find('#app-year') as HTMLSelectElement).value === '2025',
+      find('#app-year [data-slot="select-value"]').textContent?.trim() ===
+        '2025',
       'Ordinary update reset year selection',
     );
     results.push('same-document');
@@ -644,7 +649,7 @@ export async function runWorkspaceChecks() {
     );
     check(
       find('#quote-profile')
-        .closest('[data-slot="native-select-wrapper"]')
+        .closest('[data-slot="select-trigger"]')
         ?.classList.contains('ring-2'),
       'Missing profile was not highlighted',
     );
@@ -656,7 +661,7 @@ export async function runWorkspaceChecks() {
     });
     check(
       !find('#quote-profile')
-        .closest('[data-slot="native-select-wrapper"]')
+        .closest('[data-slot="select-trigger"]')
         ?.classList.contains('ring-2'),
       'Completed profile stayed highlighted',
     );

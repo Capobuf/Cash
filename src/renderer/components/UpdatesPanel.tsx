@@ -1,3 +1,5 @@
+import { Spinner } from '@/components/ui/spinner';
+import { Progress } from '@/components/ui/progress';
 import {
   RefreshCw,
   Download,
@@ -132,7 +134,9 @@ export function UpdatesPanel({
                 : phase === 'available'
                   ? `È disponibile la versione ${update?.availableVersion}.`
                   : phase === 'downloading'
-                    ? `Download in corso: ${update?.progressPercent ?? 0}%.`
+                    ? typeof update?.progressPercent === 'number'
+                      ? `Download in corso: ${update.progressPercent}%.`
+                      : 'Download aggiornamento in corso…'
                     : phase === 'ready'
                       ? `Versione ${update?.availableVersion} pronta per l'installazione.`
                       : phase === 'error'
@@ -164,6 +168,18 @@ export function UpdatesPanel({
           </AlertDescription>
         </Alert>
       ) : null}
+      {phase === 'downloading' ? (
+        <div className="space-y-2">
+          {typeof update?.progressPercent === 'number' ? (
+            <Progress
+              value={update.progressPercent}
+              aria-label="Download aggiornamento"
+            />
+          ) : (
+            <Spinner aria-label="Download in corso" />
+          )}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <Button
           variant={
@@ -181,7 +197,11 @@ export function UpdatesPanel({
           }
           onClick={() => void perform(() => window.cash.updates.check())}
         >
-          <RefreshCw />
+          {phase === 'checking' ? (
+            <Spinner aria-hidden="true" />
+          ) : (
+            <RefreshCw />
+          )}
           {phase === 'checking'
             ? 'Verifica in corso…'
             : 'Verifica aggiornamenti'}
@@ -191,7 +211,7 @@ export function UpdatesPanel({
             disabled={pending}
             onClick={() => void perform(() => window.cash.updates.download())}
           >
-            <Download />
+            {pending ? <Spinner aria-hidden="true" /> : <Download />}
             Scarica aggiornamento
           </Button>
         ) : null}

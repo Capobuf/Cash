@@ -1,3 +1,4 @@
+import { Spinner } from '@/components/ui/spinner';
 import { useEffect, useState } from 'react';
 import type { AppState } from '../../state';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -114,6 +115,7 @@ export function OpenRouteServiceCard({ appState }: { appState: AppState }) {
           onClick={() => void verify()}
           disabled={busy || (!hasKey && !apiKey.trim())}
         >
+          {busy ? <Spinner aria-hidden="true" /> : null}
           {busy ? 'Verifica…' : 'Verifica connessione'}
         </Button>
         {outcome ? (

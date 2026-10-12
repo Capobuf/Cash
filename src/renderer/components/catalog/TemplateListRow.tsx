@@ -48,7 +48,7 @@ export function TemplateListRow({
           aria-label={`${open ? 'Chiudi' : 'Espandi'} anteprima di ${template.name}`}
         >
           <ChevronRight
-            className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+            className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
             aria-hidden="true"
           />
           <span className="min-w-0 truncate font-medium">{template.name}</span>

@@ -1,3 +1,4 @@
+import { SelectField, SearchableSelect } from '@/components/ui/selection-field';
 import {
   ArrowLeft,
   BookOpen,
@@ -68,10 +69,6 @@ import {
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -376,7 +373,7 @@ export function QuotesView({
           </Field>
           <Field>
             <FieldLabel htmlFor="quote-profile">Profilo</FieldLabel>
-            <NativeSelect
+            <SelectField
               id="quote-profile"
               className={
                 missingProfile ? 'ring-2 ring-primary ring-offset-2' : undefined
@@ -385,17 +382,15 @@ export function QuotesView({
                 missingProfile ? 'quote-profile-missing' : undefined
               }
               value={quote.profileId ?? ''}
-              onChange={(event) =>
-                setQuoteValue({ profileId: event.target.value })
-              }
-            >
-              <NativeSelectOption value="">Incompleto</NativeSelectOption>
-              {doc.profiles.map((profile) => (
-                <NativeSelectOption key={profile.id} value={profile.id}>
-                  {profile.year}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              onValueChange={(value) => setQuoteValue({ profileId: value })}
+              options={[
+                { value: '', label: 'Incompleto' },
+                ...doc.profiles.map((profile) => ({
+                  value: profile.id,
+                  label: profile.year,
+                })),
+              ]}
+            />
             {missingProfile ? (
               <p id="quote-profile-missing" className="text-xs text-primary">
                 {missingProfile.message}
@@ -423,22 +418,17 @@ export function QuotesView({
           </Field>
           <Field>
             <FieldLabel htmlFor="quote-site">Sede principale</FieldLabel>
-            <NativeSelect
+            <SearchableSelect
               id="quote-site"
               value={quote.mainSite?.sourceId ?? ''}
-              onChange={(event) =>
-                setQuoteValue({ mainSiteId: event.target.value })
-              }
-            >
-              <NativeSelectOption value="">Nessuna</NativeSelectOption>
-              {doc.sites
-                .filter((site) => siteMatchesClient(site, quote.client))
-                .map((site) => (
-                  <NativeSelectOption key={site.id} value={site.id}>
-                    {site.name}
-                  </NativeSelectOption>
-                ))}
-            </NativeSelect>
+              onValueChange={(value) => setQuoteValue({ mainSiteId: value })}
+              options={[
+                { value: '', label: 'Nessuna' },
+                ...doc.sites
+                  .filter((site) => siteMatchesClient(site, quote.client))
+                  .map((site) => ({ value: site.id, label: site.name })),
+              ]}
+            />
           </Field>
           <Field>
             <FieldLabel htmlFor="quote-commission">
@@ -574,13 +564,17 @@ export function QuotesView({
         <CustomerDialog
           open
           onOpenChange={(open) => {
-            if (!open) setOverlay(undefined);
+            if (!open) {
+              controller.cancelClientSearch();
+              setOverlay(undefined);
+            }
           }}
           quote={quote}
           doc={doc}
           hasToken={hasToken}
           results={controller.clientResults}
           searching={controller.searchingClients}
+          searchError={controller.clientSearchError}
           onSearch={controller.searchRemoteClients}
           onSelect={selectCustomer}
         />

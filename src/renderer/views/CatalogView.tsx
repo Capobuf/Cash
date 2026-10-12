@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { BookOpen, Layers3, Plus, Upload } from 'lucide-react';
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { type CashDocument, type Template } from '../../domain/model';
@@ -21,10 +22,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
@@ -288,60 +285,43 @@ export function CatalogView({
                       aria-label="Cerca template"
                       className="min-w-64 flex-1 sm:max-w-md"
                     />
-                    <NativeSelect
+                    <SelectField
                       aria-label="Filtra per varianti"
                       value={variantFilter}
-                      onChange={(event) =>
-                        setVariantFilter(event.target.value as VariantFilter)
+                      onValueChange={(value) =>
+                        setVariantFilter(value as VariantFilter)
                       }
-                    >
-                      <NativeSelectOption value="all">
-                        Varianti: Tutti
-                      </NativeSelectOption>
-                      <NativeSelectOption value="with">
-                        Con varianti
-                      </NativeSelectOption>
-                      <NativeSelectOption value="without">
-                        Senza varianti
-                      </NativeSelectOption>
-                    </NativeSelect>
-                    <NativeSelect
+                      options={[
+                        { value: 'all', label: 'Varianti: Tutti' },
+                        { value: 'with', label: 'Con varianti' },
+                        { value: 'without', label: 'Senza varianti' },
+                      ]}
+                    />
+                    <SelectField
                       aria-label="Filtra per contenuto"
                       value={contentFilter}
-                      onChange={(event) =>
-                        setContentFilter(event.target.value as ContentFilter)
+                      onValueChange={(value) =>
+                        setContentFilter(value as ContentFilter)
                       }
-                    >
-                      <NativeSelectOption value="all">
-                        Contenuto: Tutti
-                      </NativeSelectOption>
-                      <NativeSelectOption value="time">
-                        Attività
-                      </NativeSelectOption>
-                      <NativeSelectOption value="expense">
-                        Spese
-                      </NativeSelectOption>
-                      <NativeSelectOption value="travel">
-                        Trasferte
-                      </NativeSelectOption>
-                    </NativeSelect>
-                    <NativeSelect
+                      options={[
+                        { value: 'all', label: 'Contenuto: Tutti' },
+                        { value: 'time', label: 'Attività' },
+                        { value: 'expense', label: 'Spese' },
+                        { value: 'travel', label: 'Trasferte' },
+                      ]}
+                    />
+                    <SelectField
                       aria-label="Ordina template"
                       value={templateSort}
-                      onChange={(event) =>
-                        setTemplateSort(event.target.value as TemplateSort)
+                      onValueChange={(value) =>
+                        setTemplateSort(value as TemplateSort)
                       }
-                    >
-                      <NativeSelectOption value="name-asc">
-                        Ordina: Nome A–Z
-                      </NativeSelectOption>
-                      <NativeSelectOption value="name-desc">
-                        Nome Z–A
-                      </NativeSelectOption>
-                      <NativeSelectOption value="recent">
-                        Modificati di recente
-                      </NativeSelectOption>
-                    </NativeSelect>
+                      options={[
+                        { value: 'name-asc', label: 'Ordina: Nome A–Z' },
+                        { value: 'name-desc', label: 'Nome Z–A' },
+                        { value: 'recent', label: 'Modificati di recente' },
+                      ]}
+                    />
                   </div>
                   <p
                     className="text-xs text-muted-foreground"
@@ -432,26 +412,19 @@ export function CatalogView({
                       aria-label="Cerca elementi singoli"
                       className="min-w-64 flex-1 sm:max-w-md"
                     />
-                    <NativeSelect
+                    <SelectField
                       aria-label="Filtra elementi per tipo"
                       value={reusableKind}
-                      onChange={(event) =>
-                        setReusableKind(event.target.value as ContentFilter)
+                      onValueChange={(value) =>
+                        setReusableKind(value as ContentFilter)
                       }
-                    >
-                      <NativeSelectOption value="all">
-                        Tutti i tipi
-                      </NativeSelectOption>
-                      <NativeSelectOption value="time">
-                        Attività
-                      </NativeSelectOption>
-                      <NativeSelectOption value="expense">
-                        Spese
-                      </NativeSelectOption>
-                      <NativeSelectOption value="travel">
-                        Trasferte
-                      </NativeSelectOption>
-                    </NativeSelect>
+                      options={[
+                        { value: 'all', label: 'Tutti i tipi' },
+                        { value: 'time', label: 'Attività' },
+                        { value: 'expense', label: 'Spese' },
+                        { value: 'travel', label: 'Trasferte' },
+                      ]}
+                    />
                   </div>
                   {filteredReusable.length ? (
                     <div className="space-y-2">

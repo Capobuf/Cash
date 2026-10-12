@@ -30,9 +30,8 @@ describe('selezione anno', () => {
       expect(html.indexOf('aria-label="Cash"')).toBeLessThan(
         html.indexOf('id="app-year"'),
       );
-      expect(html.includes('value="2025" selected="">2025</option>')).toBe(
-        true,
-      );
+      expect(html).toMatch(/data-slot="select-value"[^>]*>2025<\/span>/);
+      expect(html).toContain('role="combobox"');
     }
   });
 

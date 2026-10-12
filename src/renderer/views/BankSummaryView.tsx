@@ -260,6 +260,9 @@ export function BankSummaryView({
                   }
                 />
                 <Bar
+                  isAnimationActive="auto"
+                  animationDuration={220}
+                  animationBegin={0}
                   dataKey="amount"
                   fill="var(--color-amount)"
                   radius={[4, 4, 0, 0]}

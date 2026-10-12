@@ -1,3 +1,4 @@
+import { Spinner } from '@/components/ui/spinner';
 import { useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import {
@@ -15,7 +16,7 @@ import {
   type CashDocument,
 } from '../../domain/model';
 import type { AppState } from '../state';
-import { BankCategoryOptions } from '@/components/BankCategoryOptions';
+import { BankCategoryCombobox } from '@/components/BankCategoryCombobox';
 import { BankManualCategoriesDialog } from '@/components/BankManualCategoriesDialog';
 import { BankRuleDialog } from '@/components/BankRuleDialog';
 import { BankExpenseDialog } from '@/components/BankExpenseDialog';
@@ -36,10 +37,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -132,21 +129,20 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
             <label htmlFor="bank-filter" className="text-sm font-medium">
               Filtro categoria
             </label>
-            <NativeSelect
+            <BankCategoryCombobox
               id="bank-filter"
+              categories={doc.bankExpenseCategories}
+              specialOptions={[
+                { value: 'all', label: 'Tutte' },
+                { value: 'none', label: 'Senza categoria' },
+              ]}
               value={uncategorized ? 'none' : category}
-              disabled={uncategorized}
-              onChange={(event) => {
-                setCategory(event.target.value);
+              onChange={(value) => {
+                setCategory(value);
                 clearSelection();
               }}
-            >
-              <NativeSelectOption value="all">Tutte</NativeSelectOption>
-              <NativeSelectOption value="none">
-                Senza categoria
-              </NativeSelectOption>
-              <BankCategoryOptions categories={doc.bankExpenseCategories} />
-            </NativeSelect>
+              disabled={uncategorized}
+            />
           </div>
           <label className="flex h-8 items-center gap-2 text-sm">
             <Checkbox
@@ -166,7 +162,11 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
             disabled={readOnly || appState.bankExpenseImporting}
             onClick={() => void appState.importBankExpenses()}
           >
-            <Upload />
+            {appState.bankExpenseImporting ? (
+              <Spinner aria-hidden="true" />
+            ) : (
+              <Upload />
+            )}
             {appState.bankExpenseImporting
               ? 'Importazione in corso…'
               : 'Importa XLSX / CSV'}

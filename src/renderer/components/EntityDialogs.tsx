@@ -1,3 +1,4 @@
+import { SelectField } from '@/components/ui/selection-field';
 import { useState, type FormEvent } from 'react';
 import { parseDecimalInput } from '../../domain/decimal';
 import { coordinatesInput, parseCoordinates } from '../../domain/locations';
@@ -34,10 +35,6 @@ import {
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
 import { formReader, moneyInputValue } from '@/lib/format';
 import type { AppState } from '../state';
 
@@ -335,18 +332,15 @@ export function SiteDialog({
             </Field>
             <Field>
               <FieldLabel htmlFor="site-mode">Cerca tramite</FieldLabel>
-              <NativeSelect
+              <SelectField
                 id="site-mode"
                 value={mode}
-                onChange={(event) => setMode(event.target.value as typeof mode)}
-              >
-                <NativeSelectOption value="address">
-                  Indirizzo
-                </NativeSelectOption>
-                <NativeSelectOption value="coordinates">
-                  Coordinate
-                </NativeSelectOption>
-              </NativeSelect>
+                onValueChange={(value) => setMode(value as typeof mode)}
+                options={[
+                  { value: 'address', label: 'Indirizzo' },
+                  { value: 'coordinates', label: 'Coordinate' },
+                ]}
+              />
             </Field>
             {mode === 'address' ? (
               <Field>
@@ -568,22 +562,17 @@ export function VehicleDialog({
             </Field>
             <Field>
               <FieldLabel htmlFor="vehicle-fuel">Carburante</FieldLabel>
-              <NativeSelect
+              <SelectField
                 id="vehicle-fuel"
                 name="fuel"
                 value={fuel}
-                onChange={(event) =>
-                  setFuel(event.target.value as Vehicle['fuel'])
-                }
-              >
-                {(['Benzina', 'Gasolio', 'GPL', 'Metano'] as const).map(
-                  (value) => (
-                    <NativeSelectOption key={value} value={value}>
-                      {value}
-                    </NativeSelectOption>
+                onValueChange={(value) => setFuel(value as Vehicle['fuel'])}
+                options={[
+                  ...(['Benzina', 'Gasolio', 'GPL', 'Metano'] as const).map(
+                    (value) => ({ value: String(value), label: value }),
                   ),
-                )}
-              </NativeSelect>
+                ]}
+              />
             </Field>
             <NumberInput
               id="consumption"

@@ -1,3 +1,4 @@
+import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeft, ArrowRight, Check, Cloud } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FicActivationPreview } from '../../../domain/integration';
@@ -394,6 +395,7 @@ export function FicWizard({
               (step === 5 && !productId)
             }
           >
+            {busy ? <Spinner aria-hidden="true" /> : null}
             {busy ? (
               step === 2 ? (
                 'Salvataggio…'
