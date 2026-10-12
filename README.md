@@ -117,6 +117,38 @@ token locale e i riferimenti condivisi, senza modificare snapshot o esportazioni
 
 I Clienti sono recuperati esclusivamente da Fatture in Cloud. Cash conserva soltanto riferimenti e
 snapshot necessari a Sedi e Preventivi; non mantiene un’anagrafica Cliente locale.
+All’apertura di Clienti viene recuperata soltanto la prima pagina (100 risultati,
+`fields=id,name,vat_number`); **Carica altri** richiede la pagina successiva.
+La ricerca è esplicita su submit, lato API, e riparte dalla prima pagina; lo stesso
+caricamento progressivo è disponibile nella scelta del cliente per i preventivi.
+
+La sezione **Utilizzo API** della Card Fatture in Cloud mostra residui e limiti orari e
+mensili dagli header dell’ultima risposta dell’azienda configurata, con data di osservazione.
+Aprire le Impostazioni non interroga FIC: le quote sono solo in memoria e sconosciute
+al riavvio. Valori assenti o malformati sono indicati come non disponibili; la barra
+rappresenta la quota disponibile. I limiti documentati sono 300 richieste ogni 5 minuti
+(finestra mobile condivisa dall’azienda), 1.000/ora e 40.000/mese; gli header effettivi
+sono autorevoli. Le quote lunghe dipendono dal tipo di app e, per le app private,
+quella mensile è condivisa dall’azienda. Il residuo di 5 minuti non è esposto.
+Fonte: [limiti e quote FIC](https://developers.fattureincloud.it/docs/basics/limits-and-quotas/).
+
+Gli errori HTTP FIC sono interpretati centralmente: 400/422 indicano richiesta o validazione,
+401 autenticazione, 403 quota/permessi/licenza o causa non identificata, 404 risorsa assente,
+409 conflitto e 5xx indisponibilità remota. Un 403 ambiguo non prova un token errato.
+`Retry-After` valido sospende in memoria le richieste per l’azienda; i probe permessi si
+interrompono al rate limit. Le GET hanno al massimo tre tentativi per rete/5xx (attese
+250 e 500 ms) o quota con attesa nota non superiore a 5 secondi. Nessun retry POST.
+Errori e azioni remote significative usano un unico Toast shadcn Base UI; conflitti,
+salvataggi falliti ed esportazioni incerte mantengono i messaggi persistenti.
+
+L’esportazione valida e salva prima il tentativo locale, poi verifica una sola volta il
+prodotto Consulenza e la sua IVA corrente nel processo principale. Se manca l’IVA del
+prodotto viene ancora letto il profilo fiscale. Un errore preliminare o un cooldown
+produce un rifiuto certo con diagnosi **Non inviato**. Una POST con timeout, errore 5xx
+o risposta priva di ID resta incerta: verificare manualmente FIC prima di ripetere.
+Fingerprint, tentativi e salvataggi atomici restano attivi. Fonte:
+[errori FIC](https://developers.fattureincloud.it/docs/basics/errors/).
+
 
 ## Analisi finanziaria
 

@@ -40,7 +40,7 @@ it.each([false, true])(
   async (hasToken) => {
     const doc = createEmptyDocument();
     doc.settings.fic = { enabled: true, company: { id: '1', name: 'Studio' } };
-    const searchClients = vi.fn(async () => ok([]));
+    const searchClients = vi.fn(async () => ok({ clients: [], page: 1 }));
     vi.stubGlobal('window', { cash: { fic: { searchClients } } });
     const markup = renderToStaticMarkup(
       createElement(ClientsView, {
@@ -50,7 +50,7 @@ it.each([false, true])(
         requestDelete: vi.fn(),
       }),
     );
-    effects[0]?.();
+    for (const effect of effects) effect();
     await Promise.resolve();
     expect(searchClients).toHaveBeenCalledTimes(hasToken ? 1 : 0);
     expect(markup.includes('Richiede configurazione locale')).toBe(!hasToken);

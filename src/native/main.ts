@@ -27,6 +27,8 @@ import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
 import {
   exportQuote,
+  getFicQuota,
+  onFicQuota,
   getClientDetails,
   listCompanies,
   listConsultingProducts,
@@ -75,6 +77,10 @@ const {
 } = archiveStorage;
 
 let window: BrowserWindow | null = null;
+onFicQuota((observation) => {
+  if (window && !window.isDestroyed())
+    window.webContents.send(IPC.ficQuotaChanged, observation);
+});
 let current: ArchiveSession | null = null;
 let dirty = false;
 let closingApproved = false;
@@ -101,10 +107,16 @@ function activeFicCompany(companyId: string): boolean {
     ? requireActiveFic(current.document.settings, companyId).ok
     : false;
 }
+async function readFicToken(): Promise<Result<string>> {
+  const result = await requireFicToken();
+  return result.ok
+    ? result
+    : err({ ...result.error, source: 'FattureInCloud' });
+}
 const ficLinkServices: FicLinkServices = {
   verify: verifyActivation,
   hasToken: hasFicToken,
-  readToken: requireFicToken,
+  readToken: readFicToken,
   writeToken: setFicToken,
   deleteToken: deleteFicToken,
   save: (path, document, token) =>
@@ -514,7 +526,7 @@ function registerHandlers(): void {
             'Aggiornamento non disponibile: verificare archivio e azienda Fatture in Cloud attiva.',
         });
       const session = current;
-      const token = await requireFicToken();
+      const token = await readFicToken();
       if (!token.ok) return token;
       const result = await syncFinancialData(input.companyId, token.value);
       if (
@@ -546,7 +558,7 @@ function registerHandlers(): void {
             'Verifica non disponibile: attiva il collegamento all’azienda.',
         });
       const session = current;
-      const token = await requireFicToken();
+      const token = await readFicToken();
       if (!token.ok) return token;
       const result = await verifyPermissions(input.companyId, token.value);
       if (
@@ -562,9 +574,16 @@ function registerHandlers(): void {
       return result;
     },
   );
+  ipcMain.handle(IPC.ficQuota, () => {
+    const companyId = current?.document?.settings.fic.company?.id;
+    return ok(companyId ? getFicQuota(companyId) : null);
+  });
   ipcMain.handle(
     IPC.ficClients,
-    async (_event, input: { companyId: string; query: string }) => {
+    async (
+      _event,
+      input: { companyId: string; query: string; page?: number },
+    ) => {
       if (!activeFicCompany(input.companyId))
         return err({
           code: 'VALIDATION',
@@ -572,9 +591,15 @@ function registerHandlers(): void {
           message:
             'Integrazione Fatture in Cloud disattivata o azienda non configurata.',
         });
-      const token = await requireFicToken();
+      const token = await readFicToken();
       return token.ok
-        ? searchClients(input.companyId, input.query, token.value)
+        ? searchClients(
+            input.companyId,
+            input.query,
+            token.value,
+            fetch,
+            input.page,
+          )
         : token;
     },
   );
@@ -588,7 +613,7 @@ function registerHandlers(): void {
           message:
             'Integrazione Fatture in Cloud disattivata o azienda non configurata.',
         });
-      const token = await requireFicToken();
+      const token = await readFicToken();
       return token.ok
         ? getClientDetails(input.companyId, input.clientId, token.value)
         : token;
@@ -607,33 +632,73 @@ function registerHandlers(): void {
           message:
             'Integrazione Fatture in Cloud disattivata o prodotto non configurato.',
         });
-      const token = await requireFicToken();
+      const token = await readFicToken();
       return token.ok
         ? verifyProduct(input.companyId, input.productId, token.value)
         : token;
     },
   );
+  const exportingAttempts = new Set<string>();
   ipcMain.handle(IPC.ficExport, async (_event, input) => {
+    const notSent = (error: import('../domain/model').CashError) =>
+      ok({
+        outcome: 'rejected' as const,
+        requestSent: false,
+        error,
+        diagnostic: `Non inviato: ${error.message}`,
+      });
+    const session = current;
+    const quote = session?.document?.quotes.find((quote) =>
+      quote.exportAttempts.some((attempt) => attempt.id === input?.attemptId),
+    );
+    const attempt = quote?.exportAttempts.find(
+      (attempt) => attempt.id === input?.attemptId,
+    );
     if (
+      !input ||
       !activeFicCompany(input.companyId) ||
-      current?.document?.settings.fic.product?.id !== input.productId
+      current?.readOnly ||
+      dirty ||
+      current?.document?.settings.fic.product?.id !== input.productId ||
+      !attempt ||
+      attempt.outcome !== 'pending' ||
+      attempt.companyId !== input.companyId ||
+      quote?.client?.source !== 'fatture_in_cloud' ||
+      quote.client.companyId !== input.companyId ||
+      quote.client.clientId !== input.clientId ||
+      JSON.stringify(attempt.lines) !== JSON.stringify(input.lines) ||
+      exportingAttempts.has(input.attemptId)
     )
-      return err({
+      return notSent({
         code: 'VALIDATION',
         source: 'FattureInCloud',
         message:
-          'Integrazione Fatture in Cloud disattivata o configurazione incoerente.',
+          'Configurazione o tentativo di esportazione non valido. Invio non eseguito.',
       });
-    const token = await requireFicToken();
-    if (!token.ok) return token;
-    const product = await verifyProduct(
-      input.companyId,
-      input.productId,
-      token.value,
-    );
-    return product.ok
-      ? exportQuote({ ...input, product: product.value }, token.value)
-      : product;
+    exportingAttempts.add(input.attemptId);
+    try {
+      const token = await readFicToken();
+      if (!token.ok) return notSent(token.error);
+      const product = await verifyProduct(
+        input.companyId,
+        input.productId,
+        token.value,
+      );
+      if (!product.ok) return notSent(product.error);
+      // Only dispatch after authoritative verification and a still-current saved attempt.
+      if (current !== session || dirty || !activeFicCompany(input.companyId))
+        return notSent({
+          code: 'CONFLICT',
+          source: 'archive',
+          message: 'Archivio o collegamento cambiato prima dell’invio.',
+        });
+      return await exportQuote(
+        { ...input, product: product.value },
+        token.value,
+      );
+    } finally {
+      exportingAttempts.delete(input.attemptId);
+    }
   });
   ipcMain.handle(IPC.updateStatus, () => getCashUpdateStatus());
   ipcMain.handle(IPC.updateCheck, () => checkCashUpdates());

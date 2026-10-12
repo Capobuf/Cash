@@ -35,6 +35,8 @@ export function CustomerDialog({
   searching = false,
   searchError = false,
   onSearch,
+  hasMore = false,
+  onLoadMore,
   onSelect,
 }: {
   open: boolean;
@@ -46,6 +48,8 @@ export function CustomerDialog({
   searching?: boolean;
   searchError?: boolean;
   onSearch: (query: string) => Promise<void>;
+  hasMore?: boolean;
+  onLoadMore?: () => Promise<void>;
   onSelect: (clientId: string | FicClientSnapshot) => boolean;
 }) {
   return (
@@ -95,7 +99,7 @@ export function CustomerDialog({
               aria-busy={searching}
             >
               <div className="p-2">
-                {searching ? (
+                {searching && (!hasMore || results.length === 0) ? (
                   <div className="space-y-2">
                     <p role="status" className="sr-only">
                       Caricamento clienti…
@@ -111,7 +115,7 @@ export function CustomerDialog({
                       </div>
                     ))}
                   </div>
-                ) : searchError ? (
+                ) : searchError && (!hasMore || results.length === 0) ? (
                   <Alert variant="destructive">
                     <AlertTitle>Ricerca clienti non riuscita</AlertTitle>
                     <AlertDescription>
@@ -141,6 +145,17 @@ export function CustomerDialog({
                 )}
               </div>
             </ScrollArea>
+            {hasMore ? (
+              <Button
+                variant="outline"
+                disabled={searching}
+                onClick={() => {
+                  void onLoadMore?.();
+                }}
+              >
+                {searching ? 'Caricamento…' : 'Carica altri'}
+              </Button>
+            ) : null}
           </div>
         ) : (
           <Alert>

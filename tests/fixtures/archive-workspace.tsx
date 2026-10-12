@@ -1,6 +1,8 @@
 import { act } from 'react';
+import { CSPProvider } from '@base-ui/react/csp-provider';
 import { createRoot } from 'react-dom/client';
 import { App } from '../../src/renderer/App';
+import { toast } from '../../src/renderer/components/ui/toast';
 import { state } from '../../src/renderer/state';
 import type { CashUpdateStatus } from '../../src/shared/ipc';
 import {
@@ -9,8 +11,11 @@ import {
   createFiscalPreset2026,
   meta,
   ok,
+  err,
   type CashDocument,
 } from '../../src/domain/model';
+import type { FicQuotaObservation, FicClientPage } from '../../src/shared/fic';
+import type { Result } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
 import { eur } from '../../src/renderer/lib/format';
 
@@ -58,6 +63,11 @@ export async function runWorkspaceChecks() {
     close: 0,
   };
   const clientQueries: string[] = [];
+  const clientPages: number[] = [];
+  let paginateClients = false;
+  let failNextPage = false;
+  let delayedClients: ((result: Result<FicClientPage>) => void) | undefined;
+  const quotaListeners = new Set<(observation: FicQuotaObservation) => void>();
   const updateListeners = new Set<(status: CashUpdateStatus) => void>();
   let resolveInitialUpdate: ((status: CashUpdateStatus) => void) | undefined;
   let initialUpdateRequested = false;
@@ -104,12 +114,36 @@ export async function runWorkspaceChecks() {
         },
       },
       fic: {
+        getQuota: async () => ok(null),
+        onQuota: (listener: (observation: FicQuotaObservation) => void) => {
+          quotaListeners.add(listener);
+          return () => {
+            quotaListeners.delete(listener);
+          };
+        },
         setupInfo: async () => {
           counts.setupInfo++;
           return ok(setupInfo);
         },
-        searchClients: async ({ query }: { query: string }) => {
+        searchClients: async ({
+          query,
+          page = 1,
+        }: {
+          query: string;
+          page?: number;
+        }) => {
           clientQueries.push(query);
+          clientPages.push(page);
+          if (query === 'Lenta')
+            return new Promise<Result<FicClientPage>>((resolve) => {
+              delayedClients = resolve;
+            });
+          if (paginateClients && page === 2 && failNextPage)
+            return err({
+              code: 'SOURCE_UNAVAILABLE',
+              source: 'FattureInCloud',
+              message: 'Pagina non disponibile',
+            });
           const clients = [
             {
               source: 'fatture_in_cloud' as const,
@@ -127,11 +161,16 @@ export async function runWorkspaceChecks() {
               displayName: 'Altro cliente',
             },
           ];
-          return ok(
-            clients.filter((client) =>
+          return ok({
+            clients: (paginateClients && page === 1
+              ? clients.slice(0, 1)
+              : clients
+            ).filter((client) =>
               client.displayName.toLowerCase().includes(query.toLowerCase()),
             ),
-          );
+            page,
+            ...(paginateClients && page === 1 ? { nextPage: 2 } : {}),
+          });
         },
         getClientDetails: async () => ok({ fields: [] }),
       },
@@ -233,7 +272,11 @@ export async function runWorkspaceChecks() {
   const results: string[] = [];
   try {
     await act(async () => {
-      root.render(<App />);
+      root.render(
+        <CSPProvider disableStyleElements>
+          <App />
+        </CSPProvider>,
+      );
     });
     await click('Catalogo');
     await selectYear(2025);
@@ -308,12 +351,12 @@ export async function runWorkspaceChecks() {
     await click('Cerca');
     await clickSelector('[aria-label="Apri dettagli di Cliente B"]');
     check(
-      document.querySelector('[role="dialog"]'),
+      document.querySelector('[data-slot="dialog-content"]'),
       'Client details did not open',
     );
     await replace('C');
     check(
-      !document.querySelector('[role="dialog"]'),
+      !document.querySelector('[data-slot="dialog-content"]'),
       'Client details survived archive change',
     );
     check(
@@ -338,6 +381,73 @@ export async function runWorkspaceChecks() {
     );
     results.push('clients');
 
+    paginateClients = true;
+    await fill('[aria-label="Cerca clienti Fatture in Cloud"]', '');
+    const beforeFirstPage = clientPages.length;
+    await click('Cerca');
+    check(
+      clientPages.length === beforeFirstPage + 1 && clientPages.at(-1) === 1,
+      'First page prefetched later pages',
+    );
+    check(
+      !document.querySelector('[aria-label="Apri dettagli di Altro cliente"]'),
+      'Second page appeared before request',
+    );
+    failNextPage = true;
+    await click('Carica altri');
+    check(
+      document.querySelector('[aria-label="Apri dettagli di Cliente C"]'),
+      'Page failure discarded previous clients',
+    );
+    await act(async () => {
+      toast.close();
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    failNextPage = false;
+    await click('Carica altri');
+    check(
+      document.querySelectorAll('[aria-label="Apri dettagli di Cliente C"]')
+        .length === 1,
+      'Duplicate client IDs were appended',
+    );
+    check(
+      document.querySelector('[aria-label="Apri dettagli di Altro cliente"]'),
+      'Second page was not appended',
+    );
+    await fill('[aria-label="Cerca clienti Fatture in Cloud"]', 'Cliente C');
+    await click('Cerca');
+    check(
+      clientPages.at(-1) === 1 &&
+        !document.querySelector(
+          '[aria-label="Apri dettagli di Altro cliente"]',
+        ),
+      'New search did not reset pagination',
+    );
+    await fill('[aria-label="Cerca clienti Fatture in Cloud"]', 'Lenta');
+    await click('Cerca');
+    await replace('C');
+    await act(async () => {
+      delayedClients!(
+        ok({
+          clients: [
+            {
+              source: 'fatture_in_cloud',
+              companyId: '1',
+              clientId: '99',
+              displayName: 'Risposta obsoleta',
+            },
+          ],
+          page: 1,
+        }),
+      );
+    });
+    check(
+      !document.body.innerText.includes('Risposta obsoleta'),
+      'Stale archive response was applied',
+    );
+    paginateClients = false;
+    results.push('fic-pagination');
+
     await click('Preventivi');
     const row = [...document.querySelectorAll('tr')].find((row) =>
       row.textContent?.includes('Preventivo #1'),
@@ -350,13 +460,15 @@ export async function runWorkspaceChecks() {
     await click('Inserisci template');
     const templateQuery = '[aria-label="Cerca template da inserire"]';
     check(
-      find('[role="dialog"]').innerText.includes('Template C'),
+      find('[data-slot="dialog-content"]').innerText.includes('Template C'),
       'Template picker did not show the initial list',
     );
     await fill(templateQuery, 'Nessun risultato');
     check(
-      find('[role="dialog"]').innerText.includes('Nessun template trovato.') &&
-        !find('[role="dialog"]').innerText.includes('Template C'),
+      find('[data-slot="dialog-content"]').innerText.includes(
+        'Nessun template trovato.',
+      ) &&
+        !find('[data-slot="dialog-content"]').innerText.includes('Template C'),
       'Template search did not filter the list and preview',
     );
     const insertButton = [...document.querySelectorAll('button')].find(
@@ -368,12 +480,12 @@ export async function runWorkspaceChecks() {
     );
     await fill(templateQuery, '  TEMPLATE C  ');
     check(
-      find('[role="dialog"]').innerText.includes('Template C'),
+      find('[data-slot="dialog-content"]').innerText.includes('Template C'),
       'Template search did not ignore case and surrounding spaces',
     );
     await fill(templateQuery, '');
     check(
-      find('[role="dialog"]').innerText.includes('Template C'),
+      find('[data-slot="dialog-content"]').innerText.includes('Template C'),
       'Clearing the template search did not restore the list',
     );
     check(
@@ -393,29 +505,47 @@ export async function runWorkspaceChecks() {
       'Customer picker did not load all clients',
     );
     check(
-      find('[role="dialog"]').innerText.includes('Cliente C') &&
-        find('[role="dialog"]').innerText.includes('Altro cliente'),
+      find('[data-slot="dialog-content"]').innerText.includes('Cliente C') &&
+        find('[data-slot="dialog-content"]').innerText.includes(
+          'Altro cliente',
+        ),
       'Customer picker is empty on opening',
     );
+    paginateClients = true;
+    await click('Cerca');
+    check(
+      !find('[data-slot="dialog-content"]').innerText.includes('Altro cliente'),
+      'Customer picker prefetched next page',
+    );
+    await click('Carica altri');
+    check(
+      find('[data-slot="dialog-content"]').innerText.includes('Altro cliente'),
+      'Customer picker did not append next page',
+    );
+    paginateClients = false;
     const customerQuery = '[aria-label="Cerca cliente in Fatture in Cloud"]';
     await fill(customerQuery, 'Cliente C');
     await click('Cerca');
     check(
       clientQueries.at(-1) === 'Cliente C' &&
-        find('[role="dialog"]').innerText.includes('Cliente C') &&
-        !find('[role="dialog"]').innerText.includes('Altro cliente'),
+        find('[data-slot="dialog-content"]').innerText.includes('Cliente C') &&
+        !find('[data-slot="dialog-content"]').innerText.includes(
+          'Altro cliente',
+        ),
       'Customer search did not filter the list',
     );
     await fill(customerQuery, 'Nessun risultato');
     await click('Cerca');
     check(
-      find('[role="dialog"]').innerText.includes('Nessun cliente trovato.'),
+      find('[data-slot="dialog-content"]').innerText.includes(
+        'Nessun cliente trovato.',
+      ),
       'Empty customer search has no feedback',
     );
     await fill(customerQuery, '');
     await click('Cerca');
     check(
-      find('[role="dialog"]').innerText.includes('Altro cliente'),
+      find('[data-slot="dialog-content"]').innerText.includes('Altro cliente'),
       'Clearing the search did not restore the list',
     );
     check(
@@ -424,7 +554,7 @@ export async function runWorkspaceChecks() {
     );
     await clickSelector('[role="dialog"] [data-slot="scroll-area"] button');
     check(
-      !document.querySelector('[role="dialog"]') &&
+      !document.querySelector('[data-slot="dialog-content"]') &&
         state.document!.quotes[0]!.client?.displayName === 'Cliente C',
       'Selecting a listed customer did not update the quote',
     );
@@ -438,7 +568,9 @@ export async function runWorkspaceChecks() {
     check(
       (find(customerQuery) as HTMLInputElement).value === '' &&
         clientQueries.at(-1) === '' &&
-        find('[role="dialog"]').innerText.includes('Altro cliente'),
+        find('[data-slot="dialog-content"]').innerText.includes(
+          'Altro cliente',
+        ),
       'Reopening the customer picker did not reset the list and search',
     );
     await click('Chiudi');
@@ -774,7 +906,7 @@ export async function runWorkspaceChecks() {
       'Quote editor dialog survived archive change',
     );
     check(
-      !document.querySelector('[role="dialog"]'),
+      !document.querySelector('[data-slot="dialog-content"]'),
       'Quote dialog survived archive change',
     );
     check(
@@ -821,6 +953,97 @@ export async function runWorkspaceChecks() {
 
     await click('Impostazioni');
     await click('Integrazioni');
+    const requestsBeforeQuota = clientQueries.length;
+    const toastsBefore = document.querySelectorAll(
+      '[data-slot="toast"]',
+    ).length;
+    check(
+      document.body.innerText.includes('Ultimo rilevamento: Non disponibile'),
+      'Unknown quotas were invented',
+    );
+    const observation: FicQuotaObservation = {
+      companyId: '1',
+      hourlyRemaining: 840,
+      hourlyLimit: 1000,
+      monthlyRemaining: 38420,
+      monthlyLimit: 40000,
+      observedAt: '2026-10-12T05:15:00Z',
+    };
+    await act(async () => {
+      for (const listener of quotaListeners) listener(observation);
+    });
+    check(
+      document.body.innerText.includes('840 / '),
+      'Quota event did not update settings',
+    );
+    check(
+      document
+        .querySelector('[aria-label="Quota oraria disponibile"]')
+        ?.getAttribute('aria-valuenow') === '84',
+      'Progress did not show available quota',
+    );
+    await act(async () => {
+      for (const listener of quotaListeners)
+        listener({
+          ...observation,
+          companyId: 'different',
+          hourlyRemaining: 7,
+        });
+    });
+    check(
+      document.body.innerText.includes('840 / '),
+      'Wrong-company quota contaminated settings',
+    );
+    check(
+      clientQueries.length === requestsBeforeQuota,
+      'Reading quotas sent a remote request',
+    );
+    const failure = {
+      code: 'RATE_LIMIT' as const,
+      source: 'FattureInCloud' as const,
+      message: 'Attendi 30 secondi.',
+    };
+    await act(async () => {
+      state.setError(failure);
+    });
+    check(
+      document.querySelectorAll('[data-slot="toast"]').length ===
+        toastsBefore + 1,
+      'Expected one toast for one failed operation',
+    );
+    await selectYear(2025);
+    check(
+      document.querySelectorAll('[data-slot="toast"]').length ===
+        toastsBefore + 1,
+      'Rerender duplicated notification',
+    );
+    await act(async () => {
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '[aria-label="Chiudi notifica"]',
+        ),
+      ]
+        .at(-1)!
+        .click();
+    });
+    check(state.error === failure, 'Toast closure cleared operation state');
+    await act(async () => {
+      state.setError({
+        code: 'EXPORT_UNCERTAIN',
+        source: 'FattureInCloud',
+        message: 'Controlla il documento remoto prima di ripetere.',
+      });
+    });
+    check(
+      document.body.innerText.includes(
+        'Controlla il documento remoto prima di ripetere.',
+      ),
+      'Critical persistent export message disappeared',
+    );
+    await act(async () => {
+      state.clearError();
+    });
+    results.push('fic-quota-toast-csp');
     check(
       document.body.innerText.includes('Attiva'),
       'Device credential status was reset',
@@ -830,7 +1053,12 @@ export async function runWorkspaceChecks() {
         setupInfo.clientId,
       'Device setup info was reset',
     );
+    const previousQuotaListeners = [...quotaListeners];
     await replace('E');
+    check(
+      previousQuotaListeners.every((listener) => !quotaListeners.has(listener)),
+      'Quota listener leaked on unmount',
+    );
     check(
       !document.querySelector('#fic-client-id'),
       'Settings tab survived archive change',

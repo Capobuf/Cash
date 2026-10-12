@@ -477,7 +477,7 @@ describe('permessi azienda e accessi effettivi distinti', () => {
         (access) => access.scope === 'issued_documents.invoices:r',
       ),
     ).toMatchObject({
-      status: 'unavailable',
+      status: 'unverifiable',
       detail: expect.stringContaining('permessi dell’utente'),
     });
     expect(
@@ -503,21 +503,18 @@ describe('permessi azienda e accessi effettivi distinti', () => {
   });
 
   it('non confonde errori temporanei con accessi mancanti', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) =>
+      String(input).endsWith('/company/info')
+        ? response({ data: company })
+        : response({}, 429),
+    );
     const result = await verifyPermissions(
       '1',
       'token',
-      vi.fn(async (input: string | URL | Request) =>
-        String(input).endsWith('/company/info')
-          ? response({ data: company })
-          : response({}, 429),
-      ) as typeof fetch,
+      fetcher as typeof fetch,
     );
-    if (!result.ok) throw new Error(result.error.message);
-    expect(
-      result.value.requiredAccess.every(
-        (access) => access.status === 'unverifiable',
-      ),
-    ).toBe(true);
+    expect(result).toMatchObject({ ok: false, error: { code: 'RATE_LIMIT' } });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it('non descrive un 403 come prova certa dello scope mancante e non ritenta', async () => {
@@ -532,9 +529,10 @@ describe('permessi azienda e accessi effettivi distinti', () => {
       fetcher as typeof fetch,
     );
     if (result.ok) throw new Error('Expected denial');
-    expect(result.error.message).toContain('verifica gli scope');
-    expect(result.error.message).toContain('permessi dell’utente');
-    expect(result.error.action).toContain('non identifica da sola');
+    expect(result.error.code).toBe('SOURCE_UNAVAILABLE');
+    expect(result.error.message).toContain('causa non identificata');
+    expect(result.error.action).toContain('issued_documents.invoices:r');
+    expect(result.error.action).toContain('permessi dell’utente');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });

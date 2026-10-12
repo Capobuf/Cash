@@ -35,6 +35,80 @@ import {
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { TabsContent } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import type { FicQuotaObservation } from '../../../shared/fic';
+
+export function FicApiUsage({
+  observation,
+}: {
+  observation: FicQuotaObservation | null;
+}) {
+  const number = (value?: number) =>
+    value === undefined ? 'Non disponibile' : value.toLocaleString('it-IT');
+  const limited =
+    observation?.hourlyRemaining === 0 || observation?.monthlyRemaining === 0;
+  return (
+    <section className="space-y-3 border-t pt-4" aria-label="Utilizzo API">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="font-medium">Utilizzo API</h3>
+        {limited ? (
+          <Badge variant="destructive">Quota esaurita al rilevamento</Badge>
+        ) : null}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {(
+          [
+            [
+              'Quota oraria',
+              observation?.hourlyRemaining,
+              observation?.hourlyLimit,
+            ],
+            [
+              'Quota mensile',
+              observation?.monthlyRemaining,
+              observation?.monthlyLimit,
+            ],
+          ] as const
+        ).map(([label, remaining, limit]) => (
+          <div key={label} className="space-y-2 text-sm">
+            <p className="font-medium">{label}</p>
+            <p>
+              {number(remaining)} / {number(limit)} richieste disponibili
+            </p>
+            {remaining !== undefined &&
+            limit !== undefined &&
+            limit > 0 &&
+            remaining <= limit ? (
+              <Progress
+                aria-label={`${label} disponibile`}
+                value={(remaining / limit) * 100}
+              />
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <FieldDescription>
+        Limite breve periodo: 300 richieste ogni 5 minuti, condiviso
+        dall’azienda su finestra mobile. Residuo non esposto dalle API.
+      </FieldDescription>
+      {observation?.suspendedUntil ? (
+        <p className="text-sm">
+          Sospensione indicata da Fatture in Cloud fino al{' '}
+          {new Date(observation.suspendedUntil).toLocaleString('it-IT')}. Dopo
+          tale momento le quote devono essere nuovamente osservate.
+        </p>
+      ) : null}
+      <FieldDescription>
+        Ultimo rilevamento:{' '}
+        {observation
+          ? new Date(observation.observedAt).toLocaleString('it-IT')
+          : 'Non disponibile'}
+        . I valori provengono dall’ultima risposta Fatture in Cloud e potrebbero
+        essere cambiati. Nessuna richiesta viene effettuata per consultarli.
+      </FieldDescription>
+    </section>
+  );
+}
 
 export function IntegrationsSettings({
   doc,
@@ -51,6 +125,42 @@ export function IntegrationsSettings({
   const [clientId, setClientId] = useState(ficUi.setupInfo.clientId);
   const [savingClientId, setSavingClientId] = useState(false);
   const fic = doc.settings.fic;
+  const [quota, setQuota] = useState<FicQuotaObservation | null>(null);
+  const companyId = fic.company?.id;
+  useEffect(() => {
+    let active = true;
+    setQuota(null);
+    if (!companyId) return;
+    const accept = (observation: FicQuotaObservation | null) => {
+      if (!active || (observation && observation.companyId !== companyId))
+        return;
+      setQuota((previous) =>
+        previous &&
+        (!observation || previous.observedAt > observation.observedAt)
+          ? previous
+          : observation,
+      );
+    };
+    const unsubscribe = window.cash.fic.onQuota(accept);
+    void window.cash.fic
+      .getQuota()
+      .then((result) => {
+        if (result.ok) accept(result.value);
+        else if (active) appState.setError(result.error);
+      })
+      .catch(() => {
+        if (active)
+          appState.setError({
+            code: 'SOURCE_UNAVAILABLE',
+            source: 'FattureInCloud',
+            message: 'Lettura locale delle quote non riuscita.',
+          });
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [appState, companyId, doc.documentId]);
   const deviceState = !fic.enabled
     ? 'Disattivata'
     : ficUi.connectionError || fic.lastVerification?.result === 'error'
@@ -133,6 +243,9 @@ export function IntegrationsSettings({
                     : 'Nessuna chiamata al servizio viene eseguita.'}
                 </AlertDescription>
               </Alert>
+              <FicApiUsage
+                observation={quota?.companyId === companyId ? quota : null}
+              />
               <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
                 <Field className="col-span-2">
                   <FieldLabel htmlFor="fic-client-id">

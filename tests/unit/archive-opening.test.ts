@@ -49,7 +49,9 @@ describe('apertura archivio con schema più recente', () => {
       await state[operation]();
       expect(state.status).toBe('Sola lettura');
       expect(state.error?.code).toBe('SCHEMA_NEWER');
-      expect(state.error?.message).toContain('versione più recente di Cash');
+      expect(state.error?.message).toBe(
+        'Per aprire questo archivio serve una versione più recente di Cash',
+      );
       expect(state.error?.details).toContain(
         `Schema archivio: ${CURRENT_SCHEMA_VERSION + 1} · Schema supportato: ${CURRENT_SCHEMA_VERSION}.`,
       );

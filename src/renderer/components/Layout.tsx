@@ -131,6 +131,11 @@ function BrandLogo({ className }: { className: string }) {
 
 export function GlobalError({ appState }: { appState: AppState }) {
   if (!appState.error) return null;
+  if (
+    appState.error.source === 'FattureInCloud' &&
+    !['EXPORT_UNCERTAIN', 'IO', 'CONFLICT'].includes(appState.error.code)
+  )
+    return null;
   const needsUpdate = appState.error.code === 'SCHEMA_NEWER';
   const details = appState.error.details?.length ? (
     <ul className="mt-2 list-disc space-y-1 break-words pl-4">

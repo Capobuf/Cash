@@ -1,3 +1,4 @@
+import { Toaster } from '@/components/ui/toast';
 import { useEffect, useMemo, useState } from 'react';
 import { financialYears } from '../domain/financial-analysis';
 import { BankSummaryView } from './views/BankSummaryView';
@@ -63,6 +64,14 @@ export function selectableYears(
 }
 
 export function App() {
+  return (
+    <Toaster>
+      <AppContent />
+    </Toaster>
+  );
+}
+
+function AppContent() {
   const appState = useAppState(state);
   const [initializing, setInitializing] = useState(true);
   const [view, setView] = useState<View>('dashboard');

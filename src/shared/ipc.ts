@@ -1,4 +1,9 @@
 import type {
+  FicQuotaObservation,
+  FicClientPage,
+  FicExportResult,
+} from './fic';
+import type {
   ArchiveSession,
   ConcurrencyToken,
   ArchiveInspection,
@@ -15,7 +20,6 @@ import type {
   Coordinates,
   ExportLine,
   FicClientDetails,
-  FicClientSnapshot,
   Fuel,
   FuelEvidence,
   FoiEvidence,
@@ -37,6 +41,8 @@ export const IPC = {
   tokenSet: 'cash:token:set',
   mimitFuel: 'cash:mimit:fuel',
   foiRevalue: 'cash:foi:revalue',
+  ficQuota: 'cash:fic:quota',
+  ficQuotaChanged: 'cash:fic:quota-changed',
   ficClients: 'cash:fic:clients',
   ficClientDetails: 'cash:fic:client-details',
   ficFinancialSync: 'cash:fic:financial-sync',
@@ -135,6 +141,8 @@ export interface CashNativeApi {
     }): Promise<Result<RouteResult>>;
   };
   fic: {
+    getQuota(): Promise<Result<FicQuotaObservation | null>>;
+    onQuota(listener: (observation: FicQuotaObservation) => void): () => void;
     verifyPermissions(input: {
       companyId: string;
     }): Promise<Result<FicAccessVerification>>;
@@ -174,7 +182,8 @@ export interface CashNativeApi {
     searchClients(input: {
       companyId: string;
       query: string;
-    }): Promise<Result<FicClientSnapshot[]>>;
+      page?: number;
+    }): Promise<Result<FicClientPage>>;
     getClientDetails(input: {
       companyId: string;
       clientId: string;
@@ -189,13 +198,7 @@ export interface CashNativeApi {
       productId: string;
       lines: ExportLine[];
       attemptId: string;
-    }): Promise<
-      Result<{
-        outcome: 'success' | 'rejected' | 'uncertain';
-        remoteDocumentId?: string;
-        diagnostic?: string;
-      }>
-    >;
+    }): Promise<Result<FicExportResult>>;
   };
   updates: {
     getStatus(): Promise<CashUpdateStatus>;

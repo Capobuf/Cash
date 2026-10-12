@@ -1,3 +1,4 @@
+import type { FicClientPage } from '../../src/shared/fic';
 import { act, useState, type ReactNode } from 'react';
 import { CSPProvider } from '@base-ui/react/csp-provider';
 import { createRoot } from 'react-dom/client';
@@ -115,7 +116,7 @@ export async function runUiChecks() {
   let opening = deferred<Result<ArchiveSession | null>>();
   let created = 0;
   let opened = 0;
-  let clients = deferred<Result<FicClientSnapshot[]>>();
+  let clients = deferred<Result<FicClientPage>>();
   const details = deferred<Result<FicClientDetails>>();
   const client: FicClientSnapshot = {
     source: 'fatture_in_cloud',
@@ -140,6 +141,8 @@ export async function runUiChecks() {
       },
       credentials: { hasFicToken: async () => ok(false) },
       fic: {
+        getQuota: async () => ok(null),
+        onQuota: () => () => {},
         setupInfo: async () => ok({ clientId: '', requiredScopes: [] }),
         searchClients: () => clients.promise,
         getClientDetails: () => details.promise,
@@ -232,7 +235,7 @@ export async function runUiChecks() {
       'Search hidden while loading',
     );
     await act(async () => {
-      clients.resolve(ok([client]));
+      clients.resolve(ok({ clients: [client], page: 1 }));
     });
     await click(find('[aria-label="Apri dettagli di Cliente di prova"]'));
     check(
@@ -255,7 +258,7 @@ export async function runUiChecks() {
     clients = deferred();
     await click(button('Aggiorna'));
     await act(async () => {
-      clients.resolve(ok([]));
+      clients.resolve(ok({ clients: [], page: 1 }));
     });
     check(
       document.body.innerText.includes('Nessun cliente trovato'),

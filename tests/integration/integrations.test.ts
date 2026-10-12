@@ -192,7 +192,7 @@ describe('fonti ufficiali', () => {
     ) as unknown as typeof fetch;
     const result = await verifyProduct('1', '2', 'token', fetcher);
     const url = new URL(String(vi.mocked(fetcher).mock.calls[0]?.[0]));
-    expect(url.searchParams.get('fieldset')).toBe('detailed');
+    expect(url.searchParams.get('fields')).toBe('id,name,default_vat');
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('MISSING_DATA');
@@ -288,7 +288,9 @@ describe('fonti ufficiali', () => {
         ),
     ) as unknown as typeof fetch;
     const clients = await searchClients('1', 'cli', 'token', clientsFetch);
-    expect(clients.ok && clients.value[0]?.source).toBe('fatture_in_cloud');
+    expect(clients.ok && clients.value.clients[0]?.source).toBe(
+      'fatture_in_cloud',
+    );
   });
   it('costruisce una query FIC valida e protegge gli apostrofi nella ricerca clienti', async () => {
     const fetcher = vi.fn(
@@ -303,7 +305,7 @@ describe('fonti ufficiali', () => {
     expect(url.searchParams.get('q')).toBe("name contains 'D''Angelo'");
   });
   it.each(['', 'Cliente'])(
-    'raccoglie tutte le pagine clienti per query %s',
+    'recupera una sola pagina clienti per query %s',
     async (query) => {
       const fetcher = vi.fn<typeof fetch>(async (input) => {
         const url = new URL(String(input));
@@ -323,9 +325,16 @@ describe('fonti ufficiali', () => {
         );
       });
       const result = await searchClients('1', query, 'token', fetcher);
-      expect(result.ok && result.value).toHaveLength(51);
-      expect(fetcher).toHaveBeenCalledTimes(2);
-      expect(result.ok && result.value.at(-1)?.clientId).toBe('51');
+      expect(result.ok && result.value.clients).toHaveLength(50);
+      expect(result).toMatchObject({
+        ok: true,
+        value: { page: 1, nextPage: 2 },
+      });
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(result.ok && result.value.clients.at(-1)?.clientId).toBe('50');
+      const next = await searchClients('1', query, 'token', fetcher, 2);
+      expect(next.ok && next.value.clients[0]?.clientId).toBe('51');
+      expect(next.ok && next.value.nextPage).toBeUndefined();
     },
   );
   it.each(['http', 'schema', 'pagination'])(
@@ -342,7 +351,7 @@ describe('fonti ufficiali', () => {
             }),
           ),
         )
-        .mockResolvedValueOnce(
+        .mockImplementation(async () =>
           failure === 'http'
             ? new Response('', { status: 503 })
             : new Response(
@@ -353,7 +362,8 @@ describe('fonti ufficiali', () => {
                 }),
               ),
         );
-      expect(await searchClients('1', '', 'token', fetcher)).toMatchObject({
+      expect((await searchClients('1', '', 'token', fetcher)).ok).toBe(true);
+      expect(await searchClients('1', '', 'token', fetcher, 2)).toMatchObject({
         ok: false,
         error: {
           code: failure === 'http' ? 'SOURCE_UNAVAILABLE' : 'SOURCE_INVALID',
@@ -478,7 +488,10 @@ describe('fonti ufficiali', () => {
       );
       expect(result).toMatchObject({
         ok: true,
-        value: { outcome, diagnostic: `HTTP ${status}` },
+        value: {
+          outcome,
+          diagnostic: expect.stringContaining(`HTTP ${status}`),
+        },
       });
       expect(fetcher).toHaveBeenCalledTimes(1);
       if (!result.ok) throw new Error(result.error.message);
@@ -713,11 +726,13 @@ it.each([422, 500])(
           ),
       ),
     );
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       value: {
         outcome: status === 422 ? 'rejected' : 'uncertain',
-        diagnostic: `HTTP ${status}: Invalid client data`,
+        diagnostic: expect.stringContaining(
+          `HTTP ${status}) Invalid client data`,
+        ),
       },
     });
   },

@@ -367,8 +367,8 @@ describe('snapshot finanziario FIC completo', () => {
     ).toMatchObject({
       ok: false,
       error: {
-        code: 'CREDENTIALS',
-        message: expect.stringContaining('issued_documents.invoices:r'),
+        code: 'SOURCE_UNAVAILABLE',
+        action: expect.stringContaining('issued_documents.invoices:r'),
       },
     });
     expect(fetcher).toHaveBeenCalledTimes(2);

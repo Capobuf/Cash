@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useFicClients } from './use-fic-clients';
 import { isYearMonth } from '../../domain/calendar';
 import { parseDecimalInput } from '../../domain/decimal';
 import {
@@ -69,10 +69,6 @@ export function useQuoteController({
   setActiveQuoteId: (id?: string) => void;
   requestDelete: (target: DeleteTarget) => void;
 }) {
-  const [clientResults, setClientResults] = useState<FicClientSnapshot[]>([]);
-  const [searchingClients, setSearchingClients] = useState(false);
-  const [clientSearchError, setClientSearchError] = useState(false);
-  const clientRequest = useRef(0);
   const quote = doc.quotes.find((candidate) => candidate.id === activeQuoteId);
   const archivePath = appState.session?.path;
   const archiveContext = appState.archiveContext;
@@ -328,6 +324,12 @@ export function useQuoteController({
     });
   };
 
+  const clients = useFicClients({
+    companyId: doc.settings.fic.company?.id,
+    enabled: hasToken && doc.settings.fic.enabled,
+    contextKey: `${doc.documentId}:${archiveContext}:${archivePath}:${doc.settings.fic.company?.id}:${activeQuoteId}:${hasToken}:${doc.settings.fic.enabled}`,
+    appState,
+  });
   const searchRemoteClients = async (query: string) => {
     if (!hasToken) {
       appState.setError({
@@ -338,35 +340,7 @@ export function useQuoteController({
       });
       return;
     }
-    const isCurrent = guardQuoteContext();
-    if (!isCurrent()) return;
-    const companyId = doc.settings.fic.company?.id;
-    if (!doc.settings.fic.enabled || !companyId) {
-      appState.setError({
-        code: 'MISSING_DATA',
-        source: 'FattureInCloud',
-        message: 'Fatture in Cloud non è attivo.',
-        action:
-          'Completa la configurazione nelle Impostazioni per recuperare i clienti.',
-      });
-      return;
-    }
-    const request = ++clientRequest.current;
-    setSearchingClients(true);
-    setClientSearchError(false);
-    setClientResults([]);
-    try {
-      const result = await window.cash.fic.searchClients({ companyId, query });
-      if (request !== clientRequest.current || !isCurrent()) return;
-      if (!result.ok) {
-        setClientSearchError(true);
-        appState.setError(result.error);
-        return;
-      }
-      setClientResults(result.value);
-    } finally {
-      if (request === clientRequest.current) setSearchingClients(false);
-    }
+    await clients.search(query);
   };
 
   const addItem = (name: string) => {
@@ -857,15 +831,6 @@ export function useQuoteController({
       });
       return false;
     }
-    const product = await window.cash.fic.verifyProduct({
-      companyId: fic.company.id,
-      productId: fic.product.id,
-    });
-    if (!isCurrent()) return false;
-    if (!product.ok) {
-      appState.setError(product.error);
-      return false;
-    }
     const exportSnapshot = { ...quote, client };
     const built = buildExportLines(exportSnapshot, groups, fic.company.id);
     if (!built.ok) {
@@ -1016,30 +981,35 @@ export function useQuoteController({
         ],
       });
     } else if (sent.value.outcome === 'rejected') {
-      appState.setError({
-        code: 'VALIDATION',
-        source: 'FattureInCloud',
-        message: 'Fatture in Cloud ha rifiutato l’invio.',
-        details: sent.value.diagnostic ? [sent.value.diagnostic] : [],
-      });
+      appState.setError(
+        sent.value.error ?? {
+          code: 'VALIDATION',
+          source: 'FattureInCloud',
+          message:
+            sent.value.diagnostic ?? 'Fatture in Cloud ha rifiutato l’invio.',
+        },
+      );
     }
+    if (sent.ok && sent.value.outcome === 'success')
+      appState.notifyFicSuccess(
+        'Preventivo esportato',
+        'Il preventivo è stato creato in Fatture in Cloud.',
+      );
     return sent.ok && sent.value.outcome === 'success';
   };
 
   return {
     quote,
-    clientResults,
-    searchingClients,
-    clientSearchError,
-    cancelClientSearch: () => {
-      clientRequest.current += 1;
-      setSearchingClients(false);
-    },
+    clientResults: clients.results,
+    searchingClients: clients.loading,
+    clientSearchError: clients.error,
+    cancelClientSearch: clients.cancel,
+    nextClientPage: clients.nextPage,
+    loadMoreClients: clients.loadMore,
     newQuote,
     updateQuote,
     updateClient,
     searchRemoteClients,
-    setClientResults,
     addItem,
     renameItem,
     updateChosenPrice,
