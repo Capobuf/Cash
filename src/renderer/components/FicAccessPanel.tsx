@@ -1,9 +1,15 @@
 import { Spinner } from '@/components/ui/spinner';
+import { Info } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { FicAccessVerification } from '../../domain/integration';
 import type { AppState } from '../state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Collapsible,
   CollapsibleContent,
@@ -89,42 +95,61 @@ export function FicAccessPanel({
       className="space-y-3 border-t pt-4"
       aria-label="Verifica permessi Fatture in Cloud"
     >
-      <Button
-        variant="outline"
-        disabled={!enabled || !companyId || busy}
-        onClick={() => void verify()}
-      >
-        {busy ? <Spinner aria-hidden="true" /> : null}
-        {busy ? 'Verifica in corso…' : 'Verifica permessi'}
-      </Button>
-      <p className="text-sm text-muted-foreground">
-        Fatture in Cloud espone i permessi dell’utente sull’azienda. Gli scope
-        del token manuale non sono esposti come lista interrogabile da Cash;
-        l’accesso effettivo viene confermato dalle richieste API.
-      </p>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          disabled={!enabled || !companyId || busy}
+          onClick={() => void verify()}
+        >
+          {busy ? <Spinner aria-hidden="true" /> : null}
+          {busy ? 'Verifica in corso…' : 'Verifica permessi'}
+        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button type="button" variant="ghost" size="icon-sm" />}
+            aria-label="Informazioni sulla verifica permessi"
+          >
+            <Info />
+          </TooltipTrigger>
+          <TooltipContent>
+            Controlla quali funzioni sono disponibili per l’azienda collegata. I
+            permessi richiesti in configurazione possono differire da quelli
+            effettivamente concessi.
+          </TooltipContent>
+        </Tooltip>
+      </div>
       {currentReport ? (
         <>
           <p className="text-xs text-muted-foreground">
-            {currentReport.company.name} · verifica live del{' '}
+            {currentReport.company.name} · ultima verifica{' '}
             {new Date(currentReport.checkedAt).toLocaleString('it-IT')}
           </p>
           <h3 className="font-medium">Accessi richiesti da Cash</h3>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Funzione / scope richiesto</TableHead>
+                <TableHead>Funzione</TableHead>
                 <TableHead>Stato</TableHead>
-                <TableHead>Evidenza</TableHead>
+                <TableHead>Dettagli</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {currentReport.requiredAccess.map((access) => (
                 <TableRow key={access.scope}>
                   <TableCell className="whitespace-normal">
-                    <p className="font-medium">{access.label}</p>
-                    <code className="text-xs break-all text-muted-foreground">
-                      {access.scope}
-                    </code>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            className="text-left font-medium"
+                          />
+                        }
+                      >
+                        {access.label}
+                      </TooltipTrigger>
+                      <TooltipContent>{access.scope}</TooltipContent>
+                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -143,8 +168,22 @@ export function FicAccessPanel({
                           : 'Non verificabile direttamente'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="min-w-48 whitespace-normal text-muted-foreground">
-                    {access.detail}
+                  <TableCell>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                          />
+                        }
+                        aria-label={`Dettagli: ${access.label}`}
+                      >
+                        <Info />
+                      </TooltipTrigger>
+                      <TooltipContent>{access.detail}</TooltipContent>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
@@ -192,12 +231,7 @@ export function FicAccessPanel({
             </CollapsibleContent>
           </Collapsible>
         </>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Gli scope richiesti dalla configurazione non attestano gli accessi
-          concessi. Avvia la verifica per consultarne l’esito.
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }

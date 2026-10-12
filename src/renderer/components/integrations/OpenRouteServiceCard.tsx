@@ -1,4 +1,5 @@
 import { Spinner } from '@/components/ui/spinner';
+import { Info } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { AppState } from '../../state';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -8,12 +9,16 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export function OpenRouteServiceCard({ appState }: { appState: AppState }) {
   const [apiKey, setApiKey] = useState('');
@@ -56,8 +61,7 @@ export function OpenRouteServiceCard({ appState }: { appState: AppState }) {
       result.ok
         ? {
             ok: true,
-            message:
-              'Connessione verificata con una richiesta autenticata reale.',
+            message: 'Connessione verificata.',
           }
         : {
             ok: false,
@@ -72,10 +76,6 @@ export function OpenRouteServiceCard({ appState }: { appState: AppState }) {
       <CardHeader>
         <div>
           <CardTitle>OpenRouteService</CardTitle>
-          <CardDescription>
-            Geocodifica e percorso stradale. La chiave resta nel Gestore
-            credenziali locale.
-          </CardDescription>
         </div>
         <CardAction>
           <Badge
@@ -95,21 +95,29 @@ export function OpenRouteServiceCard({ appState }: { appState: AppState }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <Field>
-          <FieldLabel htmlFor="ors-key">API key</FieldLabel>
+          <div className="flex items-center gap-1">
+            <FieldLabel htmlFor="ors-key">API key</FieldLabel>
+            <Tooltip>
+              <TooltipTrigger
+                render={<Button type="button" variant="ghost" size="icon-sm" />}
+                aria-label="Informazioni sulla API key"
+              >
+                <Info />
+              </TooltipTrigger>
+              <TooltipContent>
+                La chiave è salvata solo su questa postazione. Inserisci una
+                nuova chiave per sostituirla, poi verifica la connessione.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input
             id="ors-key"
             type="password"
+            autoComplete="off"
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder={
-              hasKey
-                ? 'Inserisci solo per sostituire la chiave'
-                : 'Inserisci la API key'
-            }
+            placeholder={hasKey ? '••••••••' : 'Inserisci la API key'}
           />
-          <FieldDescription>
-            Non viene registrata nei log né salvata nell’archivio condiviso.
-          </FieldDescription>
         </Field>
         <Button
           onClick={() => void verify()}

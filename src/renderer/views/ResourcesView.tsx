@@ -1,10 +1,10 @@
-import { SearchableSelect } from '@/components/ui/selection-field';
 import {
   Building2,
   Car,
   MoreHorizontal,
   Plus,
   ReceiptText,
+  Star,
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateVehicleCost } from '../../domain/calculations';
@@ -33,8 +33,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Field, FieldLabel } from '@/components/ui/field';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Table,
   TableBody,
@@ -129,59 +133,6 @@ export function ResourcesView({
 
   return (
     <>
-      <section className="mb-4 rounded-lg border bg-card p-4">
-        <div className="mb-3">
-          <h3 className="font-medium">Predefiniti delle nuove Trasferte</h3>
-          <p className="text-sm text-muted-foreground">
-            Sono sole precompilazioni: le Trasferte già salvate non cambiano.
-          </p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field>
-            <FieldLabel htmlFor="default-departure">
-              Partenza predefinita
-            </FieldLabel>
-            <SearchableSelect
-              id="default-departure"
-              value={doc.settings.defaultDepartureSiteId ?? ''}
-              onValueChange={(value) =>
-                appState.mutate((document) => {
-                  document.settings.defaultDepartureSiteId = value || undefined;
-                })
-              }
-              options={[
-                { value: '', label: 'Nessuno' },
-                ...doc.sites.map((site) => ({
-                  value: site.id,
-                  label: [site.name, site.client ? ' · Cliente' : ''].join(''),
-                })),
-              ]}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="default-vehicle">
-              Veicolo predefinito
-            </FieldLabel>
-            <SearchableSelect
-              id="default-vehicle"
-              value={doc.settings.defaultVehicleId ?? ''}
-              onValueChange={(value) =>
-                appState.mutate((document) => {
-                  document.settings.defaultVehicleId = value || undefined;
-                })
-              }
-              options={[
-                { value: '', label: 'Nessuno' },
-                ...doc.vehicles.map((vehicle) => ({
-                  value: vehicle.id,
-                  label: vehicle.name,
-                })),
-              ]}
-            />
-          </Field>
-        </div>
-      </section>
-
       <Tabs defaultValue="costs" className="space-y-4">
         <TabsList>
           <TabsTrigger value="costs">
@@ -311,12 +262,26 @@ export function ResourcesView({
                       return (
                         <TableRow key={vehicle.id}>
                           <TableCell>
-                            <span className="font-medium">{vehicle.name}</span>
-                            {doc.settings.defaultVehicleId === vehicle.id ? (
-                              <Badge className="ml-2" variant="outline">
-                                Predefinito
-                              </Badge>
-                            ) : null}
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">
+                                {vehicle.name}
+                              </span>
+                              <DefaultStar
+                                selected={
+                                  doc.settings.defaultVehicleId === vehicle.id
+                                }
+                                label={`Veicolo predefinito: ${vehicle.name}`}
+                                onClick={() =>
+                                  appState.mutate((document) => {
+                                    document.settings.defaultVehicleId =
+                                      document.settings.defaultVehicleId ===
+                                      vehicle.id
+                                        ? undefined
+                                        : vehicle.id;
+                                  })
+                                }
+                              />
+                            </div>
                           </TableCell>
                           <TableCell>
                             {formatNumber(vehicle.consumption, 2)}{' '}
@@ -405,13 +370,25 @@ export function ResourcesView({
                         {sites.map((site) => (
                           <TableRow key={site.id}>
                             <TableCell>
-                              <span className="font-medium">{site.name}</span>
-                              {doc.settings.defaultDepartureSiteId ===
-                              site.id ? (
-                                <Badge className="ml-2" variant="outline">
-                                  Partenza predefinita
-                                </Badge>
-                              ) : null}
+                              <div className="flex items-center gap-1">
+                                <span className="font-medium">{site.name}</span>
+                                <DefaultStar
+                                  selected={
+                                    doc.settings.defaultDepartureSiteId ===
+                                    site.id
+                                  }
+                                  label={`Partenza predefinita: ${site.name}`}
+                                  onClick={() =>
+                                    appState.mutate((document) => {
+                                      document.settings.defaultDepartureSiteId =
+                                        document.settings
+                                          .defaultDepartureSiteId === site.id
+                                          ? undefined
+                                          : site.id;
+                                    })
+                                  }
+                                />
+                              </div>
                             </TableCell>
                             <TableCell>
                               {site.client?.displayName ?? 'Nessuno'}
@@ -493,6 +470,46 @@ export function ResourcesView({
         }
       />
     </>
+  );
+}
+
+function DefaultStar({
+  selected,
+  label,
+  onClick,
+}: {
+  selected: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={label}
+            aria-pressed={selected}
+            onClick={onClick}
+            className={
+              selected
+                ? 'text-primary hover:text-primary'
+                : 'text-muted-foreground'
+            }
+          />
+        }
+      >
+        <Star
+          aria-hidden="true"
+          className={selected ? 'fill-current' : undefined}
+        />
+      </TooltipTrigger>
+      <TooltipContent>
+        {selected ? 'Rimuovi predefinito' : 'Imposta come predefinito'}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

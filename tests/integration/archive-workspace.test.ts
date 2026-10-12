@@ -76,6 +76,7 @@ app.whenReady().then(async () => {
         'settings-and-device',
         'profile-selections',
         'global-decisions-and-subscriptions',
+        'client-quotes-navigation',
       ];
       expect(JSON.parse(result!.slice('WORKSPACE_RESULT:'.length))).toEqual(
         expected,

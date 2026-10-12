@@ -14,6 +14,7 @@ export interface FicActivationPreview {
 
 export const FIC_SCOPES = [
   'entity.clients:r',
+  'entity.clients:a',
   'products:r',
   'settings:r',
   'issued_documents.quotes:a',

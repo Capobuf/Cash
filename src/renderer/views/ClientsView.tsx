@@ -1,5 +1,7 @@
 import { useFicClients } from '@/hooks/use-fic-clients';
+import { CreateFicClientDialog } from '@/components/CreateFicClientDialog';
 import {
+  ArrowRight,
   Building2,
   Cloud,
   MoreHorizontal,
@@ -23,6 +25,7 @@ import type {
 } from '../../domain/model';
 import { SiteDialog } from '@/components/EntityDialogs';
 import { coordinatesInput } from '../../domain/locations';
+import { quoteTitle } from '../../domain/quotes';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,6 +100,10 @@ const ficFieldLabels: Record<string, string> = {
   bank_swift_code: 'SWIFT/BIC',
   shipping_address: 'Indirizzo di spedizione',
   e_invoice: 'Fatturazione elettronica',
+  courtesy_invoice_config: 'Fattura di cortesia',
+  has_intent_declaration: 'Dichiarazione d’intento',
+  intent_declaration_protocol_number: 'Protocollo dichiarazione d’intento',
+  intent_declaration_protocol_date: 'Data dichiarazione d’intento',
   ei_code: 'Codice destinatario',
   default_discount: 'Sconto predefinito',
   discount_highlight: 'Evidenzia sconto',
@@ -105,17 +112,52 @@ const ficFieldLabels: Record<string, string> = {
 };
 
 const isFicIdentifier = (key: string) => key === 'id' || key.endsWith('_id');
-function clientFieldValue(value: string): string {
+function clientDateValue(value: string, withTime = true): string {
+  const date = new Date(
+    value.length === 10 ? `${value}T00:00:00` : value.replace(' ', 'T'),
+  );
+  if (Number.isNaN(date.valueOf())) return 'Non disponibile';
+  return new Intl.DateTimeFormat('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    ...(withTime ? ({ hour: '2-digit', minute: '2-digit' } as const) : {}),
+  })
+    .format(date)
+    .replace(',', '');
+}
+
+function clientFieldValue(key: string, value: string): string {
+  if (key === 'created_at' || key === 'updated_at')
+    return clientDateValue(value);
+  if (key === 'intent_declaration_protocol_date')
+    return clientDateValue(value, false);
   // Structured fields (e.g. default VAT) can contain nested FIC identifiers.
   try {
     const parsed: unknown = JSON.parse(value, (key, entry: unknown) =>
       isFicIdentifier(key) ? undefined : entry,
     );
+    if (key === 'courtesy_invoice_config') {
+      if (
+        parsed === null ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed)
+      )
+        return 'Non disponibile';
+      const config = parsed as Record<string, unknown>;
+      if (config.enabled === false) return 'Disattivata';
+      if (config.enabled !== true) return 'Non disponibile';
+      return config.include_attachments === true
+        ? 'Attiva · allegati inclusi'
+        : config.include_attachments === false
+          ? 'Attiva · senza allegati'
+          : 'Attiva';
+    }
     return parsed !== null && typeof parsed === 'object'
       ? JSON.stringify(parsed)
       : value;
   } catch {
-    return value;
+    return key === 'courtesy_invoice_config' ? 'Non disponibile' : value;
   }
 }
 
@@ -123,14 +165,19 @@ export function ClientsView({
   doc,
   hasToken,
   appState,
+  onOpenQuote,
   requestDelete,
 }: {
   doc: CashDocument;
   hasToken: boolean;
   appState: AppState;
+  onOpenQuote: (id: string) => void;
   requestDelete: (target: DeleteTarget) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [creationContext, setCreationContext] = useState<string>();
+  const [createdClient, setCreatedClient] = useState<FicClientSnapshot>();
+  const [createdContext, setCreatedContext] = useState<string>();
   const [selectedClient, setSelectedClient] = useState<FicClientSnapshot>();
   const [details, setDetails] = useState<FicClientDetails>();
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -140,6 +187,7 @@ export function ClientsView({
   const companyId = doc.settings.fic.company?.id;
   const integrationReady =
     doc.settings.fic.enabled && hasToken && Boolean(companyId);
+  const clientContext = `${doc.documentId}:${appState.archiveContext}:${appState.session?.path}:${companyId}:${integrationReady}`;
 
   const {
     results: clients,
@@ -153,7 +201,7 @@ export function ClientsView({
     companyId,
     enabled: integrationReady,
     appState,
-    contextKey: `${doc.documentId}:${appState.archiveContext}:${appState.session?.path}:${companyId}:${integrationReady}`,
+    contextKey: clientContext,
   });
   useEffect(() => {
     if (integrationReady) void loadClients('');
@@ -215,7 +263,16 @@ export function ClientsView({
               collegata.
             </CardDescription>
           </div>
-          <CardAction>
+          <CardAction className="flex flex-wrap gap-2">
+            <Button
+              disabled={
+                !integrationReady || Boolean(appState.session?.readOnly)
+              }
+              onClick={() => setCreationContext(clientContext)}
+            >
+              <Plus />
+              Nuovo cliente
+            </Button>
             <Button
               variant="outline"
               disabled={!integrationReady || loading}
@@ -227,6 +284,22 @@ export function ClientsView({
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
+          {integrationReady &&
+          createdClient &&
+          createdContext === clientContext ? (
+            <Alert>
+              <AlertTitle>Cliente creato su Fatture in Cloud</AlertTitle>
+              <AlertDescription>
+                {createdClient.displayName}
+                <Button
+                  variant="link"
+                  onClick={() => void openDetails(createdClient)}
+                >
+                  Visualizza dettagli
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {!integrationReady ? (
             <Alert>
               <Cloud />
@@ -404,6 +477,10 @@ export function ClientsView({
         failed={detailsError}
         doc={doc}
         onClose={closeDetails}
+        onOpenQuote={(id) => {
+          closeDetails();
+          onOpenQuote(id);
+        }}
         onAddSite={(client) => {
           closeDetails();
           setSiteEditor({ client });
@@ -417,6 +494,22 @@ export function ClientsView({
           requestDelete(target);
         }}
       />
+      {integrationReady && companyId && creationContext === clientContext ? (
+        <CreateFicClientDialog
+          key={clientContext}
+          companyId={companyId}
+          companyName={doc.settings.fic.company!.name}
+          appState={appState}
+          onClose={() => setCreationContext(undefined)}
+          onCreated={(client) => {
+            setCreationContext(undefined);
+            setCreatedClient(client);
+            setCreatedContext(clientContext);
+            setQuery(client.displayName);
+            void loadClients(client.displayName);
+          }}
+        />
+      ) : null}
       {siteEditor ? (
         <SiteDialog
           open
@@ -441,6 +534,7 @@ export function ClientDetailsDialog({
   failed = false,
   doc,
   onClose,
+  onOpenQuote,
   onAddSite,
   onEditSite,
   requestDelete,
@@ -452,17 +546,20 @@ export function ClientDetailsDialog({
   failed?: boolean;
   doc: CashDocument;
   onClose: () => void;
+  onOpenQuote: (id: string) => void;
   onAddSite: (client: FicClientSnapshot) => void;
   onEditSite: (client: FicClientSnapshot, site: Site) => void;
   requestDelete: (target: DeleteTarget) => void;
 }) {
   const sites = client ? sitesForClient(doc, client) : [];
   const quotes = client
-    ? doc.quotes.filter(
-        (quote) =>
-          quote.client?.companyId === client.companyId &&
-          quote.client.clientId === client.clientId,
-      )
+    ? doc.quotes
+        .filter(
+          (quote) =>
+            quote.client?.companyId === client.companyId &&
+            quote.client.clientId === client.clientId,
+        )
+        .sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number)
     : [];
   return (
     <Dialog
@@ -512,7 +609,9 @@ export function ClientDetailsDialog({
                       <span className="text-xs text-muted-foreground">
                         {ficFieldLabels[field.key] ?? field.key}
                       </span>
-                      <p className="text-sm">{clientFieldValue(field.value)}</p>
+                      <p className="text-sm break-words whitespace-pre-wrap">
+                        {clientFieldValue(field.key, field.value)}
+                      </p>
                     </div>
                   ))}
               </div>
@@ -608,9 +707,46 @@ export function ClientDetailsDialog({
               )}
             </section>
             <section>
-              <h3 className="font-semibold">
+              <h3 className="mb-3 font-semibold">
                 Preventivi in Cash ({quotes.length})
               </h3>
+              {quotes.length ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Preventivo</TableHead>
+                      <TableHead>Data</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {quotes.map((quote) => (
+                      <TableRow key={quote.id}>
+                        <TableCell className="font-medium whitespace-normal">
+                          {quoteTitle(quote)}
+                        </TableCell>
+                        <TableCell>
+                          {clientDateValue(quote.date, false)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Apri ${quoteTitle(quote)}`}
+                            onClick={() => onOpenQuote(quote.id)}
+                          >
+                            Apri <ArrowRight aria-hidden="true" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Nessun preventivo associato.
+                </p>
+              )}
             </section>
           </div>
         ) : null}

@@ -2,6 +2,8 @@ import type {
   FicQuotaObservation,
   FicClientPage,
   FicExportResult,
+  FicCreateClientInput,
+  FicCreateClientResult,
 } from './fic';
 import type {
   ArchiveSession,
@@ -44,6 +46,7 @@ export const IPC = {
   ficQuota: 'cash:fic:quota',
   ficQuotaChanged: 'cash:fic:quota-changed',
   ficClients: 'cash:fic:clients',
+  ficCreateClient: 'cash:fic:create-client',
   ficClientDetails: 'cash:fic:client-details',
   ficFinancialSync: 'cash:fic:financial-sync',
   ficVerifyPermissions: 'cash:fic:verify-permissions',
@@ -184,6 +187,10 @@ export interface CashNativeApi {
       query: string;
       page?: number;
     }): Promise<Result<FicClientPage>>;
+    createClient(input: {
+      companyId: string;
+      client: FicCreateClientInput;
+    }): Promise<Result<FicCreateClientResult>>;
     getClientDetails(input: {
       companyId: string;
       clientId: string;

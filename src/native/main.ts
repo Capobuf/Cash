@@ -27,6 +27,7 @@ import { latestFuelPrice } from './integrations/mimit';
 import { revalueFoi } from './integrations/foi';
 import {
   exportQuote,
+  createClient,
   getFicQuota,
   onFicQuota,
   getClientDetails,
@@ -39,6 +40,7 @@ import {
   verifyPermissions,
 } from './integrations/fatture-in-cloud';
 import { IPC } from '../shared/ipc';
+import type { FicCreateClientInput } from '../shared/fic';
 import {
   checkCashUpdates,
   downloadCashUpdate,
@@ -601,6 +603,35 @@ function registerHandlers(): void {
             input.page,
           )
         : token;
+    },
+  );
+  ipcMain.handle(
+    IPC.ficCreateClient,
+    async (
+      _event,
+      input: { companyId: string; client: FicCreateClientInput },
+    ) => {
+      const session = current;
+      if (!input || !activeFicCompany(input.companyId) || current?.readOnly)
+        return err({
+          code: 'VALIDATION',
+          source: 'FattureInCloud',
+          message:
+            'Creazione cliente non consentita: verifica l’azienda collegata e apri un archivio modificabile.',
+        });
+      const token = await readFicToken();
+      if (!token.ok) return token;
+      if (
+        current !== session ||
+        !activeFicCompany(input.companyId) ||
+        current?.readOnly
+      )
+        return err({
+          code: 'CONFLICT',
+          source: 'archive',
+          message: 'Archivio o collegamento cambiato prima dell’invio.',
+        });
+      return createClient(input.companyId, input.client, token.value);
     },
   );
   ipcMain.handle(

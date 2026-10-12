@@ -47,6 +47,7 @@ it.each([false, true])(
         doc,
         hasToken,
         appState: new AppState(),
+        onOpenQuote: vi.fn(),
         requestDelete: vi.fn(),
       }),
     );

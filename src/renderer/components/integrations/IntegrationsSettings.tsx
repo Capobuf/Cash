@@ -1,4 +1,4 @@
-import { Cloud } from 'lucide-react';
+import { Cloud, Info, Route } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { disableFic } from '../../../domain/integration';
 import type { CashDocument } from '../../../domain/model';
@@ -28,14 +28,18 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { FicQuotaObservation } from '../../../shared/fic';
 
 export function FicApiUsage({
@@ -51,6 +55,19 @@ export function FicApiUsage({
     <section className="space-y-3 border-t pt-4" aria-label="Utilizzo API">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-medium">Utilizzo API</h3>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button type="button" variant="ghost" size="icon-sm" />}
+            aria-label="Informazioni sulle quote API"
+          >
+            <Info />
+          </TooltipTrigger>
+          <TooltipContent>
+            Le quote si riferiscono all’ultimo rilevamento e possono cambiare.
+            Si applica anche un limite di 300 richieste ogni 5 minuti, condiviso
+            dall’azienda; il residuo non è disponibile.
+          </TooltipContent>
+        </Tooltip>
         {limited ? (
           <Badge variant="destructive">Quota esaurita al rilevamento</Badge>
         ) : null}
@@ -87,15 +104,10 @@ export function FicApiUsage({
           </div>
         ))}
       </div>
-      <FieldDescription>
-        Limite breve periodo: 300 richieste ogni 5 minuti, condiviso
-        dall’azienda su finestra mobile. Residuo non esposto dalle API.
-      </FieldDescription>
       {observation?.suspendedUntil ? (
         <p className="text-sm">
-          Sospensione indicata da Fatture in Cloud fino al{' '}
-          {new Date(observation.suspendedUntil).toLocaleString('it-IT')}. Dopo
-          tale momento le quote devono essere nuovamente osservate.
+          Richieste sospese fino al{' '}
+          {new Date(observation.suspendedUntil).toLocaleString('it-IT')}.
         </p>
       ) : null}
       <FieldDescription>
@@ -103,8 +115,6 @@ export function FicApiUsage({
         {observation
           ? new Date(observation.observedAt).toLocaleString('it-IT')
           : 'Non disponibile'}
-        . I valori provengono dall’ultima risposta Fatture in Cloud e potrebbero
-        essere cambiati. Nessuna richiesta viene effettuata per consultarli.
       </FieldDescription>
     </section>
   );
@@ -205,160 +215,208 @@ export function IntegrationsSettings({
   return (
     <>
       <TabsContent value="integrations">
-        <div className="space-y-4">
-          <OpenRouteServiceCard appState={appState} />
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Fatture in Cloud</CardTitle>
-                <CardDescription>
-                  Clienti, esportazione preventivi e lettura dei dati
-                  finanziari. Gli snapshot restano consultabili anche se
-                  disattivata.
-                </CardDescription>
-              </div>
-              <CardAction>
-                <Badge
-                  variant={
-                    deviceState === 'Attiva'
-                      ? 'default'
-                      : deviceState === 'Errore collegamento'
-                        ? 'destructive'
-                        : 'secondary'
-                  }
-                >
-                  {deviceState}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <Alert>
-                <Cloud />
-                <AlertTitle>
-                  {fic.company?.name ?? 'Azienda non configurata'}
-                </AlertTitle>
-                <AlertDescription>
-                  {fic.enabled
-                    ? `${fic.product?.name ?? 'Prodotto non configurato'} · ultima verifica ${fic.lastVerification?.at ?? '—'}`
-                    : 'Nessuna chiamata al servizio viene eseguita.'}
-                </AlertDescription>
-              </Alert>
-              <FicApiUsage
-                observation={quota?.companyId === companyId ? quota : null}
-              />
-              <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
-                <Field className="col-span-2">
-                  <FieldLabel htmlFor="fic-client-id">
-                    Client ID app privata
-                  </FieldLabel>
-                  <div className="flex gap-2">
+        <Tabs defaultValue="ors" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="ors">
+              <Route />
+              OpenRouteService
+            </TabsTrigger>
+            <TabsTrigger value="fic">
+              <Cloud />
+              Fatture in Cloud
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="ors" keepMounted>
+            <OpenRouteServiceCard appState={appState} />
+          </TabsContent>
+          <TabsContent value="fic" keepMounted>
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>Fatture in Cloud</CardTitle>
+                </div>
+                <CardAction>
+                  <Badge
+                    variant={
+                      deviceState === 'Attiva'
+                        ? 'default'
+                        : deviceState === 'Errore collegamento'
+                          ? 'destructive'
+                          : 'secondary'
+                    }
+                  >
+                    {deviceState}
+                  </Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <Alert>
+                  <Cloud />
+                  <AlertTitle>
+                    {fic.company?.name ?? 'Azienda non configurata'}
+                  </AlertTitle>
+                  {fic.product ? (
+                    <AlertDescription>{fic.product.name}</AlertDescription>
+                  ) : null}
+                </Alert>
+                <FicApiUsage
+                  observation={quota?.companyId === companyId ? quota : null}
+                />
+                <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
+                  <Field className="col-span-2">
+                    <div className="flex items-center gap-1">
+                      <FieldLabel htmlFor="fic-client-id">Client ID</FieldLabel>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                            />
+                          }
+                          aria-label="Informazioni sul Client ID"
+                        >
+                          <Info />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Lo trovi nelle impostazioni dell’app privata in
+                          Fatture in Cloud. È salvato solo su questa postazione.
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        id="fic-client-id"
+                        type="password"
+                        autoComplete="off"
+                        value={clientId}
+                        onChange={(event) => setClientId(event.target.value)}
+                        placeholder="Inserisci il Client ID"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void saveClientId()}
+                        disabled={
+                          savingClientId ||
+                          !clientId.trim() ||
+                          clientId.trim() === ficUi.setupInfo.clientId
+                        }
+                      >
+                        {savingClientId ? 'Salvataggio…' : 'Salva'}
+                      </Button>
+                    </div>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="fic-saved-token">Token</FieldLabel>
                     <Input
-                      id="fic-client-id"
-                      value={clientId}
-                      onChange={(event) => setClientId(event.target.value)}
-                      placeholder="Inserisci il Client ID"
+                      id="fic-saved-token"
+                      type="password"
+                      value={ficUi.hasToken ? '********' : ''}
+                      placeholder="Non configurato"
+                      aria-label={
+                        ficUi.hasToken
+                          ? 'Token configurato'
+                          : 'Token non configurato'
+                      }
+                      autoComplete="off"
+                      readOnly
                     />
+                  </Field>
+                  <div className="flex items-center gap-1 self-end">
+                    <span className="text-muted-foreground">
+                      Permessi richiesti
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                          />
+                        }
+                        aria-label="Mostra i permessi richiesti"
+                      >
+                        <Info />
+                      </TooltipTrigger>
+                      <TooltipContent className="block rounded-[6px]">
+                        <FicPermissions
+                          scopes={ficUi.setupInfo.requiredScopes}
+                          compact
+                        />
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  {fic.taxProfile ? (
+                    <div className="col-span-2 flex flex-wrap items-center gap-2 border-t pt-4">
+                      <span className="text-muted-foreground">
+                        Fiscalità aziendale
+                      </span>
+                      <Badge variant="secondary">
+                        {ficRegimeLabel(fic.taxProfile.regime)}
+                      </Badge>
+                      {fic.taxProfile.profitCoefficient ? (
+                        <Badge variant="outline">
+                          Redditività {fic.taxProfile.profitCoefficient}%
+                        </Badge>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {fic.enabled ? (
                     <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void saveClientId()}
-                      disabled={
-                        savingClientId ||
-                        !clientId.trim() ||
-                        clientId.trim() === ficUi.setupInfo.clientId
+                      variant="secondary"
+                      onClick={() =>
+                        appState.mutate((document) => {
+                          document.settings = disableFic(document.settings);
+                        })
                       }
                     >
-                      {savingClientId ? 'Salvataggio…' : 'Salva'}
+                      Disattiva
                     </Button>
-                  </div>
-                  <FieldDescription>
-                    Salvato solo nelle preferenze locali di questa postazione.
-                  </FieldDescription>
-                </Field>
-                <div>
-                  <p className="text-muted-foreground">Token</p>
-                  <p className="mt-1 font-medium">
-                    {ficUi.hasToken
-                      ? 'Presente nel Gestore credenziali'
-                      : 'Assente su questa postazione'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">
-                    Scope richiesti da Cash
-                  </p>
-                  <FicPermissions scopes={ficUi.setupInfo.requiredScopes} />
-                </div>
-                {fic.taxProfile ? (
-                  <div className="col-span-2 flex flex-wrap items-center gap-2 border-t pt-4">
-                    <span className="text-muted-foreground">
-                      Fiscalità aziendale
-                    </span>
-                    <Badge variant="secondary">
-                      {ficRegimeLabel(fic.taxProfile.regime)}
-                    </Badge>
-                    {fic.taxProfile.profitCoefficient ? (
-                      <Badge variant="outline">
-                        Redditività {fic.taxProfile.profitCoefficient}%
-                      </Badge>
-                    ) : null}
-                    <span className="text-xs text-muted-foreground">
-                      importata da Fatture in Cloud
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {fic.enabled ? (
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      appState.mutate((document) => {
-                        document.settings = disableFic(document.settings);
-                      })
-                    }
-                  >
-                    Disattiva
+                  ) : null}
+                  {!fic.enabled &&
+                  fic.company &&
+                  fic.product &&
+                  ficUi.hasToken ? (
+                    <Button
+                      onClick={() =>
+                        appState.mutate((document) => {
+                          document.settings.fic.enabled = true;
+                        })
+                      }
+                    >
+                      Riattiva
+                    </Button>
+                  ) : null}
+                  <Button onClick={() => setWizardOpen(true)}>
+                    {fic.company && fic.product
+                      ? ficUi.hasToken
+                        ? 'Riconfigura postazione'
+                        : 'Configura questa postazione'
+                      : 'Configura Fatture in Cloud'}
                   </Button>
-                ) : null}
-                {!fic.enabled &&
-                fic.company &&
-                fic.product &&
-                ficUi.hasToken ? (
                   <Button
-                    onClick={() =>
-                      appState.mutate((document) => {
-                        document.settings.fic.enabled = true;
-                      })
-                    }
+                    variant="destructive"
+                    onClick={() => setRemoveFicOpen(true)}
+                    disabled={!fic.company && !ficUi.hasToken}
                   >
-                    Riattiva
+                    Rimuovi collegamento
                   </Button>
-                ) : null}
-                <Button onClick={() => setWizardOpen(true)}>
-                  {fic.company && fic.product
-                    ? ficUi.hasToken
-                      ? 'Riconfigura postazione'
-                      : 'Configura questa postazione'
-                    : 'Configura Fatture in Cloud'}
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => setRemoveFicOpen(true)}
-                  disabled={!fic.company && !ficUi.hasToken}
-                >
-                  Rimuovi collegamento
-                </Button>
-              </div>
-              <FicAccessPanel
-                key={`${doc.documentId}:${fic.company?.id}:${ficUi.hasToken}:${fic.enabled}:${wizardOpen}:${fic.lastVerification?.at}`}
-                companyId={fic.company?.id}
-                enabled={fic.enabled && ficUi.hasToken}
-                appState={appState}
-              />
-            </CardContent>
-          </Card>
-        </div>
+                </div>
+                <FicAccessPanel
+                  key={`${doc.documentId}:${fic.company?.id}:${ficUi.hasToken}:${fic.enabled}:${wizardOpen}:${fic.lastVerification?.at}`}
+                  companyId={fic.company?.id}
+                  enabled={fic.enabled && ficUi.hasToken}
+                  appState={appState}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </TabsContent>
 
       <FicWizard

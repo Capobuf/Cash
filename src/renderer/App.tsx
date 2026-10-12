@@ -399,6 +399,10 @@ function ArchiveWorkspace({
     setActiveProfileId(id);
     setView('settings');
   };
+  const openQuote = (id: string) => {
+    setActiveQuoteId(id);
+    setView('quotes');
+  };
   const content =
     view === 'dashboard' ? (
       <DashboardView
@@ -406,10 +410,7 @@ function ArchiveWorkspace({
         year={financialYear}
         appState={appState}
         onEditProfile={openProfile}
-        onOpenQuote={(id) => {
-          setActiveQuoteId(id);
-          setView('quotes');
-        }}
+        onOpenQuote={openQuote}
         onNewQuote={createQuote}
       />
     ) : view === 'quotes' ? (
@@ -426,6 +427,7 @@ function ArchiveWorkspace({
         doc={doc}
         hasToken={ficUi.hasToken}
         appState={appState}
+        onOpenQuote={openQuote}
         requestDelete={setDeleteTarget}
       />
     ) : view === 'catalog' ? (

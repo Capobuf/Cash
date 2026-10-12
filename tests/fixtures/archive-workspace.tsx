@@ -18,6 +18,7 @@ import type { FicQuotaObservation, FicClientPage } from '../../src/shared/fic';
 import type { Result } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
 import { eur } from '../../src/renderer/lib/format';
+import { addQuote, quoteTitle } from '../../src/domain/quotes';
 
 export async function runWorkspaceChecks() {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -172,7 +173,28 @@ export async function runWorkspaceChecks() {
             ...(paginateClients && page === 1 ? { nextPage: 2 } : {}),
           });
         },
-        getClientDetails: async () => ok({ fields: [] }),
+        getClientDetails: async ({
+          companyId,
+          clientId,
+        }: {
+          companyId: string;
+          clientId: string;
+        }) =>
+          ok({
+            source: 'fatture_in_cloud',
+            companyId,
+            clientId,
+            displayName: 'Cliente',
+            fields: [
+              {
+                key: 'courtesy_invoice_config',
+                value: '{"enabled":false,"include_attachments":false}',
+              },
+              { key: 'has_intent_declaration', value: 'No' },
+              { key: 'created_at', value: '2023-12-13 14:49:40' },
+              { key: 'updated_at', value: '2026-01-02 21:56:42' },
+            ],
+          }),
       },
       updates: {
         getStatus: () => {
@@ -953,6 +975,7 @@ export async function runWorkspaceChecks() {
 
     await click('Impostazioni');
     await click('Integrazioni');
+    await click('Fatture in Cloud');
     const requestsBeforeQuota = clientQueries.length;
     const toastsBefore = document.querySelectorAll(
       '[data-slot="toast"]',
@@ -1111,6 +1134,57 @@ export async function runWorkspaceChecks() {
         JSON.stringify(counts),
     );
     results.push('global-decisions-and-subscriptions');
+    await act(async () => {
+      state.mutate((document) => {
+        document.quotes[0]!.client = {
+          source: 'fatture_in_cloud',
+          companyId: '1',
+          clientId: '3',
+          displayName: 'Cliente F',
+        };
+        addQuote(document).client = {
+          ...document.quotes[0]!.client,
+          companyId: 'another-company',
+        };
+      });
+    });
+    const linkedQuote = state.document!.quotes[0]!;
+    const foreignQuote = state.document!.quotes[1]!;
+    await click('Clienti');
+    await clickSelector('[aria-label="Apri dettagli di Cliente F"]');
+    const clientDetails = find('[data-slot="dialog-content"]');
+    check(
+      clientDetails.innerText.includes('Fattura di cortesia') &&
+        clientDetails.innerText.includes('Disattivata') &&
+        clientDetails.innerText.includes('Dichiarazione d’intento') &&
+        !clientDetails.innerText.includes('courtesy_invoice_config') &&
+        !clientDetails.innerText.includes('include_attachments') &&
+        !clientDetails.innerText.includes('has_intent_declaration'),
+      'Client details exposed technical fields',
+    );
+    check(
+      clientDetails.innerText.includes('13/12/2023 14:49') &&
+        clientDetails.innerText.includes('02/01/2026 21:56') &&
+        !clientDetails.innerText.includes('14:49:40') &&
+        !clientDetails.innerText.includes('21:56:42'),
+      'Client timestamps were not formatted without seconds',
+    );
+    check(
+      clientDetails.innerText.includes('Preventivi in Cash (1)') &&
+        clientDetails.innerText.includes(quoteTitle(linkedQuote)) &&
+        !clientDetails.innerText.includes(quoteTitle(foreignQuote)),
+      'Client quote list mixed companies or hid the linked quote',
+    );
+    await clickSelector(`[aria-label="Apri ${quoteTitle(linkedQuote)}"]`);
+    check(
+      !document.querySelector('[data-slot="dialog-content"][data-open]') &&
+        [...document.querySelectorAll('h2')].some(
+          (heading) => heading.textContent === quoteTitle(linkedQuote),
+        ) &&
+        document.body.innerText.includes('Preventivo F'),
+      'Client quote shortcut did not open the linked quote detail',
+    );
+    results.push('client-quotes-navigation');
     return results;
   } finally {
     await act(async () => {

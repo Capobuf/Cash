@@ -423,6 +423,40 @@ describe('pending nella sincronizzazione finanziaria', () => {
 });
 
 describe('permessi azienda e accessi effettivi distinti', () => {
+  it('verifica tutti gli accessi in lettura con una paginazione valida per FIC', async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/company/info'))
+        return response({ data: company });
+      if (
+        !url.pathname.endsWith('/tax_profile') &&
+        Number(url.searchParams.get('per_page')) < 5
+      )
+        return response(
+          {
+            error: {
+              message: 'Invalid request.',
+              validation_result: {
+                per_page: ['The per page must be at least 5.'],
+              },
+            },
+          },
+          422,
+        );
+      return page([]);
+    });
+    const result = await verifyPermissions('1', 'token', fetcher);
+    if (!result.ok) throw new Error(result.error.message);
+    const readAccess = result.value.requiredAccess.filter((access) =>
+      access.scope.endsWith(':r'),
+    );
+    expect(readAccess).toHaveLength(6);
+    expect(readAccess.every((access) => access.status === 'available')).toBe(
+      true,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(11);
+  });
+
   it('conserva tutti i permessi ufficiali e tollera nuove chiavi senza persisterle', () => {
     const expanded = {
       ...permissions,
@@ -455,7 +489,7 @@ describe('permessi azienda e accessi effettivi distinti', () => {
         if (url.pathname.endsWith('/company/info'))
           return response({ data: company });
         if (!url.pathname.endsWith('/tax_profile'))
-          expect(url.searchParams.get('per_page')).toBe('1');
+          expect(url.searchParams.get('per_page')).toBe('5');
         return response(
           {},
           url.searchParams.get('type') === 'invoice' ? 403 : 200,
@@ -496,7 +530,9 @@ describe('permessi azienda e accessi effettivi distinti', () => {
       ),
     ).toMatchObject({
       status: 'unverifiable',
-      detail: expect.stringContaining('write'),
+      detail: expect.stringContaining(
+        'Il permesso aziendale consente di creare preventivi.',
+      ),
     });
     expect(result.value).not.toHaveProperty('grantedScopes');
     expect(fetcher).toHaveBeenCalledTimes(11);

@@ -191,8 +191,8 @@ describe('classificazione HTTP FIC', () => {
         return;
       }
       if (!result.ok) throw new Error(result.error.message);
-      const readAccess = result.value.requiredAccess.filter(
-        (access) => access.scope !== 'issued_documents.quotes:a',
+      const readAccess = result.value.requiredAccess.filter((access) =>
+        access.scope.endsWith(':r'),
       );
       expect(readAccess).toHaveLength(6);
       for (const access of readAccess) {

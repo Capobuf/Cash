@@ -377,6 +377,7 @@ describe('snapshot finanziario FIC completo', () => {
   it('richiede esattamente gli scope previsti senza permessi fiscali o scrittura dei documenti finanziari', () => {
     expect(FIC_SCOPES).toEqual([
       'entity.clients:r',
+      'entity.clients:a',
       'products:r',
       'settings:r',
       'issued_documents.quotes:a',

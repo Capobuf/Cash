@@ -1,4 +1,8 @@
-import type { FicClientPage } from '../../src/shared/fic';
+import type {
+  FicClientPage,
+  FicCreateClientInput,
+  FicCreateClientResult,
+} from '../../src/shared/fic';
 import { act, useState, type ReactNode } from 'react';
 import { CSPProvider } from '@base-ui/react/csp-provider';
 import { createRoot } from 'react-dom/client';
@@ -219,6 +223,7 @@ export async function runUiChecks() {
         doc={doc}
         hasToken
         appState={appState}
+        onOpenQuote={() => {}}
         requestDelete={() => {}}
       />,
     );
@@ -277,6 +282,161 @@ export async function runUiChecks() {
       !document.body.innerText.includes('Nessun cliente trovato'),
       'Client failure presented as empty results',
     );
+    let creation = deferred<Result<FicCreateClientResult>>();
+    const submissions: FicCreateClientInput[] = [];
+    const searches: string[] = [];
+    window.cash.fic.createClient = (input) => {
+      check(input.companyId === 'company', 'Wrong company for client creation');
+      submissions.push(input.client);
+      return creation.promise;
+    };
+    window.cash.fic.searchClients = async (input) => {
+      searches.push(input.query);
+      return ok({ clients: [client], page: 1 });
+    };
+    await click(button('Nuovo cliente'));
+    check(
+      find('#new-client-advanced-trigger').getAttribute('aria-expanded') ===
+        'false',
+      'Advanced client options should start collapsed',
+    );
+    await fill('#new-client-name', '  Cliente minimo  ');
+    await click(button('Crea su FIC'));
+    check(
+      submissions.length === 0,
+      'Client creation allowed without client type',
+    );
+    check(
+      find('#new-client-advanced-trigger').getAttribute('aria-expanded') ===
+        'false',
+      'Missing client type opened advanced options',
+    );
+    await choose('#new-client-type', 'Azienda / professionista');
+    await click(button('Crea su FIC'));
+    check(
+      JSON.stringify(submissions[0]) ===
+        JSON.stringify({ name: 'Cliente minimo', type: 'company' }),
+      'Minimum client payload contains unwanted defaults',
+    );
+    check(
+      button('Creazione…').hasAttribute('disabled'),
+      'Repeated creation allowed while pending',
+    );
+    check(
+      button('Annulla').hasAttribute('disabled'),
+      'Creation can be dismissed while pending',
+    );
+    await act(async () => {
+      creation.resolve(
+        ok({
+          outcome: 'created',
+          client: { ...client, displayName: 'Cliente minimo' },
+        }),
+      );
+    });
+    check(
+      !document.querySelector('#new-client-name'),
+      'Successful creation did not close dialog',
+    );
+    check(
+      searches.at(-1) === 'Cliente minimo',
+      'Created client was not searched on FIC',
+    );
+    check(
+      document.body.innerText.includes('Cliente creato su Fatture in Cloud'),
+      'Remote creation success missing',
+    );
+
+    creation = deferred();
+    await click(button('Nuovo cliente'));
+    await fill('#new-client-name', 'Cliente avanzato');
+    await choose('#new-client-type', 'Privato');
+    await click(find('#new-client-advanced-trigger'));
+    await fill('#new-client-code', 'C42');
+    await fill('#new-client-tax_code', '01234567890');
+    await fill('#new-client-address_extra', 'Interno 2');
+    await fill('#new-client-contact_person', 'Mario');
+    await fill('#new-client-certified_email', 'pec non valida');
+    await choose('#new-client-e_invoice', 'Disattiva');
+    await fill('#new-client-payment-terms', '0');
+    await click(find('#new-client-advanced-trigger'));
+    await click(button('Crea su FIC'));
+    check(submissions.length === 1, 'Invalid advanced email was sent');
+    check(
+      find('#new-client-advanced-trigger').getAttribute('aria-expanded') ===
+        'true',
+      'Invalid collapsed advanced field was not revealed',
+    );
+    await fill('#new-client-certified_email', 'cliente@pec.it');
+    await click(find('#new-client-advanced-trigger'));
+    await click(button('Crea su FIC'));
+    check(
+      submissions[1]?.code === 'C42' &&
+        submissions[1]?.type === 'person' &&
+        submissions[1]?.tax_code === '01234567890' &&
+        submissions[1]?.address_extra === 'Interno 2' &&
+        submissions[1]?.contact_person === 'Mario' &&
+        submissions[1]?.e_invoice === false &&
+        submissions[1]?.default_payment_terms === 0,
+      'Collapsed advanced options lost their values',
+    );
+    await act(async () => {
+      document
+        .querySelector<HTMLFormElement>('[role=dialog] form')!
+        .dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    });
+    check(submissions.length === 2, 'Repeated POST dispatched while pending');
+    await act(async () => {
+      creation.resolve(
+        err({ code: 'CONFLICT', message: 'Cliente già presente' }),
+      );
+    });
+    check(
+      document.body.innerText.includes('Cliente già presente'),
+      'Creation error hidden',
+    );
+    check(
+      document.querySelector<HTMLInputElement>('#new-client-name')!.value ===
+        'Cliente avanzato',
+      'Rejected client form data lost',
+    );
+    creation = deferred();
+    await click(button('Crea su FIC'));
+    await act(async () => {
+      creation.resolve(
+        ok({
+          outcome: 'uncertain',
+          diagnostic: 'Controlla il cliente in FIC prima di riprovare.',
+        }),
+      );
+    });
+    check(
+      document.body.innerText.includes('Creazione da verificare'),
+      'Uncertain creation presented as success',
+    );
+    check(
+      button('Crea su FIC').hasAttribute('disabled'),
+      'Uncertain creation allows another POST',
+    );
+    await click(button('Chiudi'));
+    await render(null);
+    appState.acceptNativeSession({ ...session(), readOnly: true });
+    await render(
+      <ClientsView
+        doc={doc}
+        hasToken
+        appState={appState}
+        onOpenQuote={() => {}}
+        requestDelete={() => {}}
+      />,
+    );
+    check(
+      button('Nuovo cliente').hasAttribute('disabled'),
+      'Client creation allowed with read-only archive',
+    );
+    appState.acceptNativeSession(session());
     await render(null);
     results.push('clients');
 
@@ -716,6 +876,7 @@ export async function renderMotionPreview(reduced: boolean) {
             doc={doc}
             hasToken
             appState={appState}
+            onOpenQuote={() => {}}
             requestDelete={() => {}}
           />
           <Card>

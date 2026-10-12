@@ -13,7 +13,10 @@ import type {
   FicQuotaObservation,
   FicClientPage,
   FicExportResult,
+  FicCreateClientInput,
+  FicCreateClientResult,
 } from '../../shared/fic';
+import { ficCreateClientSchema } from '../../shared/fic';
 import { officialFetch } from './http';
 import { d, money } from '../../domain/decimal';
 import { financialSnapshotSchema } from '../../domain/schema';
@@ -179,29 +182,29 @@ export async function verifyPermissions(
       [
         'Clienti',
         'entity.clients:r',
-        ['/entities/clients?per_page=1&fields=id'],
+        ['/entities/clients?per_page=5&fields=id'],
       ],
-      ['Prodotti', 'products:r', ['/products?per_page=1&fields=id']],
+      ['Prodotti', 'products:r', ['/products?per_page=5&fields=id']],
       ['Profilo fiscale', 'settings:r', ['/settings/tax_profile']],
       [
         'Lettura fatture',
         'issued_documents.invoices:r',
-        ['/issued_documents?type=invoice&per_page=1&fields=id'],
+        ['/issued_documents?type=invoice&per_page=5&fields=id'],
       ],
       [
         'Lettura note di credito',
         'issued_documents.credit_notes:r',
-        ['/issued_documents?type=credit_note&per_page=1&fields=id'],
+        ['/issued_documents?type=credit_note&per_page=5&fields=id'],
       ],
       [
         'Lettura documenti ricevuti',
         'received_documents:r',
         [
-          '/received_documents?type=expense&per_page=1&fields=id',
-          '/received_documents?type=passive_credit_note&per_page=1&fields=id',
+          '/received_documents?type=expense&per_page=5&fields=id',
+          '/received_documents?type=passive_credit_note&per_page=5&fields=id',
           ...['agyo', 'mail', 'browser'].map(
             (type) =>
-              `/received_documents/pending?type=${type}&per_page=1&fields=id`,
+              `/received_documents/pending?type=${type}&per_page=5&fields=id`,
           ),
         ],
       ],
@@ -234,10 +237,16 @@ export async function verifyPermissions(
         ? permissions.fic_issued_documents_detailed?.quotes
         : permissions.fic_issued_documents;
     result.requiredAccess.push({
+      label: 'Creazione clienti',
+      scope: 'entity.clients:a',
+      status: 'unverifiable',
+      detail: `${permissions.fic_clients === 'write' ? 'Il permesso aziendale consente di creare clienti.' : 'Il permesso aziendale per creare clienti non è confermato.'} La verifica completa del collegamento avviene quando crei un cliente.`,
+    });
+    result.requiredAccess.push({
       label: 'Creazione preventivi',
       scope: 'issued_documents.quotes:a',
       status: 'unverifiable',
-      detail: `Permesso azienda rilevato: ${quoteLevel ?? 'non esposto'}. Accesso write verificato realmente soltanto durante l’esportazione; nessun documento creato per la verifica.`,
+      detail: `${quoteLevel === 'write' ? 'Il permesso aziendale consente di creare preventivi.' : 'Il permesso aziendale per creare preventivi non è confermato.'} La verifica completa del collegamento avviene quando esporti un preventivo.`,
     });
     result.checkedAt = new Date().toISOString();
     return ok(result);
@@ -358,6 +367,7 @@ async function ficHttpError(
   response: Response,
   path: string,
   token: string,
+  method: string,
 ): Promise<FicHttpFailure> {
   let payload: { error?: unknown; error_description?: unknown } = {};
   try {
@@ -419,7 +429,9 @@ async function ficHttpError(
       : path.includes('/tax_profile')
         ? 'settings:r'
         : path.includes('/entities/clients')
-          ? 'entity.clients:r'
+          ? method.toUpperCase() === 'POST'
+            ? 'entity.clients:a'
+            : 'entity.clients:r'
           : path.includes('/received_documents')
             ? 'received_documents:r'
             : path.includes('type=invoice')
@@ -544,7 +556,9 @@ async function ficFetch(
     }
     const http = response.value;
     const waitSeconds = integerHeader(http.headers, 'Retry-After');
-    const error = http.ok ? undefined : await ficHttpError(http, path, token);
+    const error = http.ok
+      ? undefined
+      : await ficHttpError(http, path, token, init.method ?? 'GET');
     if (companyId) {
       const previousCooldown = quotas.get(companyId)?.suspendedUntil;
       const waitUntil =
@@ -713,6 +727,61 @@ export async function listConsultingProducts(
       message: 'Risposta prodotti non valida.',
       details: [String(cause)],
     });
+  }
+}
+
+export async function createClient(
+  companyId: string,
+  input: FicCreateClientInput,
+  token: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Result<FicCreateClientResult>> {
+  const parsed = ficCreateClientSchema.safeParse(input);
+  if (!companyId?.trim() || !parsed.success)
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Dati del nuovo cliente non validi.',
+      details: parsed.success
+        ? []
+        : parsed.error.issues.map((issue) => issue.message),
+    });
+  const uncertain = () =>
+    ok<FicCreateClientResult>({
+      outcome: 'uncertain',
+      diagnostic:
+        'La richiesta è stata inviata, ma non è possibile confermare la creazione. Verifica se il cliente è presente in Fatture in Cloud prima di ripetere l’operazione.',
+    });
+  const response = await ficFetch(
+    `/c/${encodeURIComponent(companyId)}/entities/clients`,
+    token,
+    { method: 'POST', body: JSON.stringify({ data: parsed.data }) },
+    fetcher,
+  );
+  if (!response.ok) {
+    if (
+      response.error.requestSent &&
+      (response.error.httpStatus === undefined ||
+        response.error.httpStatus >= 500)
+    )
+      return uncertain();
+    return response;
+  }
+  try {
+    const json = (await response.value.json()) as { data?: unknown };
+    const client = clientSchema.parse(json.data);
+    return ok({
+      outcome: 'created',
+      client: {
+        source: 'fatture_in_cloud',
+        companyId,
+        clientId: String(client.id),
+        displayName: client.name,
+        ...(client.vat_number ? { vatNumber: client.vat_number } : {}),
+      },
+    });
+  } catch {
+    return uncertain();
   }
 }
 

@@ -212,23 +212,21 @@ export function FicWizard({
             <div className="space-y-4">
               <WizardCopy
                 title="Collega questa postazione"
-                body="Il collegamento è facoltativo. Client ID e token resteranno soltanto su questa postazione e non entreranno mai nell’archivio condiviso."
+                body="Inserisci il Client ID della tua app in Fatture in Cloud."
               />
               <Field>
                 <FieldLabel htmlFor="wizard-fic-client-id">
-                  Client ID app privata
+                  Client ID
                 </FieldLabel>
                 <Input
                   id="wizard-fic-client-id"
+                  type="password"
+                  autoComplete="off"
                   value={clientId}
                   onChange={(event) => setClientId(event.target.value)}
                   placeholder="Inserisci il Client ID"
                   autoFocus
                 />
-                <FieldDescription>
-                  Lo trovi nelle impostazioni dell’app privata in Fatture in
-                  Cloud.
-                </FieldDescription>
               </Field>
             </div>
           ) : null}
@@ -238,14 +236,14 @@ export function FicWizard({
               <Input
                 id="fic-token"
                 type="password"
+                autoComplete="off"
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
                 autoFocus
               />
               <FieldDescription>
-                Genera il token con tutti i permessi elencati. Premendo Continua
-                verrà salvato subito nel Gestore credenziali, anche se
-                interrompi il wizard in seguito.
+                Genera il token con questi permessi. Continua lo salva su questa
+                postazione, anche se interrompi la configurazione.
               </FieldDescription>
               <FicPermissions scopes={ficUi.setupInfo.requiredScopes} />
             </Field>
@@ -253,7 +251,7 @@ export function FicWizard({
           {step === 3 ? (
             <WizardCopy
               title="Verifica collegamento"
-              body="Il token è già salvato su questa postazione. Cash lo verificherà e caricherà l’elenco delle aziende accessibili; nessun preventivo verrà creato."
+              body="Continua per verificare il token e caricare le aziende disponibili."
             />
           ) : null}
           {step === 4 ? (
@@ -474,6 +472,7 @@ function ChoiceList({
 }
 const ficPermissionLabels: Record<string, string> = {
   'entity.clients:r': 'Clienti · lettura',
+  'entity.clients:a': 'Clienti · creazione',
   'products:r': 'Prodotti · lettura',
   'settings:r': 'Fiscalità · lettura',
   'issued_documents.quotes:a': 'Preventivi · creazione',
@@ -496,10 +495,21 @@ export function ficRegimeLabel(regime?: string): string {
 export function FicPermissions({
   scopes,
   align = 'start',
+  compact = false,
 }: {
   scopes: string[];
   align?: 'start' | 'end';
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <ul className="space-y-0.5">
+        {scopes.map((scope) => (
+          <li key={scope}>{ficPermissionLabels[scope] ?? scope}</li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <div
       className={`mt-1.5 flex flex-wrap gap-1.5 ${align === 'end' ? 'justify-end' : ''}`}
