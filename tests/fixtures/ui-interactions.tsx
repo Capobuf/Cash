@@ -1026,20 +1026,27 @@ export async function runFinancialFlowChecks() {
       checkFit();
     }
     await act(async () => {
-      card().querySelector<HTMLButtonElement>('button')!.click();
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error('Financial flow did not enter fullscreen')),
-          2000,
-        );
-        document.addEventListener(
-          'fullscreenchange',
-          () => {
-            clearTimeout(timeout);
-            resolve();
-          },
-          { once: true },
-        );
+        const cleanup = () => {
+          clearTimeout(timeout);
+          document.removeEventListener('fullscreenchange', entered);
+          document.removeEventListener('fullscreenerror', failed);
+        };
+        const entered = () => {
+          cleanup();
+          resolve();
+        };
+        const failed = () => {
+          cleanup();
+          reject(new Error('Financial flow fullscreen request was rejected'));
+        };
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Financial flow did not enter fullscreen'));
+        }, 5000);
+        document.addEventListener('fullscreenchange', entered);
+        document.addEventListener('fullscreenerror', failed);
+        card().querySelector<HTMLButtonElement>('button')!.click();
       });
     });
     await settled();

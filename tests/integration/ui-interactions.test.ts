@@ -53,7 +53,8 @@ const { readFileSync, writeFileSync, mkdirSync } = require('node:fs');
 const { join } = require('node:path');
 app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ width: 1440, height: 1000, show: false, webPreferences: { contextIsolation: false } });
+  // Keep animation frames and timers active while the test window is hidden.
+  const window = new BrowserWindow({ width: 1440, height: 1000, show: false, webPreferences: { contextIsolation: false, backgroundThrottling: false } });
   await window.loadFile(${JSON.stringify(pagePath)});
   try {
     const result = await window.webContents.executeJavaScript(readFileSync(${JSON.stringify(bundlePath)}, 'utf8') + '\\nWorkspaceChecks.runUiChecks()');
