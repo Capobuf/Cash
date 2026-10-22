@@ -16,6 +16,7 @@ import { quoteTitle } from '../../domain/quotes';
 import { type CashDocument, type QuoteItem } from '../../domain/model';
 import { siteMatchesClient } from '../../domain/locations';
 import { Analysis } from '@/components/Analysis';
+import { SiteDialog } from '@/components/EntityDialogs';
 import {
   CatalogPickerDialog,
   InsertTemplateDialog,
@@ -93,6 +94,7 @@ import type { DeleteTarget } from '../types';
 
 type Overlay =
   | { kind: 'customer' }
+  | { kind: 'site'; context: string }
   | { kind: 'item'; item?: QuoteItem }
   | {
       kind: 'sub';
@@ -167,6 +169,13 @@ export function QuotesView({
     );
 
   const hourly = quote.profileSnapshot?.hourlyTarget;
+  const siteContext = `${appState.archiveContext}:${quote.id}:${quote.client?.companyId}:${quote.client?.clientId}`;
+  const canAddSite = Boolean(
+    quote.client &&
+    appState.document &&
+    !appState.session?.readOnly &&
+    appState.status !== 'Conflitto esterno',
+  );
   const previewItems = quote.items.map((item) =>
     Object.hasOwn(pricePreview, item.id)
       ? { ...item, chosenPrice: pricePreview[item.id] }
@@ -430,19 +439,50 @@ export function QuotesView({
               ) : null}
             </Tooltip>
           </Field>
-          <Field>
+          <Field className="min-w-0">
             <FieldLabel htmlFor="quote-site">Sede principale</FieldLabel>
-            <SearchableSelect
-              id="quote-site"
-              value={quote.mainSite?.sourceId ?? ''}
-              onValueChange={(value) => setQuoteValue({ mainSiteId: value })}
-              options={[
-                { value: '', label: 'Nessuna' },
-                ...doc.sites
-                  .filter((site) => siteMatchesClient(site, quote.client))
-                  .map((site) => ({ value: site.id, label: site.name })),
-              ]}
-            />
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <SearchableSelect
+                  id="quote-site"
+                  value={quote.mainSite?.sourceId ?? ''}
+                  onValueChange={(value) =>
+                    setQuoteValue({ mainSiteId: value })
+                  }
+                  options={[
+                    { value: '', label: 'Nessuna' },
+                    ...doc.sites
+                      .filter((site) => siteMatchesClient(site, quote.client))
+                      .map((site) => ({ value: site.id, label: site.name })),
+                  ]}
+                />
+              </div>
+              <Tooltip>
+                <TooltipTrigger render={<span />}>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label="Aggiungi sede"
+                    disabled={!canAddSite}
+                    onClick={() =>
+                      setOverlay({ kind: 'site', context: siteContext })
+                    }
+                  >
+                    <Plus />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {quote.client
+                    ? 'Aggiungi sede'
+                    : 'Scegli prima un cliente per aggiungere una sede.'}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            {!quote.client ? (
+              <p className="text-xs text-muted-foreground">
+                Scegli prima un cliente per aggiungere una sede.
+              </p>
+            ) : null}
           </Field>
           <Field>
             <FieldLabel htmlFor="quote-commission">
@@ -574,6 +614,19 @@ export function QuotesView({
         </aside>
       </div>
 
+      {overlay?.kind === 'site' &&
+      overlay.context === siteContext &&
+      quote.client ? (
+        <SiteDialog
+          open
+          appState={appState}
+          doc={doc}
+          fixedClient={quote.client}
+          onOpenChange={(open) => {
+            if (!open) setOverlay(undefined);
+          }}
+        />
+      ) : null}
       {overlay?.kind === 'customer' ? (
         <CustomerDialog
           open

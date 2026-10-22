@@ -6,7 +6,12 @@ import {
 } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument, meta } from '../../src/domain/model';
+import {
+  createEmptyDocument,
+  meta,
+  ok,
+  type CashDocument,
+} from '../../src/domain/model';
 import {
   VehicleDialog,
   SiteDialog,
@@ -39,7 +44,22 @@ describe('salvataggio dal dialogo veicolo', () => {
     vi.stubGlobal('window', {
       setTimeout: globalThis.setTimeout,
       clearTimeout: globalThis.clearTimeout,
-      cash: { setDirty: vi.fn() },
+      cash: {
+        setDirty: vi.fn(),
+        archive: {
+          save: vi.fn(async (path: string, document: CashDocument) =>
+            ok({
+              path,
+              document,
+              readOnly: false,
+              token: {
+                documentId: document.documentId,
+                revision: document.revision,
+              },
+            }),
+          ),
+        },
+      },
     });
     vi.stubGlobal(
       'FormData',
@@ -65,7 +85,7 @@ describe('salvataggio dal dialogo veicolo', () => {
     vi.useRealTimers();
   });
 
-  it('modifica una sede associata offline preservando il riferimento cliente', () => {
+  it('modifica una sede associata offline preservando il riferimento cliente', async () => {
     const document = createEmptyDocument();
     const site = {
       ...meta(),
@@ -100,7 +120,7 @@ describe('salvataggio dal dialogo veicolo', () => {
         onOpenChange,
       }),
     );
-    form.submit!({
+    await form.submit!({
       preventDefault: vi.fn(),
       currentTarget: {},
     } as unknown as FormEvent<HTMLFormElement>);
@@ -115,7 +135,7 @@ describe('salvataggio dal dialogo veicolo', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('salva una sede con il solo nome senza inventare indirizzo o coordinate', () => {
+  it('salva una sede con il solo nome senza inventare indirizzo o coordinate', async () => {
     const document = createEmptyDocument();
     const state = new AppState();
     state.acceptNativeSession({
@@ -136,7 +156,7 @@ describe('salvataggio dal dialogo veicolo', () => {
         onOpenChange,
       }),
     );
-    form.submit!({
+    await form.submit!({
       preventDefault: vi.fn(),
       currentTarget: {},
     } as unknown as FormEvent<HTMLFormElement>);

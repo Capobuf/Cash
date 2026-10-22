@@ -121,6 +121,7 @@ app.whenReady().then(async () => {
         'financial-loading',
         'backup-controls',
         'bank-import',
+        'quote-sites',
         'financial-flow',
         'quote-client-layout',
         'reduced-motion',

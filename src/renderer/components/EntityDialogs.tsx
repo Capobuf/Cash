@@ -188,6 +188,10 @@ export function SiteDialog({
   const [results, setResults] = useState<GeocodingResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [id] = useState(() => site?.id ?? meta().id);
+  const [archiveContext] = useState(appState.archiveContext);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const choose = (result: GeocodingResult) => {
     setAddress(result.label);
@@ -240,8 +244,9 @@ export function SiteDialog({
       inputValue: normalized,
     });
   };
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saving || appState.archiveContext !== archiveContext) return;
     const name = String(
       new FormData(event.currentTarget).get('name') ?? '',
     ).trim();
@@ -276,7 +281,6 @@ export function SiteDialog({
       location.inputValue !== coordinateText.trim()
     )
       location = undefined;
-    const id = site?.id ?? meta().id;
     if (
       !appState.mutate((document) => {
         const values = {
@@ -292,21 +296,37 @@ export function SiteDialog({
               }
             : site?.client,
         };
-        if (site)
-          Object.assign(
-            document.sites.find((entry) => entry.id === site.id)!,
-            values,
-            { updatedAt: new Date().toISOString() },
-          );
+        const existing = document.sites.find((entry) => entry.id === id);
+        if (existing)
+          Object.assign(existing, values, {
+            updatedAt: new Date().toISOString(),
+          });
         else document.sites.push({ ...meta(), id, ...values });
       })
     )
       return;
+    setSaving(true);
+    setSaveError('');
+    await appState.save();
+    setSaving(false);
+    if (appState.archiveContext !== archiveContext) return;
+    if (appState.status !== 'Salvato') {
+      setSaveError(
+        appState.error?.message ??
+          'Salvataggio della sede non riuscito. Riprova.',
+      );
+      return;
+    }
     onSaved?.(id);
     onOpenChange(false);
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!saving) onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-2xl">
         <form
           key={site?.id ?? 'new-site'}
@@ -320,126 +340,135 @@ export function SiteDialog({
               eseguita mentre digiti.
             </DialogDescription>
           </DialogHeader>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="site-name">Nome</FieldLabel>
-              <Input
-                id="site-name"
-                name="name"
-                defaultValue={site?.name}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="site-mode">Cerca tramite</FieldLabel>
-              <SelectField
-                id="site-mode"
-                value={mode}
-                onValueChange={(value) => setMode(value as typeof mode)}
-                options={[
-                  { value: 'address', label: 'Indirizzo' },
-                  { value: 'coordinates', label: 'Coordinate' },
-                ]}
-              />
-            </Field>
-            {mode === 'address' ? (
+          <fieldset disabled={saving} className="contents">
+            <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="site-address">Indirizzo</FieldLabel>
+                <FieldLabel htmlFor="site-name">Nome</FieldLabel>
                 <Input
-                  id="site-address"
-                  value={address}
-                  onChange={(event) => {
-                    setAddress(event.target.value);
-                    setResolved(undefined);
-                  }}
-                  placeholder="Via, città"
+                  id="site-name"
+                  name="name"
+                  defaultValue={site?.name}
+                  required
                 />
-                <FieldDescription>
-                  Dopo una modifica usa di nuovo Cerca prima del routing.
-                </FieldDescription>
               </Field>
-            ) : (
               <Field>
-                <FieldLabel htmlFor="site-coordinates">Coordinate</FieldLabel>
-                <Input
-                  id="site-coordinates"
-                  value={coordinateText}
-                  onChange={(event) => {
-                    setCoordinateText(event.target.value);
-                    setResolved(undefined);
-                  }}
-                  placeholder="41.4682252, 14.5621986"
+                <FieldLabel htmlFor="site-mode">Cerca tramite</FieldLabel>
+                <SelectField
+                  id="site-mode"
+                  value={mode}
+                  onValueChange={(value) => setMode(value as typeof mode)}
+                  options={[
+                    { value: 'address', label: 'Indirizzo' },
+                    { value: 'coordinates', label: 'Coordinate' },
+                  ]}
                 />
-                <FieldDescription>
-                  Formato Google Maps: latitudine, longitudine.
-                </FieldDescription>
               </Field>
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void search()}
-              disabled={searching}
-            >
-              {searching ? 'Ricerca…' : 'Cerca'}
-            </Button>
-            {searchError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{searchError}</AlertDescription>
-              </Alert>
-            ) : null}
-            {results.length ? (
-              <div
-                className="space-y-2"
-                role="listbox"
-                aria-label="Risultati indirizzo"
-              >
-                {results.map((result) => (
-                  <Button
-                    key={result.id}
-                    type="button"
-                    variant="outline"
-                    className="h-auto w-full justify-start whitespace-normal py-3 text-left"
-                    onClick={() => choose(result)}
-                  >
-                    {result.label}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-            <Field>
-              <FieldLabel>Cliente</FieldLabel>
-              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                {fixedClient?.displayName ??
-                  site?.client?.displayName ??
-                  'Nessuno — Altre sedi'}
-              </div>
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            {site ? (
+              {mode === 'address' ? (
+                <Field>
+                  <FieldLabel htmlFor="site-address">Indirizzo</FieldLabel>
+                  <Input
+                    id="site-address"
+                    value={address}
+                    onChange={(event) => {
+                      setAddress(event.target.value);
+                      setResolved(undefined);
+                    }}
+                    placeholder="Via, città"
+                  />
+                  <FieldDescription>
+                    Dopo una modifica usa di nuovo Cerca prima del routing.
+                  </FieldDescription>
+                </Field>
+              ) : (
+                <Field>
+                  <FieldLabel htmlFor="site-coordinates">Coordinate</FieldLabel>
+                  <Input
+                    id="site-coordinates"
+                    value={coordinateText}
+                    onChange={(event) => {
+                      setCoordinateText(event.target.value);
+                      setResolved(undefined);
+                    }}
+                    placeholder="41.4682252, 14.5621986"
+                  />
+                  <FieldDescription>
+                    Formato Google Maps: latitudine, longitudine.
+                  </FieldDescription>
+                </Field>
+              )}
               <Button
                 type="button"
                 variant="secondary"
-                className="mr-auto"
-                onClick={() =>
-                  appState.mutate((document) => {
-                    document.settings.defaultDepartureSiteId = site.id;
-                  })
-                }
+                onClick={() => void search()}
+                disabled={searching}
               >
-                Imposta come partenza predefinita
+                {searching ? 'Ricerca…' : 'Cerca'}
               </Button>
+              {searchError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{searchError}</AlertDescription>
+                </Alert>
+              ) : null}
+              {results.length ? (
+                <div
+                  className="space-y-2"
+                  role="listbox"
+                  aria-label="Risultati indirizzo"
+                >
+                  {results.map((result) => (
+                    <Button
+                      key={result.id}
+                      type="button"
+                      variant="outline"
+                      className="h-auto w-full justify-start whitespace-normal py-3 text-left"
+                      onClick={() => choose(result)}
+                    >
+                      {result.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+              <Field>
+                <FieldLabel>Cliente</FieldLabel>
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  {fixedClient?.displayName ??
+                    site?.client?.displayName ??
+                    'Nessuno — Altre sedi'}
+                </div>
+              </Field>
+            </FieldGroup>
+            {saveError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{saveError}</AlertDescription>
+              </Alert>
             ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Annulla
-            </Button>
-            <Button type="submit">Salva sede</Button>
-          </DialogFooter>
+            <DialogFooter>
+              {site ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mr-auto"
+                  onClick={() =>
+                    appState.mutate((document) => {
+                      document.settings.defaultDepartureSiteId = site.id;
+                    })
+                  }
+                >
+                  Imposta come partenza predefinita
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Annulla
+              </Button>
+              <Button type="submit">
+                {saving ? 'Salvataggio…' : 'Salva sede'}
+              </Button>
+            </DialogFooter>
+          </fieldset>
         </form>
       </DialogContent>
     </Dialog>
