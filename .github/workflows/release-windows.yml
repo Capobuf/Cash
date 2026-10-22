@@ -2,6 +2,8 @@ name: Publish Windows release
 
 on:
   push:
+    branches: [main]
+    paths: ['package.json']
     tags:
       - 'v*'
 
@@ -10,6 +12,9 @@ permissions:
 
 jobs:
   release-windows:
+    if: >-
+      github.ref_type == 'tag' ||
+      startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: windows-latest
     timeout-minutes: 25
 
@@ -19,15 +24,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify version tag is from main
+      - name: Verify version and release source
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ("$env:GITHUB_REF_NAME" -ne "v$version") {
-            throw "Tag $env:GITHUB_REF_NAME differs from package version $version"
-          }
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Only stable numeric versions can be published"
+          }
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            if ("$env:GITHUB_REF_NAME" -ne "v$version") {
+              throw "Tag $env:GITHUB_REF_NAME differs from package version $version"
+            }
+          } elseif ($env:GITHUB_REF_TYPE -eq 'branch' -and $env:GITHUB_REF_NAME -eq 'main') {
+            $previousVersion = (git show 'HEAD^:package.json' | Out-String | ConvertFrom-Json).version
+            if ([version]$version -le [version]$previousVersion) {
+              throw "Version $version must be newer than $previousVersion"
+            }
+          } else {
+            throw "Release must originate from main or its version tag"
           }
           git fetch origin main --no-tags
           git merge-base --is-ancestor "$env:GITHUB_SHA" origin/main
@@ -94,4 +108,11 @@ jobs:
           if (-not $manifest.Contains("url: Cash-Setup-$version.exe") -or -not $manifest.Contains("path: Cash-Setup-$version.exe")) {
             throw "latest.yml does not reference the published installer filename"
           }
-          gh release create "$env:GITHUB_REF_NAME" $setup "$setup.blockmap" 'release/latest.yml' 'release/Cash.exe' --verify-tag --generate-notes --latest
+          $releaseOptions = @('--generate-notes', '--latest', '--fail-on-no-commits')
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $releaseOptions += '--verify-tag'
+          } else {
+            $releaseOptions += @('--target', "$env:GITHUB_SHA")
+          }
+          gh release create "v$version" $setup "$setup.blockmap" 'release/latest.yml' 'release/Cash.exe' @releaseOptions
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release v$version failed" }
