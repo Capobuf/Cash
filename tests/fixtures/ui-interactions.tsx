@@ -13,9 +13,13 @@ import { BackupSettingsPanel } from '../../src/renderer/components/BackupSetting
 import type { BackupConfig, BackupState } from '../../src/shared/backup';
 import { BankCategoryCombobox } from '../../src/renderer/components/BankCategoryCombobox';
 import { ProfileEditor } from '../../src/renderer/components/ProfileEditor';
-import { ClientsView } from '../../src/renderer/views/ClientsView';
+import {
+  ClientsView,
+  ClientDetailsDialog,
+} from '../../src/renderer/views/ClientsView';
 import { QuotesView } from '../../src/renderer/views/QuotesView';
 import { addQuote } from '../../src/domain/quotes';
+import { cashDocumentSchema } from '../../src/domain/schema';
 import { TooltipProvider } from '../../src/renderer/components/ui/tooltip';
 import { FinancialAnalysisView } from '../../src/renderer/views/FinancialAnalysisView';
 import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
@@ -949,6 +953,215 @@ export async function runUiChecks() {
       'Import feedback hid bank rows or original summary',
     );
     results.push('bank-import');
+    await render(null);
+
+    // Keep the view subscribed to the real AppState: mutations replace the document.
+    const siteDoc = createEmptyDocument();
+    const siteQuote = addQuote(siteDoc);
+    siteQuote.client = client;
+    const originalQuote = JSON.stringify(
+      cashDocumentSchema.parse(siteDoc).quotes[0],
+    );
+    const siteState = new AppState();
+    siteState.acceptNativeSession(session(siteDoc));
+    let savedSites = structuredClone(siteDoc);
+    let rejectSiteSave = false;
+    const siteSave = deferred<Result<ArchiveSession>>();
+    window.cash.archive.save = async (_path, current) => {
+      if (rejectSiteSave) return siteSave.promise;
+      savedSites = structuredClone(current);
+      return ok(session(savedSites));
+    };
+    const searchCount = searches.length;
+    const submissionCount = submissions.length;
+    const quoteView = () => (
+      <TooltipProvider>
+        <QuotesView
+          doc={siteState.document!}
+          hasToken={false}
+          appState={siteState}
+          activeQuoteId={siteQuote.id}
+          setActiveQuoteId={() => {
+            throw new Error('Site creation navigated away');
+          }}
+          requestDelete={() => {}}
+        />
+      </TooltipProvider>
+    );
+    const unsubscribeSites = siteState.subscribe(() => {
+      root.render(
+        <CSPProvider disableStyleElements>{quoteView()}</CSPProvider>,
+      );
+    });
+    try {
+      await render(quoteView());
+      const addSite = () => find('[aria-label="Aggiungi sede"]');
+      await click(addSite());
+      await fill('#site-name', 'Da annullare');
+      await click(button('Annulla'));
+      check(siteState.document!.sites.length === 0, 'Cancel inserted a site');
+      for (const name of ['Sede Nord', 'Sede Sud']) {
+        await click(addSite());
+        check(
+          (find('#site-name') as HTMLInputElement).value === '',
+          'New site reused form data',
+        );
+        await fill('#site-name', '   ');
+        await click(button('Salva sede'));
+        check(
+          document.querySelector('#site-name'),
+          'Invalid site closed dialog',
+        );
+        await fill('#site-name', name);
+        await click(button('Salva sede'));
+        check(
+          !document.querySelector('#site-name'),
+          'Saved site did not close dialog',
+        );
+        check(
+          JSON.stringify(siteState.document!.quotes[0]) === originalQuote,
+          'Creating a site changed the quote',
+        );
+        await click(find('#quote-site'));
+        check(
+          [...document.querySelectorAll('[role=option]')].some(
+            (option) => option.textContent === name,
+          ),
+          'New site missing from current selector',
+        );
+        await key(find('#quote-site'), 'Escape');
+      }
+      check(
+        siteState.document!.sites.every(
+          (site) =>
+            site.client?.companyId === client.companyId &&
+            site.client.clientId === client.clientId,
+        ),
+        'Site associated with wrong client',
+      );
+      await choose('#quote-site', 'Sede Nord');
+      const selectedSite = JSON.stringify(
+        siteState.document!.quotes[0]!.mainSite,
+      );
+
+      await click(addSite());
+      await fill('#site-name', 'Sede Ovest');
+      rejectSiteSave = true;
+      await click(button('Salva sede'));
+      check(
+        button('Salvataggio…').matches(':disabled'),
+        'Site submission still enabled while saving',
+      );
+      check(
+        document.querySelector('#site-name'),
+        'Site closed before disk save',
+      );
+      await act(async () => {
+        siteSave.resolve(err({ code: 'IO', message: 'Disco non disponibile' }));
+      });
+      check(
+        document.querySelector('#site-name') &&
+          document.body.innerText.includes('Disco non disponibile'),
+        'Failed disk save closed dialog or hid error',
+      );
+      rejectSiteSave = false;
+      await click(button('Salva sede'));
+      check(
+        siteState.document!.sites.length === 3,
+        'Save retry duplicated the site',
+      );
+      check(
+        JSON.stringify(siteState.document!.quotes[0]!.mainSite) ===
+          selectedSite,
+        'Site creation replaced main site',
+      );
+      check(savedSites.sites.length === 3, 'Sites not persisted');
+      await act(async () =>
+        siteState.acceptNativeSession(session(structuredClone(savedSites))),
+      );
+      await choose('#quote-site', 'Sede Sud');
+      check(
+        siteState.document!.quotes[0]!.mainSite?.name === 'Sede Sud',
+        'Reopened site cannot be selected',
+      );
+
+      await act(async () =>
+        siteState.acceptNativeSession({
+          ...session(savedSites),
+          readOnly: true,
+        }),
+      );
+      check(
+        addSite().hasAttribute('disabled'),
+        'Read-only archive allows site creation',
+      );
+      await click(addSite());
+      check(
+        !document.querySelector('#site-name'),
+        'Read-only opened site editor',
+      );
+      await act(async () => siteState.acceptNativeSession(session(savedSites)));
+      await click(addSite());
+      const otherDoc = structuredClone(savedSites);
+      otherDoc.documentId = meta().id;
+      await act(async () => siteState.acceptNativeSession(session(otherDoc)));
+      check(
+        !document.querySelector('#site-name'),
+        'Old site dialog survived archive switch',
+      );
+
+      const noClient = structuredClone(savedSites);
+      delete noClient.quotes[0]!.client;
+      await act(async () => siteState.acceptNativeSession(session(noClient)));
+      check(
+        addSite().hasAttribute('disabled') &&
+          document.body.innerText.includes('Scegli prima un cliente'),
+        'Missing client not explained or not blocked',
+      );
+      const otherClient = structuredClone(savedSites);
+      otherClient.quotes[0]!.client = { ...client, companyId: 'other-company' };
+      delete otherClient.quotes[0]!.mainSite;
+      await act(async () =>
+        siteState.acceptNativeSession(session(otherClient)),
+      );
+      await click(find('#quote-site'));
+      check(
+        ![...document.querySelectorAll('[role=option]')].some(
+          (option) => option.textContent === 'Sede Nord',
+        ),
+        'Site leaked into a different company',
+      );
+      await key(find('#quote-site'), 'Escape');
+      check(
+        searches.length === searchCount &&
+          submissions.length === submissionCount,
+        'Site creation made unnecessary FIC requests',
+      );
+    } finally {
+      unsubscribeSites();
+    }
+    await render(null);
+    await render(
+      <ClientDetailsDialog
+        appState={siteState}
+        doc={savedSites}
+        client={client}
+        details={{ ...client, fields: [] }}
+        loading={false}
+        onClose={() => {}}
+        onOpenQuote={() => {}}
+        onAddSite={() => {}}
+        onEditSite={() => {}}
+        requestDelete={() => {}}
+      />,
+    );
+    check(
+      document.body.innerText.includes('Sedi in Cash (3)') &&
+        document.body.innerText.includes('Sede Nord') &&
+        document.body.innerText.includes('Sede Sud'),
+      'Created sites missing from client details',
+    );
+    results.push('quote-sites');
     return results;
   } finally {
     await act(async () => {

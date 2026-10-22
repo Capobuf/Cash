@@ -27,6 +27,8 @@ import {
   comprehensiveDocument,
   legacyDocument,
 } from '../fixtures/sqlite-document';
+import { addQuote } from '../../src/domain/quotes';
+import { snapshotSite } from '../../src/domain/locations';
 
 function unwrap<T>(result: Result<T>): T {
   if (!result.ok)
@@ -46,6 +48,34 @@ afterEach(async () => {
   closeAllArchives();
   for (const dir of dirs.splice(0))
     await rm(dir, { recursive: true, force: true });
+});
+
+it('riapre le sedi locali del cliente mantenendo il preventivo e la sede scelta', async () => {
+  const document = createEmptyDocument();
+  const quote = addQuote(document);
+  quote.client = {
+    source: 'fatture_in_cloud',
+    companyId: 'company-a',
+    clientId: 'client-a',
+    displayName: 'Cliente A',
+  };
+  const path = join(await directory(), 'Cash.sqlite');
+  const created = unwrap(await createArchive(path, document));
+  const changed = structuredClone(created.document!);
+  changed.sites.push(
+    ...['Sede Nord', 'Sede Sud'].map((name) => ({
+      ...meta(),
+      name,
+      client: quote.client,
+    })),
+  );
+  changed.quotes[0]!.mainSite = snapshotSite(changed.sites[0]!);
+  const saved = unwrap(await saveArchive(path, changed, created.token));
+  closeArchive(path);
+  const reopened = unwrap(await openArchive(path)).document!;
+  expect(reopened.sites).toEqual(changed.sites);
+  expect(reopened.quotes).toEqual(saved.document!.quotes);
+  expect(reopened.quotes[0]!.mainSite?.sourceId).toBe(changed.sites[0]!.id);
 });
 
 describe('importazione JSON read-only', () => {

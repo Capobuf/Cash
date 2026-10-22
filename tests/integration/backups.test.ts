@@ -197,6 +197,8 @@ it.each([5, 10] as const)(
     expect(await readFile(foreign, 'utf8')).toBe('foreign');
     expect(await readFile(current!.path)).toEqual(activeBytes);
   },
+  // Multiple verified SQLite copies and rotation on hosted Windows storage.
+  15000,
 );
 it.each(['ENOSPC', 'EACCES', 'ENODEV'])(
   'preserves earlier backups and the active database on %s during destination I/O',
@@ -340,6 +342,7 @@ it.each(['EISDIR', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EPERM'])(
       expect(flags).toBe(constants.COPYFILE_EXCL);
     expect(await readdir(destination)).toEqual(['Cash-Backups']);
   },
+  15000,
 );
 it('preserves an existing final file when exclusive copy publication collides', async () => {
   await manager.check();
