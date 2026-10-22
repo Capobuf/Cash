@@ -44,6 +44,22 @@ l'archivio personale né chiamano servizi esterni.
 
 ## Verifiche
 
+### Scheda cliente: aggiornamento successivo
+
+La scheda cliente presenta intestazione e pulsante di chiusura fissi, dati
+raggruppati in anagrafica, contatti, fatturazione e altre informazioni, sedi in
+riquadri compatti con icone nelle azioni e indicazione della partenza predefinita.
+I preventivi e gli stati vuoti hanno una gerarchia visiva coerente.
+
+Anteprime con dati dimostrativi: [tema chiaro](images/issue-83/after/client-detail-light.png)
+e [tema scuro](images/issue-83/after/client-detail-dark.png).
+
+**Test su questo aggiornamento rimandati su richiesta dell’utente**, fino al
+termine delle ulteriori modifiche. I risultati sotto si riferiscono al commit
+`96e5dc2`, precedente alla revisione della scheda cliente.
+
+### Verifiche precedenti
+
 - Catture prima/dopo di Panoramica, lista e dettaglio preventivi, Panoramica
   finanziaria, Spese/Riepilogo e Spese/Categorie in entrambi i temi, a 1440 px e
   a 960 px con testo al 125% (dimensione radice 20 px). Nessun overflow

@@ -4,11 +4,18 @@ import {
   ArrowRight,
   Building2,
   Cloud,
+  FileText,
+  Landmark,
+  Mail,
+  MapPin,
   MapPinPlus,
   MoreHorizontal,
+  Navigation,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   Users,
   UserRound,
 } from 'lucide-react';
@@ -114,6 +121,61 @@ const ficFieldLabels: Record<string, string> = {
 };
 
 const isFicIdentifier = (key: string) => key === 'id' || key.endsWith('_id');
+const clientFieldGroups = [
+  {
+    title: 'Anagrafica',
+    icon: UserRound,
+    keys: [
+      'name',
+      'code',
+      'type',
+      'first_name',
+      'last_name',
+      'vat_number',
+      'tax_code',
+    ],
+  },
+  {
+    title: 'Contatti e indirizzo',
+    icon: Mail,
+    keys: [
+      'contact_person',
+      'email',
+      'certified_email',
+      'phone',
+      'fax',
+      'address_street',
+      'address_postal_code',
+      'address_city',
+      'address_province',
+      'address_extra',
+      'country',
+      'shipping_address',
+    ],
+  },
+  {
+    title: 'Fatturazione e pagamenti',
+    icon: Landmark,
+    keys: [
+      'default_vat',
+      'default_payment_terms',
+      'default_payment_terms_type',
+      'default_payment_method',
+      'bank_name',
+      'bank_iban',
+      'bank_swift_code',
+      'e_invoice',
+      'courtesy_invoice_config',
+      'has_intent_declaration',
+      'intent_declaration_protocol_number',
+      'intent_declaration_protocol_date',
+      'ei_code',
+      'default_discount',
+      'discount_highlight',
+    ],
+  },
+];
+
 function clientDateValue(value: string, withTime = true): string {
   const date = new Date(
     value.length === 10 ? `${value}T00:00:00` : value.replace(' ', 'T'),
@@ -566,6 +628,22 @@ export function ClientDetailsDialog({
         )
         .sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number)
     : [];
+  const fields =
+    details?.fields.filter((field) => !isFicIdentifier(field.key)) ?? [];
+  const fieldGroups = [
+    ...clientFieldGroups.map((group) => ({
+      ...group,
+      fields: fields.filter((field) => group.keys.includes(field.key)),
+    })),
+    {
+      title: 'Altre informazioni',
+      icon: FileText,
+      fields: fields.filter(
+        (field) =>
+          !clientFieldGroups.some((group) => group.keys.includes(field.key)),
+      ),
+    },
+  ].filter((group) => group.fields.length > 0);
   return (
     <Dialog
       open={Boolean(client)}
@@ -573,197 +651,275 @@ export function ClientDetailsDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>
-            {client?.displayName ?? 'Dettaglio cliente'}
-          </DialogTitle>
-          <DialogDescription>
-            Dati correnti FIC e informazioni Cash collegate.
-          </DialogDescription>
-        </DialogHeader>
-        {loading ? (
-          <div aria-busy="true">
-            <p role="status" className="sr-only">
-              Recupero dettaglio cliente…
-            </p>
-            <div
-              aria-hidden="true"
-              className="grid grid-cols-2 gap-4 rounded-lg border p-4"
-            >
-              {Array.from({ length: 6 }, (_, index) => (
-                <div key={index} className="space-y-2">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-5 w-3/4" />
-                </div>
-              ))}
+      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+        <DialogHeader className="shrink-0 border-b bg-muted/30 px-5 py-5 pr-12 sm:px-6 sm:pr-12">
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-primary/20 bg-secondary text-secondary-foreground">
+              <UserRound className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Scheda cliente
+              </p>
+              <DialogTitle className="text-xl leading-snug font-semibold break-words">
+                {client?.displayName ?? 'Dettaglio cliente'}
+              </DialogTitle>
+              <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="inline-flex items-center gap-1.5">
+                  <Cloud className="size-3.5" aria-hidden="true" /> Fatture in
+                  Cloud
+                </span>
+                <span>Sedi e preventivi in Cash</span>
+              </DialogDescription>
             </div>
           </div>
-        ) : null}
-        {!loading && details ? (
-          <div className="space-y-6">
-            <section>
-              <h3 className="mb-3 font-semibold">
-                Informazioni cliente <Badge variant="outline">FIC</Badge>
-              </h3>
-              <div className="grid grid-cols-2 gap-3 rounded-lg border p-4">
-                {details.fields
-                  .filter((field) => !isFicIdentifier(field.key))
-                  .map((field) => (
-                    <div key={field.key}>
-                      <span className="text-xs text-muted-foreground">
-                        {ficFieldLabels[field.key] ?? field.key}
-                      </span>
-                      <p className="text-sm break-words whitespace-pre-wrap">
-                        {clientFieldValue(field.key, field.value)}
-                      </p>
-                    </div>
-                  ))}
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+          {loading ? (
+            <div aria-busy="true">
+              <p role="status" className="sr-only">
+                Recupero dettaglio cliente…
+              </p>
+              <div
+                aria-hidden="true"
+                className="grid grid-cols-1 gap-4 rounded-lg border p-4 sm:grid-cols-2"
+              >
+                {Array.from({ length: 6 }, (_, index) => (
+                  <div key={index} className="space-y-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-5 w-3/4" />
+                  </div>
+                ))}
               </div>
-            </section>
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-semibold">Sedi in Cash ({sites.length})</h3>
-                {client ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAddSite(client)}
-                  >
-                    <Plus />
-                    Aggiungi sede
-                  </Button>
-                ) : null}
-              </div>
-              {sites.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Indirizzo</TableHead>
-                      <TableHead>Coordinate</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+            </div>
+          ) : null}
+          {!loading && details ? (
+            <div className="space-y-6">
+              {fieldGroups.length ? (
+                <div className="grid items-start gap-4 sm:grid-cols-2">
+                  {fieldGroups.map(
+                    ({ title, icon: Icon, fields: groupFields }) => (
+                      <section
+                        key={title}
+                        className="min-w-0 overflow-hidden rounded-xl border"
+                      >
+                        <h3 className="flex items-center gap-2 border-b bg-muted/30 px-4 py-3 text-sm font-semibold">
+                          <Icon
+                            className="size-4 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          {title}
+                        </h3>
+                        <dl className="grid gap-3 p-4">
+                          {groupFields.map((field) => (
+                            <div
+                              key={field.key}
+                              className="min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-x-3 gap-y-1 sm:grid"
+                            >
+                              <dt className="text-xs leading-5 text-muted-foreground">
+                                {ficFieldLabels[field.key] ?? field.key}
+                              </dt>
+                              <dd className="text-sm leading-5 [overflow-wrap:anywhere] whitespace-pre-wrap">
+                                {clientFieldValue(field.key, field.value)}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  Nessuna informazione aggiuntiva disponibile da Fatture in
+                  Cloud.
+                </p>
+              )}
+              <section className="border-t pt-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 font-semibold">
+                    <MapPin
+                      className="size-4 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    Sedi in Cash ({sites.length})
+                  </h3>
+                  {client ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onAddSite(client)}
+                    >
+                      <MapPinPlus aria-hidden="true" />
+                      Aggiungi una sede
+                    </Button>
+                  ) : null}
+                </div>
+                {sites.length ? (
+                  <ul className="grid gap-3 sm:grid-cols-2">
                     {sites.map((site) => (
-                      <TableRow key={site.id}>
-                        <TableCell>{site.name}</TableCell>
-                        <TableCell>{site.address ?? 'Non indicato'}</TableCell>
-                        <TableCell>
-                          {site.location
-                            ? coordinatesInput(site.location.coordinates)
-                            : 'Da localizzare'}
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={`Azioni per ${site.name}`}
-                                />
+                      <li
+                        key={site.id}
+                        className="flex min-w-0 items-start gap-3 rounded-xl border p-3"
+                      >
+                        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                          <Building2 className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="font-medium [overflow-wrap:anywhere]">
+                            {site.name}
+                          </p>
+                          <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                            {site.address ?? 'Indirizzo non indicato'}
+                          </p>
+                          <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                            {site.location
+                              ? coordinatesInput(site.location.coordinates)
+                              : 'Da localizzare'}
+                          </p>
+                          {doc.settings.defaultDepartureSiteId === site.id ? (
+                            <Badge variant="secondary" className="mt-1">
+                              <Navigation aria-hidden="true" />
+                              Partenza predefinita
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Azioni per ${site.name}`}
+                              />
+                            }
+                          >
+                            <MoreHorizontal />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => client && onEditSite(client, site)}
+                            >
+                              <Pencil aria-hidden="true" />
+                              Modifica sede
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                appState.mutate((document) => {
+                                  document.settings.defaultDepartureSiteId =
+                                    site.id;
+                                })
                               }
                             >
-                              <MoreHorizontal />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  client && onEditSite(client, site)
-                                }
-                              >
-                                Modifica
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  appState.mutate((document) => {
-                                    document.settings.defaultDepartureSiteId =
-                                      site.id;
-                                  })
-                                }
-                              >
-                                Imposta come partenza predefinita
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() =>
-                                  requestDelete({
-                                    kind: 'site',
-                                    id: site.id,
-                                    label: site.name,
-                                  })
-                                }
-                              >
-                                Elimina
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
+                              <Navigation aria-hidden="true" />
+                              Imposta come partenza predefinita
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() =>
+                                requestDelete({
+                                  kind: 'site',
+                                  id: site.id,
+                                  label: site.name,
+                                })
+                              }
+                            >
+                              <Trash2 aria-hidden="true" />
+                              Elimina sede
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </li>
                     ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nessuna sede associata.
-                </p>
-              )}
-            </section>
-            <section>
-              <h3 className="mb-3 font-semibold">
-                Preventivi in Cash ({quotes.length})
-              </h3>
-              {quotes.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Preventivo</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {quotes.map((quote) => (
-                      <TableRow key={quote.id}>
-                        <TableCell className="font-medium whitespace-normal">
-                          {quoteTitle(quote)}
-                        </TableCell>
-                        <TableCell>
-                          {clientDateValue(quote.date, false)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Apri ${quoteTitle(quote)}`}
-                            onClick={() => onOpenQuote(quote.id)}
-                          >
-                            Apri <ArrowRight aria-hidden="true" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nessun preventivo associato.
-                </p>
-              )}
-            </section>
-          </div>
-        ) : null}
-        {!loading && failed ? (
-          <Alert variant="destructive">
-            <AlertTitle>Recupero dettaglio cliente non riuscito</AlertTitle>
-            <AlertDescription>
-              Chiudi il dialogo e riprova ad aprire il cliente.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <DialogFooter>
+                  </ul>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-4">
+                    <MapPin
+                      className="size-5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <p className="text-sm font-medium">
+                        Nessuna sede associata
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Aggiungi i luoghi in cui lavori per questo cliente.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </section>
+              <section className="border-t pt-5">
+                <h3 className="mb-3 flex items-center gap-2 font-semibold">
+                  <FileText
+                    className="size-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  Preventivi in Cash ({quotes.length})
+                </h3>
+                {quotes.length ? (
+                  <div className="overflow-hidden rounded-xl border">
+                    <Table>
+                      <TableHeader className="bg-muted/30">
+                        <TableRow>
+                          <TableHead>Preventivo</TableHead>
+                          <TableHead>Data</TableHead>
+                          <TableHead />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {quotes.map((quote) => (
+                          <TableRow key={quote.id}>
+                            <TableCell className="font-medium whitespace-normal [overflow-wrap:anywhere]">
+                              {quoteTitle(quote)}
+                            </TableCell>
+                            <TableCell>
+                              {clientDateValue(quote.date, false)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                aria-label={`Apri ${quoteTitle(quote)}`}
+                                onClick={() => onOpenQuote(quote.id)}
+                              >
+                                Apri <ArrowRight aria-hidden="true" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-4">
+                    <FileText
+                      className="size-5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <p className="text-sm font-medium">
+                        Nessun preventivo associato
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Qui troverai i preventivi collegati a questo cliente.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : null}
+          {!loading && failed ? (
+            <Alert variant="destructive">
+              <AlertTitle>Recupero dettaglio cliente non riuscito</AlertTitle>
+              <AlertDescription>
+                Chiudi il dialogo e riprova ad aprire il cliente.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter className="m-0 shrink-0 px-5 py-3 sm:px-6">
           <Button variant="outline" onClick={onClose}>
             Chiudi
           </Button>
