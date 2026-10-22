@@ -780,6 +780,21 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
         client: clientSnapshotSchema.optional(),
         mainSite: siteSnapshotSchema.optional(),
         items: z.array(quoteItemSchema),
+        layout: z
+          .array(
+            z.discriminatedUnion('kind', [
+              z.object({ kind: z.literal('item'), itemId: uuid }).strict(),
+              z
+                .object({
+                  kind: z.literal('container'),
+                  id: uuid,
+                  name: nonBlank,
+                  itemIds: z.array(uuid),
+                })
+                .strict(),
+            ]),
+          )
+          .optional(),
         commission: moneyInput.optional(),
         snapshotRevision: z.number().int().nonnegative(),
         snapshotUpdatedAt: iso.optional(),
@@ -853,6 +868,32 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
           message: 'Il prossimo numero deve superare tutti i numeri assegnati',
         });
       register(quote, path);
+      if (quote.layout) {
+        const itemIds = new Set(quote.items.map((item) => item.id));
+        const seen = new Set<string>();
+        quote.layout.forEach((entry, layoutIndex) => {
+          const entryPath = [...path, 'layout', layoutIndex];
+          if (entry.kind === 'container') register(entry, entryPath);
+          const ids = entry.kind === 'item' ? [entry.itemId] : entry.itemIds;
+          for (const id of ids) {
+            if (!itemIds.has(id) || seen.has(id))
+              ctx.addIssue({
+                code: 'custom',
+                path: entryPath,
+                message:
+                  'Voce inesistente o ripetuta nella disposizione del preventivo.',
+              });
+            seen.add(id);
+          }
+        });
+        if (quote.items.some((item) => !seen.has(item.id)))
+          ctx.addIssue({
+            code: 'custom',
+            path: [...path, 'layout'],
+            message:
+              'Ogni voce deve avere una posizione nella disposizione del preventivo.',
+          });
+      }
       quote.items.forEach((item, itemIndex) => {
         const itemPath = [...path, 'items', itemIndex];
         register(item, itemPath);

@@ -10,7 +10,7 @@ import {
   ReceiptText,
   Trash2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { calculateItem } from '../../domain/calculations';
 import { parseDecimalInput } from '../../domain/decimal';
 import type {
@@ -85,12 +85,14 @@ export function QuoteItemCard({
   doc,
   actions,
   missingTargets = [],
+  dragHandle,
 }: {
   item: QuoteItem;
   hourly?: string;
   doc: CashDocument;
   actions: QuoteItemActions;
   missingTargets?: MissingAnalysisTarget[];
+  dragHandle?: ReactNode;
 }) {
   const analysis = calculateItem(item, hourly);
   const displayName = item.name.trim() || 'Voce senza nome';
@@ -133,6 +135,7 @@ export function QuoteItemCard({
 
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
+            {dragHandle}
             <h3 className="min-w-0 break-words font-semibold">{displayName}</h3>
             {analysis?.blockers.length ? (
               <Badge variant="destructive">Da completare</Badge>

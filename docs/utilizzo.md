@@ -37,6 +37,14 @@ L'analisi distingue tra:
 
 Non è obbligatorio completare tutte le sottovoci per assegnare un prezzo scelto; il riferimento teorico dipende invece dai dati effettivamente disponibili. I preventivi sono uno spazio di lavoro interno, senza un flusso commerciale obbligatorio.
 
+### Organizzare le voci in contenitori
+
+**Nuovo contenitore** crea subito un gruppo vuoto: puoi rinominarlo, aggiungere una **Sezione vuota** oppure inserire tutte le voci di un template con **Aggiungi → Da template**. I contenitori servono solo a organizzare il lavoro e non cambiano prezzi o totali.
+
+Usa la maniglia per spostare una voce dentro un contenitore, fra le sue voci, in un altro contenitore o fuori. Puoi anche riordinare i contenitori insieme alle voci indipendenti. Da tastiera, porta il focus sulla maniglia e premi **Spazio**, usa le **frecce** e conferma con **Spazio**; **Esc** annulla lo spostamento.
+
+Eliminando un contenitore, le sue voci restano nel preventivo nello stesso ordine e nella stessa posizione relativa. L'export segue l'ordine visibile; i contenitori non creano righe Fatture in Cloud e non attivano automaticamente il raggruppamento delle righe esportate.
+
 ### Calcolare una trasferta
 
 Aggiungi una sottovoce di tipo **Trasferta** e compila partenza, destinazione, veicolo, occorrenze e indicazione **Andata e ritorno**.

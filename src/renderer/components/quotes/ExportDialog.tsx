@@ -1,5 +1,6 @@
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { orderedQuoteItems } from '../../../domain/quote-layout';
 import { buildExportLines, needsRepeatWarning } from '../../../domain/export';
 import {
   type CashDocument,
@@ -74,12 +75,13 @@ export function ExportDialog({
   );
   const [searching, setSearching] = useState(false);
   const [groupAll, setGroupAll] = useState(false);
+  const items = useMemo(() => orderedQuoteItems(quote), [quote]);
   const [selectedIds, setSelectedIds] = useState(() =>
-    quote.items.map((item) => item.id),
+    items.map((item) => item.id),
   );
   const selectedItems = useMemo(
-    () => quote.items.filter((item) => selectedIds.includes(item.id)),
-    [quote.items, selectedIds],
+    () => items.filter((item) => selectedIds.includes(item.id)),
+    [items, selectedIds],
   );
   const [descriptions, setDescriptions] = useState<Record<string, string>>(() =>
     Object.fromEntries(quote.items.map((item) => [item.id, item.name])),
@@ -208,7 +210,7 @@ export function ExportDialog({
           <div className="space-y-4">
             <div className="space-y-3 rounded-lg border p-4">
               <p className="font-medium">Voci da esportare</p>
-              {quote.items.map((item) => (
+              {items.map((item) => (
                 <Field key={item.id} orientation="horizontal">
                   <Checkbox
                     id={`export-select-${item.id}`}

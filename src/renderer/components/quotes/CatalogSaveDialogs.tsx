@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { orderedQuoteItems } from '../../../domain/quote-layout';
 import { type Quote } from '../../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -70,7 +71,7 @@ export function SaveTemplateDialog({
           <div className="border-b px-4 py-3 text-sm font-medium">
             Voci da includere
           </div>
-          {quote.items.map((item) => (
+          {orderedQuoteItems(quote).map((item) => (
             <label
               key={item.id}
               className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-0"

@@ -25,6 +25,7 @@ import {
 import { CustomerDialog } from '@/components/quotes/CustomerDialog';
 import { ExportDialog } from '@/components/quotes/ExportDialog';
 import { ItemNameDialog } from '@/components/quotes/ItemNameDialog';
+import { QuoteLayoutEditor } from '@/components/quotes/QuoteLayoutEditor';
 import {
   SaveSubDialog,
   SaveTemplateDialog,
@@ -95,7 +96,7 @@ import type { DeleteTarget } from '../types';
 type Overlay =
   | { kind: 'customer' }
   | { kind: 'site'; context: string }
-  | { kind: 'item'; item?: QuoteItem }
+  | { kind: 'item'; item?: QuoteItem; containerId?: string }
   | {
       kind: 'sub';
       itemId: string;
@@ -110,7 +111,7 @@ type Overlay =
       groupId: string;
       optionId: string;
     }
-  | { kind: 'insert-template' }
+  | { kind: 'insert-template'; containerId?: string }
   | { kind: 'save-template' }
   | { kind: 'export' };
 
@@ -157,6 +158,11 @@ export function QuotesView({
   }>();
   const ficReady =
     doc.settings.fic.enabled && hasToken && Boolean(doc.settings.fic.company);
+  const readOnly = Boolean(
+    appState.session?.readOnly ||
+    appState.status === 'Conflitto esterno' ||
+    appState.archiveOperationPending,
+  );
 
   if (!quote)
     return (
@@ -508,20 +514,39 @@ export function QuotesView({
       </Card>
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">
-          {quote.items.length ? (
-            quote.items.map((item) => (
-              <QuoteItemCard
-                key={item.id}
-                item={item}
-                hourly={hourly}
-                doc={doc}
-                actions={itemActions}
-                missingTargets={missingTargets.filter(
-                  (target) => target.itemId === item.id,
-                )}
-              />
-            ))
-          ) : (
+          <QuoteLayoutEditor
+            key={`${doc.documentId}:${appState.archiveContext}:${quote.id}`}
+            quote={quote}
+            disabled={readOnly}
+            hasTemplates={doc.catalog.templates.length > 0}
+            onSave={controller.saveLayout}
+            onAddContainer={controller.addContainer}
+            onRenameContainer={controller.renameContainer}
+            onDeleteContainer={controller.deleteContainer}
+            onAddItem={(containerId) => {
+              controller.addItem('', containerId);
+            }}
+            onInsertTemplate={(containerId) =>
+              setOverlay({ kind: 'insert-template', containerId })
+            }
+            renderItem={(id, dragHandle) => {
+              const item = quote.items.find((entry) => entry.id === id)!;
+              return (
+                <QuoteItemCard
+                  key={item.id}
+                  item={item}
+                  hourly={hourly}
+                  doc={doc}
+                  actions={itemActions}
+                  dragHandle={dragHandle}
+                  missingTargets={missingTargets.filter(
+                    (target) => target.itemId === item.id,
+                  )}
+                />
+              );
+            }}
+          />
+          {!quote.items.length && !quote.layout?.length ? (
             <Card>
               <CardContent className="grid min-h-64 place-items-center text-center">
                 <div>
@@ -562,11 +587,17 @@ export function QuotesView({
                 </div>
               </CardContent>
             </Card>
-          )}
-          {quote.items.length ? (
+          ) : null}
+          {quote.items.length || quote.layout?.length ? (
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button variant="outline" className="w-full" />}
+                render={
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={readOnly}
+                  />
+                }
               >
                 <Plus />
                 Aggiungi sezione
@@ -659,7 +690,7 @@ export function QuotesView({
           onSave={(name) => {
             const saved = overlay.item
               ? controller.renameItem(overlay.item.id, name)
-              : controller.addItem(name);
+              : controller.addItem(name, overlay.containerId);
             if (saved) setOverlay(undefined);
           }}
         />
@@ -730,7 +761,14 @@ export function QuotesView({
           doc={doc}
           quote={quote}
           onClose={() => setOverlay(undefined)}
-          onInsert={controller.insertTemplate}
+          onInsert={(templateId, choices, context) =>
+            controller.insertTemplate(
+              templateId,
+              choices,
+              context,
+              overlay.containerId,
+            )
+          }
         />
       ) : null}
       {overlay?.kind === 'save-template' ? (

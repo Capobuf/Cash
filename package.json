@@ -32,6 +32,8 @@
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
+    "@dnd-kit/helpers": "0.5.1",
+    "@dnd-kit/react": "0.5.1",
     "@eslint/js": "10.0.1",
     "@tailwindcss/cli": "^4.3.3",
     "@types/node": "24.3.1",
