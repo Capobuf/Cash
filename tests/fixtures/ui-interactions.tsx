@@ -14,6 +14,9 @@ import type { BackupConfig, BackupState } from '../../src/shared/backup';
 import { BankCategoryCombobox } from '../../src/renderer/components/BankCategoryCombobox';
 import { ProfileEditor } from '../../src/renderer/components/ProfileEditor';
 import { ClientsView } from '../../src/renderer/views/ClientsView';
+import { QuotesView } from '../../src/renderer/views/QuotesView';
+import { addQuote } from '../../src/domain/quotes';
+import { TooltipProvider } from '../../src/renderer/components/ui/tooltip';
 import { FinancialAnalysisView } from '../../src/renderer/views/FinancialAnalysisView';
 import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
 import { calculateFinancialOverview } from '../../src/domain/financial-overview';
@@ -951,6 +954,91 @@ export async function runUiChecks() {
     await act(async () => {
       root.unmount();
     });
+  }
+}
+
+export async function runQuoteClientLayoutChecks() {
+  const root = createRoot(document.getElementById('root')!);
+  const doc = createEmptyDocument();
+  const quote = addQuote(doc);
+  const appState = new AppState();
+  const longName =
+    'Azienda dimostrativa per consulenza e servizi tecnologici internazionali Società a responsabilità limitata';
+  const check = (condition: unknown, message: string) => {
+    if (!condition) throw new Error(`${message} (viewport ${innerWidth})`);
+  };
+  try {
+    for (const name of [longName, 'Cliente breve', undefined]) {
+      quote.client = name
+        ? {
+            source: 'fatture_in_cloud',
+            companyId: 'company',
+            clientId: 'client',
+            displayName: name,
+          }
+        : undefined;
+      await act(async () => {
+        root.render(
+          <TooltipProvider>
+            <div style={{ padding: 24 }}>
+              <QuotesView
+                doc={doc}
+                hasToken={false}
+                appState={appState}
+                activeQuoteId={quote.id}
+                setActiveQuoteId={() => {}}
+                requestDelete={() => {}}
+              />
+            </div>
+          </TooltipProvider>,
+        );
+        await document.fonts.ready;
+        await new Promise(requestAnimationFrame);
+      });
+      const button = document.querySelector<HTMLButtonElement>(
+        'button:has(.lucide-user-round)',
+      )!;
+      const grid = button.closest('[data-slot=card-content]')!;
+      const bounds = button.getBoundingClientRect();
+      check(
+        button.scrollWidth <= button.clientWidth,
+        'Client content overflows',
+      );
+      check(grid.scrollWidth <= grid.clientWidth, 'Quote fields overflow');
+      check(
+        document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+        'Quote header introduces horizontal scrolling',
+      );
+      for (const child of button.children) {
+        const rect = child.getBoundingClientRect();
+        check(
+          rect.width > 0 &&
+            rect.left >= bounds.left &&
+            rect.right <= bounds.right,
+          'Client icon, name or badge escapes its button',
+        );
+      }
+      const text = button.querySelector('span')!;
+      check(
+        text.textContent === (name ?? 'Scegli cliente'),
+        'Client name lost',
+      );
+      check(
+        name === longName
+          ? text.scrollWidth > text.clientWidth &&
+              getComputedStyle(text).textOverflow === 'ellipsis'
+          : text.scrollWidth <= text.clientWidth,
+        'Client name truncation is incorrect',
+      );
+      check(
+        !!button.querySelector('[data-slot=badge]') === !!name,
+        'FIC badge incorrect',
+      );
+    }
+    return 'quote-client-layout';
+  } finally {
+    await act(async () => root.unmount());
   }
 }
 

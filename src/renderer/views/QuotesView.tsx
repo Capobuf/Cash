@@ -397,24 +397,38 @@ export function QuotesView({
               </p>
             ) : null}
           </Field>
-          <Field>
-            <FieldLabel>Cliente</FieldLabel>
-            <Button
-              className="w-full justify-start"
-              variant="outline"
-              onClick={() => {
-                setOverlay({ kind: 'customer' });
-                if (ficReady) void controller.searchRemoteClients('');
-              }}
-            >
-              <UserRound />
-              {quote.client?.displayName ?? 'Scegli cliente'}
+          <Field className="min-w-0">
+            <FieldLabel htmlFor="quote-client">Cliente</FieldLabel>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    id="quote-client"
+                    className="min-w-0 w-full justify-start"
+                    variant="outline"
+                    onClick={() => {
+                      setOverlay({ kind: 'customer' });
+                      if (ficReady) void controller.searchRemoteClients('');
+                    }}
+                  />
+                }
+              >
+                <UserRound />
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {quote.client?.displayName ?? 'Scegli cliente'}
+                </span>
+                {quote.client ? (
+                  <Badge className="ml-auto" variant="secondary">
+                    FIC
+                  </Badge>
+                ) : null}
+              </TooltipTrigger>
               {quote.client ? (
-                <Badge className="ml-auto" variant="secondary">
-                  FIC
-                </Badge>
+                <TooltipContent className="wrap-anywhere">
+                  {quote.client.displayName}
+                </TooltipContent>
               ) : null}
-            </Button>
+            </Tooltip>
           </Field>
           <Field>
             <FieldLabel htmlFor="quote-site">Sede principale</FieldLabel>
