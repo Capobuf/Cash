@@ -269,7 +269,24 @@ export async function runUiChecks() {
     await act(async () => {
       clients.resolve(ok({ clients: [client], page: 1 }));
     });
-    await click(find('[aria-label="Apri dettagli di Cliente di prova"]'));
+    await click(find('[aria-label="Azioni per Cliente di prova"]'));
+    const clientActions = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ];
+    check(
+      clientActions.length === 2 &&
+        clientActions.every((item) => item.querySelector('svg')),
+      'Both client actions must have an icon',
+    );
+    check(
+      clientActions[1]!.textContent?.trim() === 'Aggiungi una sede',
+      'Client site action label unclear',
+    );
+    check(
+      clientActions[0]!.textContent?.trim() === 'Apri scheda cliente',
+      'Client details action label unclear',
+    );
+    await click(clientActions[0]!);
     check(
       document.querySelectorAll('[data-slot=skeleton]').length === 12,
       'Client detail skeleton missing',
@@ -729,10 +746,12 @@ export async function runUiChecks() {
     await render(null);
     results.push('navigation');
 
+    const helpDoc = structuredClone(doc);
+    helpDoc.profiles[0]!.confirmed = true;
     await render(
       <TooltipProvider>
         <DashboardView
-          doc={doc}
+          doc={helpDoc}
           year={2026}
           appState={appState}
           onEditProfile={() => {}}
@@ -744,13 +763,17 @@ export async function runUiChecks() {
     );
     for (const [label, explanation] of [
       ['Come interpretare il valore orario', 'non una tariffa obbligatoria'],
+      ['Netto fiscale stimato', 'Stima interna non contabile'],
+      ['Capacità cliente', 'giorni disponibili'],
       ['Come leggere il flusso delle spese', 'Più categorie'],
       [
         'Perché i totali delle categorie non sono sommabili',
         'superare il 100%',
       ],
     ] as const) {
-      const trigger = find(`button[aria-label="${label}"]`);
+      const trigger =
+        document.querySelector<HTMLElement>(`button[aria-label="${label}"]`) ??
+        button(label);
       await act(async () => trigger.focus());
       // Base UI opens on keyboard focus and positions the popup asynchronously.
       await act(async () => {

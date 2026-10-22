@@ -10,17 +10,24 @@ l'archivio personale né chiamano servizi esterni.
 - Sidebar: distanza tra le voci, hover neutro, selezione con sfondo Moss e
   focus visibile. La sezione Spese evidenzia il padre con il peso del
   testo e l'icona; solo la pagina corrente ha lo sfondo selezionato e
-  `aria-current="page"`. Nessuna modifica ai primitivi condivisi.
+  `aria-current="page"`. Rimossa la card Archivio locale. Nessuna modifica ai
+  primitivi condivisi.
 - Panoramica: hero più breve, aiuto sul valore orario, meno ripetizioni del
   profilo, nessun alert permanente quando la configurazione è completa.
-  Restano avvisi, azioni per profili incompleti e note fiscali.
+  KPI e hero compattati, card Preventivi recenti alta quanto il contenuto.
+  Giorni disponibili e «Stima interna non contabile» sono tooltip dei titoli,
+  accessibili anche da tastiera. Restano visibili gli avvisi e le azioni per
+  profili incompleti o proiezioni fiscali non disponibili.
+- Clienti: menu con icone per entrambe le azioni, «Apri scheda cliente» e
+  «Aggiungi una sede», e larghezza sufficiente a leggerle su una riga.
 - Intestazioni e lista preventivi: rimosse le descrizioni ripetitive.
 - Spese: spiegazioni del conteggio unico e delle assegnazioni multiple nei
   tooltip; l'avvertenza sui totali non sommabili resta visibile.
 - Da incassare: due indicatori distinti per fatture aperte e scadute, con
   etichette e icona, singolare/plurale, zero e dati mancanti. Importi e calcoli
   invariati; testo e numeri lunghi possono andare a capo.
-- Font, token Moss, glow e ingresso della panoramica conservati. I nuovi aiuti
+- Font dell'interfaccia Segoe UI, nativo Windows, con fallback di sistema.
+  Token Moss, glow e ingresso della panoramica conservati. I nuovi aiuti
   rispettano il movimento ridotto e hanno associazioni ARIA esplicite.
 
 ## Confronti prima/dopo
@@ -41,8 +48,9 @@ l'archivio personale né chiamano servizi esterni.
   finanziaria, Spese/Riepilogo e Spese/Categorie in entrambi i temi, a 1440 px e
   a 960 px con testo al 125% (dimensione radice 20 px). Nessun overflow
   orizzontale della pagina a 960 px; tabelle e Sankey mantengono lo scorrimento
-  interno previsto. Una sola voce con `aria-current` per vista.
-- Tab raggiunge tutti e tre i nuovi aiuti con focus visibile; testo del
+  interno previsto. Verificati anche lista e menu Clienti con il nuovo font.
+  Una sola voce con `aria-current` per vista.
+- Tab raggiunge tutti e cinque i nuovi aiuti con focus visibile; testo del
   tooltip associato con `aria-describedby` e `role="tooltip"`. Escape e
   passaggio al controllo successivo verificati in Electron.
 - `prefers-reduced-motion: reduce`: nessuna animazione attiva nelle tre viste
@@ -58,6 +66,9 @@ l'archivio personale né chiamano servizi esterni.
 - Prettier sui file modificati e `git diff --check`: superati.
 
 Ulteriori evidenze: [aiuto valore orario da tastiera](images/issue-83/after/hourly-help-keyboard.png),
+[giorni disponibili da tastiera](images/issue-83/after/capacity-help-keyboard.png),
+[nota fiscale da tastiera](images/issue-83/after/fiscal-help-keyboard.png),
+[menu clienti](images/issue-83/after/clients-menu-light.png),
 [aiuto categorie da tastiera](images/issue-83/after/categories-help-keyboard.png),
 [indicatori con testo ingrandito](images/issue-83/after/financial-narrow-light.png),
 [dettaglio preventivo con testo ingrandito](images/issue-83/after/quote-detail-narrow-dark.png),

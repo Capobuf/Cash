@@ -4,11 +4,13 @@ import {
   ArrowRight,
   Building2,
   Cloud,
+  MapPinPlus,
   MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
   Users,
+  UserRound,
 } from 'lucide-react';
 import {
   useEffect,
@@ -259,8 +261,7 @@ export function ClientsView({
           <div>
             <CardTitle>Clienti</CardTitle>
             <CardDescription>
-              Anagrafica corrente recuperata dall’azienda Fatture in Cloud
-              collegata.
+              Clienti dell’azienda collegata a Fatture in Cloud.
             </CardDescription>
           </div>
           <CardAction className="flex flex-wrap gap-2">
@@ -416,17 +417,21 @@ export function ClientsView({
                               >
                                 <MoreHorizontal />
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-52"
+                              >
                                 <DropdownMenuItem
                                   onClick={() => void openDetails(client)}
                                 >
-                                  Visualizza dettagli
+                                  <UserRound aria-hidden="true" />
+                                  Apri scheda cliente
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => setSiteEditor({ client })}
                                 >
-                                  <Plus />
-                                  Aggiungi sede
+                                  <MapPinPlus aria-hidden="true" />
+                                  Aggiungi una sede
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>

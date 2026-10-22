@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CircleAlert,
   CloudCog,
-  Database,
   FileText,
   Gauge,
   LoaderCircle,
@@ -60,7 +59,6 @@ import { Separator } from '@/components/ui/separator';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -393,19 +391,6 @@ export function AppShell({
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter className="p-4">
-          <div className="flex gap-3 rounded-lg border border-sidebar-border p-3 text-xs text-sidebar-foreground/70">
-            <Database className="mt-0.5 size-4 shrink-0" />
-            <div>
-              <strong className="font-medium text-sidebar-foreground">
-                Archivio locale
-              </strong>
-              <p className="mt-1">
-                SQLite locale. Sincronizza soltanto copie di recupero chiuse.
-              </p>
-            </div>
-          </div>
-        </SidebarFooter>
       </Sidebar>
       <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3 backdrop-blur 2xl:px-8">
