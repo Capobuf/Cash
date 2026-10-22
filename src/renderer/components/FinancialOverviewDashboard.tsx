@@ -135,10 +135,10 @@ function Kpi({
   const helpId = useId();
   const content = Children.toArray(children);
   return (
-    <Card className={`min-w-0 gap-2 ${className ?? ''}`}>
+    <Card className={`h-full min-w-0 gap-3 ${className ?? ''}`}>
       <CardHeader className="gap-2">
-        <div className="flex min-h-8 items-center justify-between gap-3">
-          <CardDescription className="text-sm font-medium text-foreground">
+        <div className="flex min-h-10 items-center justify-between gap-3">
+          <CardDescription className="text-sm leading-5 font-medium text-foreground">
             {help ? (
               <Tooltip>
                 <TooltipTrigger
@@ -166,7 +166,7 @@ function Kpi({
         </CardTitle>
       </CardHeader>
       {content.length || action ? (
-        <CardContent className="space-y-2 text-xs text-muted-foreground">
+        <CardContent className="mt-auto space-y-2 text-xs text-muted-foreground">
           {content}
           {action ? <div className="flex justify-end">{action}</div> : null}
         </CardContent>
@@ -200,9 +200,12 @@ function OverviewKpis({
     o.fiscalSituation.excess !== undefined && d(o.fiscalSituation.excess).gt(0)
       ? o.fiscalSituation.excess
       : undefined;
+  const hasOverdue =
+    (o.overdueRevenue !== undefined && d(o.overdueRevenue).gt(0)) ||
+    (a !== undefined && a.overdueInvoiceCount > 0);
   return (
     <section aria-label="Indicatori principali">
-      <div className="grid min-w-0 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           title="Disponibilità stimata"
           icon={WalletCards}
@@ -257,47 +260,36 @@ function OverviewKpis({
           />
         </Kpi>
         <Kpi title="Da incassare" icon={Clock3} value={o.outstandingRevenue}>
-          {o.overdueRevenue !== undefined && d(o.overdueRevenue).gt(0) ? (
-            <Badge
-              variant="destructive"
-              className="h-auto max-w-full whitespace-normal wrap-anywhere"
-            >
-              Scaduto: {amount(o.overdueRevenue)}
-            </Badge>
-          ) : null}
           {a ? (
-            <div className="flex flex-wrap gap-2">
-              <Badge
-                variant="outline"
-                className="h-auto max-w-full flex-wrap justify-start whitespace-normal wrap-anywhere"
-              >
-                <span className="font-semibold tabular-nums">
-                  {a.outstandingInvoiceCount}
-                </span>
-                <span>
-                  {a.outstandingInvoiceCount === 1
-                    ? 'fattura aperta'
-                    : 'fatture aperte'}
-                </span>
-              </Badge>
-              <Badge
-                variant={
-                  a.overdueInvoiceCount > 0 ? 'destructive' : 'secondary'
-                }
-                className="h-auto max-w-full flex-wrap justify-start whitespace-normal wrap-anywhere"
-              >
-                <CircleAlert aria-hidden="true" className="shrink-0" />
-                <span className="font-semibold tabular-nums">
-                  {a.overdueInvoiceCount}
-                </span>
-                <span>
-                  {a.overdueInvoiceCount === 1 ? 'scaduta' : 'scadute'}
-                </span>
-              </Badge>
-            </div>
+            <p className="wrap-anywhere tabular-nums">
+              {a.outstandingInvoiceCount}{' '}
+              {a.outstandingInvoiceCount === 1
+                ? 'fattura aperta'
+                : 'fatture aperte'}
+            </p>
           ) : (
             <p>Conteggi fatture non disponibili</p>
           )}
+          {hasOverdue ? (
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t pt-2 text-destructive">
+              <span className="inline-flex min-w-0 items-center gap-1.5 wrap-anywhere">
+                <CircleAlert
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 self-center"
+                />
+                <span className="tabular-nums">
+                  {a
+                    ? `${a.overdueInvoiceCount} ${a.overdueInvoiceCount === 1 ? 'scaduta' : 'scadute'}`
+                    : 'Scaduto'}
+                </span>
+              </span>
+              <span className="font-semibold wrap-anywhere tabular-nums">
+                {amount(o.overdueRevenue)}
+              </span>
+            </div>
+          ) : a ? (
+            <p className="border-t pt-2">Nessuna fattura scaduta</p>
+          ) : null}
         </Kpi>
         <Kpi
           title="Imposte P.IVA già pagate"

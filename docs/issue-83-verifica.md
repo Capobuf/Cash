@@ -57,7 +57,11 @@ e [tema scuro](images/issue-83/after/client-detail-dark.png).
 ### KPI finanziarie e navigazione: aggiornamento successivo
 
 Rimossa la sottolineatura dai titoli con tooltip in Panoramica. Le KPI finanziarie
-usano importi più compatti, icone e altezza legata al contenuto. Conteggio uscite,
+usano importi più compatti, icone e una griglia di altezze uniformi. Titoli su una
+o due righe mantengono gli importi allineati; i dettagli si allineano in basso.
+“Da incassare” mostra il conteggio delle fatture aperte come testo e una sola
+riga separata per numero e importo delle scadute, senza badge impilati.
+Conteggio uscite,
 rapporto uscite/incassato, obiettivo e totale del commercialista sono nei tooltip
 dei titoli; avanzamento, scaduti, dati mancanti e azioni restano visibili.
 
