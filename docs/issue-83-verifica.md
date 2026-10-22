@@ -54,9 +54,24 @@ I preventivi e gli stati vuoti hanno una gerarchia visiva coerente.
 Anteprime con dati dimostrativi: [tema chiaro](images/issue-83/after/client-detail-light.png)
 e [tema scuro](images/issue-83/after/client-detail-dark.png).
 
-**Test su questo aggiornamento rimandati su richiesta dell’utente**, fino al
+### KPI finanziarie e navigazione: aggiornamento successivo
+
+Rimossa la sottolineatura dai titoli con tooltip in Panoramica. Le KPI finanziarie
+usano importi più compatti, icone e altezza legata al contenuto. Conteggio uscite,
+rapporto uscite/incassato, obiettivo e totale del commercialista sono nei tooltip
+dei titoli; avanzamento, scaduti, dati mancanti e azioni restano visibili.
+
+La sidebar di Cash usa `position: sticky`, altezza della finestra e scorrimento
+interno della navigazione, senza modificare il componente condiviso.
+
+Anteprime: [KPI chiare](images/issue-83/after/financial-kpi-light.png),
+[KPI scure](images/issue-83/after/financial-kpi-dark.png),
+[sidebar durante lo scorrimento](images/issue-83/after/sidebar-sticky.png).
+
+**Test su questi aggiornamenti rimandati su richiesta dell’utente**, fino al
 termine delle ulteriori modifiche. I risultati sotto si riferiscono al commit
-`96e5dc2`, precedente alla revisione della scheda cliente.
+`96e5dc2`, precedente alle revisioni della scheda cliente, delle KPI finanziarie
+e della sidebar.
 
 ### Verifiche precedenti
 

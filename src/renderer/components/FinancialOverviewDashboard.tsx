@@ -1,12 +1,26 @@
 import {
   Children,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { CircleAlert, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  BadgeCheck,
+  CircleAlert,
+  Clock3,
+  Landmark,
+  Maximize2,
+  Minimize2,
+  ReceiptText,
+  Scale,
+  WalletCards,
+  type LucideIcon,
+} from 'lucide-react';
 import {
   Bar,
   CartesianGrid,
@@ -33,6 +47,11 @@ import {
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   ChartContainer,
   ChartLegend,
@@ -98,30 +117,58 @@ const monthlyConfig = {
 
 function Kpi({
   title,
+  icon: Icon,
+  help,
   value,
   action,
   className,
   children,
 }: {
   title: string;
+  icon: LucideIcon;
+  help?: string;
   value?: string;
   action?: ReactNode;
   className?: string;
   children?: ReactNode;
 }) {
+  const helpId = useId();
   const content = Children.toArray(children);
   return (
-    <Card size="sm" className={`min-w-0 ${className ?? ''}`}>
-      <CardHeader>
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="text-3xl! leading-tight font-semibold tracking-tight wrap-anywhere tabular-nums 2xl:text-4xl!">
+    <Card className={`min-w-0 gap-2 ${className ?? ''}`}>
+      <CardHeader className="gap-2">
+        <div className="flex min-h-8 items-center justify-between gap-3">
+          <CardDescription className="text-sm font-medium text-foreground">
+            {help ? (
+              <Tooltip>
+                <TooltipTrigger
+                  aria-describedby={helpId}
+                  className="cursor-help rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                >
+                  {title}
+                </TooltipTrigger>
+                <TooltipContent id={helpId} role="tooltip">
+                  {help}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              title
+            )}
+          </CardDescription>
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
+            <Icon className="size-4" aria-hidden="true" />
+          </span>
+        </div>
+        <CardTitle
+          className={`${value === undefined ? 'text-base' : 'text-2xl 2xl:text-3xl'} leading-tight font-semibold tracking-tight wrap-anywhere tabular-nums`}
+        >
           {amount(value)}
         </CardTitle>
-        {action ? <CardAction>{action}</CardAction> : null}
       </CardHeader>
-      {content.length ? (
+      {content.length || action ? (
         <CardContent className="space-y-2 text-xs text-muted-foreground">
           {content}
+          {action ? <div className="flex justify-end">{action}</div> : null}
         </CardContent>
       ) : null}
     </Card>
@@ -155,9 +202,10 @@ function OverviewKpis({
       : undefined;
   return (
     <section aria-label="Indicatori principali">
-      <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           title="Disponibilità stimata"
+          icon={WalletCards}
           value={o.estimatedAvailability}
           className="bg-primary/5 ring-primary/25"
         >
@@ -171,35 +219,44 @@ function OverviewKpis({
             </p>
           ) : null}
         </Kpi>
-        <Kpi title="Incassato" value={o.collectedRevenue}>
+        <Kpi
+          title="Incassato"
+          icon={ArrowDownLeft}
+          value={o.collectedRevenue}
+          help={`Obiettivo ${o.year}: ${amount(a?.revenueTarget)}`}
+        >
           <TargetProgress
             value={a?.percentCollectedVsTarget}
             label="Incassato rispetto all’obiettivo"
           />
         </Kpi>
-        <Kpi title="Uscite dal conto" value={o.bankExpenses}>
-          <p>{o.bankSummary.count} uscite incluse nei conteggi</p>
-          {o.bankExpenseShareOfCollections !== undefined ? (
-            <p>
-              Uscite / Incassato: {percentage(o.bankExpenseShareOfCollections)}
-            </p>
-          ) : null}
-        </Kpi>
-        <Kpi title="Margine dopo le uscite" value={o.marginAfterOutflows}>
+        <Kpi
+          title="Uscite dal conto"
+          icon={ArrowUpRight}
+          value={o.bankExpenses}
+          help={`${o.bankSummary.count} uscite incluse nei conteggi${o.bankExpenseShareOfCollections !== undefined ? `. Uscite / Incassato: ${percentage(o.bankExpenseShareOfCollections)}` : ''}`}
+        />
+        <Kpi
+          title="Margine dopo le uscite"
+          icon={Scale}
+          value={o.marginAfterOutflows}
+        >
           {marginDeficit ? (
             <Badge variant="destructive">Uscite superiori agli incassi</Badge>
           ) : null}
         </Kpi>
-        <Kpi title="Fatturato emesso" value={o.issuedRevenue}>
-          <p>
-            Obiettivo {o.year}: {amount(a?.revenueTarget)}
-          </p>
+        <Kpi
+          title="Fatturato emesso"
+          icon={ReceiptText}
+          value={o.issuedRevenue}
+          help={`Obiettivo ${o.year}: ${amount(a?.revenueTarget)}`}
+        >
           <TargetProgress
             value={a?.percentIssuedVsTarget}
             label="Fatturato emesso rispetto all’obiettivo"
           />
         </Kpi>
-        <Kpi title="Da incassare" value={o.outstandingRevenue}>
+        <Kpi title="Da incassare" icon={Clock3} value={o.outstandingRevenue}>
           {o.overdueRevenue !== undefined && d(o.overdueRevenue).gt(0) ? (
             <Badge
               variant="destructive"
@@ -242,10 +299,20 @@ function OverviewKpis({
             <p>Conteggi fatture non disponibili</p>
           )}
         </Kpi>
-        <Kpi title="Imposte P.IVA già pagate" value={o.fiscalSituation.paid} />
+        <Kpi
+          title="Imposte P.IVA già pagate"
+          icon={BadgeCheck}
+          value={o.fiscalSituation.paid}
+        />
         <Kpi
           title="Ancora da versare"
+          icon={Landmark}
           value={o.fiscalReserve}
+          help={
+            o.fiscalSituation.total !== undefined
+              ? `Totale commercialista: ${amount(o.fiscalSituation.total)}`
+              : undefined
+          }
           action={
             onFiscalCorrection ? (
               <FiscalCorrectionDialog
@@ -257,7 +324,6 @@ function OverviewKpis({
             ) : undefined
           }
         >
-          <p>Totale commercialista: {amount(o.fiscalSituation.total)}</p>
           {o.fiscalReserve === undefined ? (
             <p>Manca il totale annuale del commercialista.</p>
           ) : null}

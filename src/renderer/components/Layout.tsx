@@ -298,7 +298,10 @@ export function AppShell({
           : CloudCog;
   return (
     <SidebarProvider>
-      <Sidebar collapsible="none" className="cash-sidebar">
+      <Sidebar
+        collapsible="none"
+        className="cash-sidebar sticky top-0 h-svh shrink-0 self-start"
+      >
         <SidebarHeader className="gap-4 p-4">
           <div className="flex items-center">
             <BrandLogo className="size-14 shrink-0" />
@@ -322,7 +325,7 @@ export function AppShell({
             />
           </div>
         </SidebarHeader>
-        <SidebarContent>
+        <SidebarContent className="overscroll-contain">
           {[
             {
               label: 'Preventivazione',

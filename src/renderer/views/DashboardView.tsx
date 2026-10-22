@@ -398,7 +398,7 @@ function Metric({
               <Tooltip>
                 <TooltipTrigger
                   aria-describedby={helpId}
-                  className="cursor-help rounded-sm text-left underline decoration-muted-foreground/50 decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                  className="cursor-help rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
                 >
                   {label}
                 </TooltipTrigger>
