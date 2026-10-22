@@ -90,6 +90,51 @@ function expectConservativeFlow(
 }
 
 describe('panoramica finanziaria unificata', () => {
+  it('distinguishes invoice counters, including zero, without changing amounts', () => {
+    const doc = fixture();
+    doc.financialSnapshot!.issuedDocuments.push(
+      invoice('2500.00', {
+        payments: [
+          { amount: '2500.00', status: 'not_paid', dueDate: '2026-09-01' },
+        ],
+      }),
+      invoice('4000.00', {
+        payments: [
+          { amount: '4000.00', status: 'not_paid', dueDate: '2026-12-01' },
+        ],
+      }),
+    );
+    const result = overview(doc);
+    expect(result).toMatchObject({
+      outstandingRevenue: '6500.00',
+      overdueRevenue: '2500.00',
+    });
+    expect(result.analysis).toMatchObject({
+      outstandingInvoiceCount: 2,
+      overdueInvoiceCount: 1,
+    });
+    const card = htmlFor(result)
+      .split('Da incassare')[1]!
+      .split('Imposte P.IVA')[0]!;
+    expect(card).toContain('6.500,00');
+    expect(card).toContain('2.500,00');
+    expect(card).toContain('2 fatture aperte');
+    expect(card).toContain('1 scaduta');
+    const zero = htmlFor(overview(fixture()))
+      .split('Da incassare')[1]!
+      .split('Imposte P.IVA')[0]!;
+    expect(zero).toContain('0 fatture aperte');
+    expect(zero).toContain('Nessuna fattura scaduta');
+    expect(zero).not.toContain('text-destructive');
+    const missing = htmlFor(overview(createEmptyDocument()))
+      .split('Da incassare')[1]!
+      .split('Imposte P.IVA')[0]!;
+    expect(missing).toContain('Non disponibile');
+    expect(missing).toContain('Conteggi fatture non disponibili');
+    expect(missing).not.toContain('0 fatture aperte');
+    expect(missing).not.toContain('Nessuna fattura scaduta');
+  });
+
   it('usa il totale del commercialista sottraendo il pagato una sola volta e preserva la stima', () => {
     const doc = fixture();
     const automatic = overview(doc).analysis?.fiscalProjection;
@@ -111,7 +156,8 @@ describe('panoramica finanziaria unificata', () => {
     expect(result.analysis?.fiscalProjection).toEqual(automatic);
     expectConservativeFlow(buildFinancialOverviewFlow(result));
     const html = htmlFor(result);
-    expect(html).toContain('Totale commercialista');
+    expect(html).toContain('Ancora da versare');
+    expect(html).toContain('4.149,33');
     expect(html).toContain('Stima anno e acconti sono distinti');
     expect(html).toContain('Disponibilità stimata');
     expect(html).toContain('17.417,34');
@@ -204,7 +250,6 @@ describe('panoramica finanziaria unificata', () => {
       'Uscite dal conto',
       'Margine dopo le uscite',
       'Uscite bancarie per categoria',
-      'Uscite / Incassato',
     ])
       expect(html).toContain(label);
   });

@@ -18,6 +18,8 @@ import {
   ClientDetailsDialog,
 } from '../../src/renderer/views/ClientsView';
 import { QuotesView } from '../../src/renderer/views/QuotesView';
+import { DashboardView } from '../../src/renderer/views/DashboardView';
+import { BankSummaryView } from '../../src/renderer/views/BankSummaryView';
 import { addQuote } from '../../src/domain/quotes';
 import { cashDocumentSchema } from '../../src/domain/schema';
 import { TooltipProvider } from '../../src/renderer/components/ui/tooltip';
@@ -267,7 +269,24 @@ export async function runUiChecks() {
     await act(async () => {
       clients.resolve(ok({ clients: [client], page: 1 }));
     });
-    await click(find('[aria-label="Apri dettagli di Cliente di prova"]'));
+    await click(find('[aria-label="Azioni per Cliente di prova"]'));
+    const clientActions = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ];
+    check(
+      clientActions.length === 2 &&
+        clientActions.every((item) => item.querySelector('svg')),
+      'Both client actions must have an icon',
+    );
+    check(
+      clientActions[1]!.textContent?.trim() === 'Aggiungi una sede',
+      'Client site action label unclear',
+    );
+    check(
+      clientActions[0]!.textContent?.trim() === 'Apri scheda cliente',
+      'Client details action label unclear',
+    );
+    await click(clientActions[0]!);
     check(
       document.querySelectorAll('[data-slot=skeleton]').length === 12,
       'Client detail skeleton missing',
@@ -679,7 +698,7 @@ export async function runUiChecks() {
     await render(null);
     results.push('fiscal-form');
 
-    const shell = (view: 'catalog' | 'dashboard') => (
+    const shell = (view: 'catalog' | 'dashboard' | 'bank-summary') => (
       <AppShell
         appState={appState}
         view={view}
@@ -716,8 +735,99 @@ export async function runUiChecks() {
       'Dashboard received duplicate entry animation',
     );
     observer.disconnect();
+    await render(shell('bank-summary'));
+    check(
+      document.querySelectorAll('[aria-current="page"]').length === 1 &&
+        document.querySelector('[aria-current="page"]')?.textContent ===
+          'Riepilogo' &&
+        !button('Spese').hasAttribute('data-active'),
+      'Expense parent and current page must not both appear selected',
+    );
     await render(null);
     results.push('navigation');
+
+    const helpDoc = structuredClone(doc);
+    helpDoc.profiles[0]!.confirmed = true;
+    helpDoc.fiscalPaymentOverrides = [{ year: 2026, total: '12582.66' }];
+    helpDoc.financialSnapshot = {
+      source: 'fatture_in_cloud',
+      company: { id: 'company', name: 'Studio di prova' },
+      acquiredAt: '2026-10-22T10:00:00Z',
+      issuedDocuments: [
+        {
+          id: 'invoice',
+          type: 'invoice',
+          date: '2026-10-01',
+          amountGross: '2000.00',
+          payments: [
+            { amount: '2000.00', status: 'paid', paidDate: '2026-10-01' },
+          ],
+        },
+      ],
+      receivedDocuments: [],
+    };
+    await render(
+      <TooltipProvider>
+        <DashboardView
+          doc={helpDoc}
+          year={2026}
+          appState={appState}
+          onEditProfile={() => {}}
+          onOpenQuote={() => {}}
+          onNewQuote={() => {}}
+        />
+        <BankSummaryView doc={doc} year={2026} />
+        <FinancialOverviewDashboard
+          overview={calculateFinancialOverview(helpDoc, 2026, '2026-10-22')}
+        />
+      </TooltipProvider>,
+    );
+    for (const [label, explanation] of [
+      ['Come interpretare il valore orario', 'non una tariffa obbligatoria'],
+      ['Netto fiscale stimato', 'Stima interna non contabile'],
+      ['Capacità cliente', 'giorni disponibili'],
+      ['Incassato', 'Obiettivo 2026'],
+      ['Fatturato emesso', 'Obiettivo 2026'],
+      ['Uscite dal conto', 'uscite incluse nei conteggi. Uscite / Incassato'],
+      ['Ancora da versare', 'Totale commercialista: 12.582,66'],
+      ['Come leggere il flusso delle spese', 'Più categorie'],
+      [
+        'Perché i totali delle categorie non sono sommabili',
+        'superare il 100%',
+      ],
+    ] as const) {
+      const trigger =
+        document.querySelector<HTMLElement>(`button[aria-label="${label}"]`) ??
+        button(label);
+      await act(async () => trigger.focus());
+      // Base UI opens on keyboard focus and positions the popup asynchronously.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      const tooltip = document.getElementById(
+        trigger.getAttribute('aria-describedby') ?? '',
+      );
+      check(
+        tooltip?.getAttribute('role') === 'tooltip',
+        'Missing accessible tooltip',
+      );
+      check(
+        tooltip!.textContent?.includes(explanation),
+        'Contextual explanation lost',
+      );
+      check(
+        trigger.getAttribute('aria-describedby')?.includes(tooltip!.id),
+        'Tooltip is not associated with its trigger',
+      );
+      await key(trigger, 'Escape');
+      await act(async () => trigger.blur());
+    }
+    check(
+      document.body.innerText.includes('Totali non sommabili'),
+      'Category overlap warning must stay visible',
+    );
+    await render(null);
+    results.push('contextual-help');
 
     const rows = Array.from({ length: 55 }, (_, index) => ({
       id: String(index),
@@ -1146,7 +1256,17 @@ export async function runUiChecks() {
         appState={siteState}
         doc={savedSites}
         client={client}
-        details={{ ...client, fields: [] }}
+        details={{
+          ...client,
+          fields: [
+            { key: 'name', value: client.displayName },
+            { key: 'email', value: 'cliente@example.com' },
+            { key: 'bank_iban', value: 'IBAN dimostrativo' },
+            { key: 'notes', value: 'Note del cliente' },
+            { key: 'custom_field', value: 'Campo aggiuntivo' },
+            { key: 'internal_id', value: 'private-identifier' },
+          ],
+        }}
         loading={false}
         onClose={() => {}}
         onOpenQuote={() => {}}
@@ -1160,6 +1280,20 @@ export async function runUiChecks() {
         document.body.innerText.includes('Sede Nord') &&
         document.body.innerText.includes('Sede Sud'),
       'Created sites missing from client details',
+    );
+    check(
+      [
+        'Anagrafica',
+        'Contatti e indirizzo',
+        'Fatturazione e pagamenti',
+        'Altre informazioni',
+        'cliente@example.com',
+        'IBAN dimostrativo',
+        'Note del cliente',
+        'Campo aggiuntivo',
+      ].every((text) => document.body.innerText.includes(text)) &&
+        !document.body.innerText.includes('private-identifier'),
+      'Client field grouping lost data or exposed an internal identifier',
     );
     results.push('quote-sites');
     return results;

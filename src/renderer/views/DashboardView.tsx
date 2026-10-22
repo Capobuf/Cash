@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -6,6 +7,7 @@ import {
   Clock3,
   FileText,
   FilePlus2,
+  Info,
   Settings2,
   WalletCards,
 } from 'lucide-react';
@@ -15,6 +17,11 @@ import { createManualProfile, type CashDocument } from '../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Card,
   CardContent,
@@ -48,6 +55,7 @@ export function DashboardView({
   onOpenQuote: (id: string) => void;
   onNewQuote: () => void;
 }) {
+  const hourlyHelpId = useId();
   const profile = doc.profiles.find((entry) => entry.year === year);
   const calculated = profile?.confirmed
     ? calculateProfile(profile, doc.businessCosts)
@@ -88,8 +96,8 @@ export function DashboardView({
 
   return (
     <div className="min-w-0 space-y-5">
-      <Card className="dashboard-hero dashboard-enter [--card-spacing:--spacing(6)] xl:[--card-spacing:--spacing(8)]">
-        <CardContent className="grid min-w-0 gap-8 py-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:items-center xl:gap-10">
+      <Card className="dashboard-hero dashboard-enter [--card-spacing:--spacing(5)] xl:[--card-spacing:--spacing(6)]">
+        <CardContent className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:items-center xl:gap-8">
           <div className="dashboard-enter dashboard-intro min-w-0">
             <p className="flex items-center gap-2 text-xs font-semibold tracking-widest uppercase">
               <span
@@ -104,8 +112,8 @@ export function DashboardView({
               Il suo valore.
             </h2>
             <p className="mt-4 max-w-lg text-sm leading-relaxed text-foreground/75">
-              Dai una base economica alle tue offerte. Componi tempi, spese e
-              trasferte: il prezzo finale resta una tua scelta.
+              Tempi, spese e trasferte per valutare il tuo lavoro. Il prezzo
+              finale lo scegli tu.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button size="lg" className="h-11 px-4" onClick={onNewQuote}>
@@ -128,12 +136,32 @@ export function DashboardView({
               ) : null}
             </div>
           </div>
-          <div className="dashboard-enter dashboard-value min-w-0 rounded-xl border border-border bg-card/90 p-6 shadow-sm">
+          <div className="dashboard-enter dashboard-value min-w-0 rounded-xl border border-border bg-card/90 p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium">Valore orario obiettivo</p>
+              <div className="flex items-center gap-1">
+                <p className="text-sm font-medium">Valore orario obiettivo</p>
+                <Tooltip>
+                  <TooltipTrigger
+                    aria-describedby={hourlyHelpId}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Come interpretare il valore orario"
+                      />
+                    }
+                  >
+                    <Info aria-hidden="true" />
+                  </TooltipTrigger>
+                  <TooltipContent id={hourlyHelpId} role="tooltip">
+                    Il valore da generare per ogni ora dedicata ai clienti. Un
+                    riferimento economico, non una tariffa obbligatoria.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Badge variant="secondary">{year}</Badge>
             </div>
-            <p className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums">
+            <p className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums">
               <span className="min-w-0 text-4xl font-semibold tracking-tight break-all 2xl:text-5xl">
                 {values ? formatNumber(values.hourlyTarget, 2) : '—'}
               </span>
@@ -141,12 +169,12 @@ export function DashboardView({
                 €/h
               </span>
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-card-foreground/75">
-              {values
-                ? 'Il valore da generare per ogni ora dedicata ai clienti. Un riferimento economico, non una tariffa obbligatoria.'
-                : unavailableNote}
-            </p>
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            {!values ? (
+              <p className="mt-3 text-sm leading-relaxed text-card-foreground/75">
+                {unavailableNote}
+              </p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
               <span className="flex items-center gap-2 text-xs font-medium">
                 {values ? (
                   <CheckCircle2
@@ -177,7 +205,7 @@ export function DashboardView({
           note={
             profile
               ? profile.confirmed
-                ? `Obiettivo annuale ${profile.year}`
+                ? undefined
                 : 'Obiettivo del profilo da verificare'
               : 'Profilo non configurato'
           }
@@ -186,34 +214,32 @@ export function DashboardView({
           icon={CheckCircle2}
           label="Netto fiscale stimato"
           value={eur(values?.fiscalNet)}
-          note={
+          help={
             values?.fiscalNet !== undefined
               ? 'Stima interna non contabile'
-              : values
-                ? 'Proiezione fiscale non disponibile'
-                : profileStatus
+              : undefined
+          }
+          note={
+            values && values.fiscalNet === undefined
+              ? 'Proiezione fiscale non disponibile'
+              : undefined
           }
         />
         <Metric
           icon={Clock3}
           label="Capacità cliente"
           value={values ? hours(values.availableClientMinutes) : '—'}
-          note={
-            values
-              ? `${values.availableDays} giorni disponibili`
-              : profileStatus
+          help={
+            values ? `${values.availableDays} giorni disponibili` : undefined
           }
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.65fr)]">
-        <Card className="min-w-0 [--card-spacing:--spacing(5)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.65fr)]">
+        <Card className="min-w-0">
           <CardHeader>
             <div>
               <CardTitle>Preventivi recenti</CardTitle>
-              <CardDescription>
-                Riprendi rapidamente il lavoro dove lo avevi lasciato.
-              </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
@@ -262,7 +288,7 @@ export function DashboardView({
                 </TableBody>
               </Table>
             ) : (
-              <div className="grid min-h-60 place-items-center rounded-lg border border-dashed bg-muted/30 p-6 text-center">
+              <div className="grid min-h-44 place-items-center rounded-lg border border-dashed bg-muted/30 p-5 text-center">
                 <div className="max-w-sm">
                   <span className="mx-auto mb-4 grid size-11 place-items-center rounded-lg bg-secondary text-secondary-foreground">
                     <FileText className="size-5" aria-hidden="true" />
@@ -278,21 +304,16 @@ export function DashboardView({
         </Card>
 
         <div className="space-y-4">
-          <Card className="[--card-spacing:--spacing(5)]">
+          <Card>
             <CardHeader>
               <div>
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   <CalendarDays className="size-4" aria-hidden="true" />
-                  Profilo annuale{' '}
-                  {profile ? (
-                    <Badge variant="secondary">
-                      {profile.confirmed ? 'Confermato' : 'Da verificare'}
-                    </Badge>
-                  ) : null}
+                  Profilo annuale
                 </CardTitle>
                 <CardDescription>
                   {profile
-                    ? `Profilo ${profile.year} · revisione ${profile.revision}`
+                    ? `Revisione ${profile.revision}`
                     : 'Nessun profilo annuale'}
                 </CardDescription>
               </div>
@@ -347,15 +368,7 @@ export function DashboardView({
                 </ul>
               </AlertDescription>
             </Alert>
-          ) : (
-            <Alert>
-              <CheckCircle2 />
-              <AlertTitle>Configurazione operativa</AlertTitle>
-              <AlertDescription>
-                Hai i dati essenziali per preventivi e trasferte.
-              </AlertDescription>
-            </Alert>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -367,18 +380,37 @@ function Metric({
   label,
   value,
   note,
+  help,
 }: {
   icon: typeof Clock3;
   label: string;
   value: string;
-  note: string;
+  note?: string;
+  help?: string;
 }) {
+  const helpId = useId();
   return (
-    <Card className="dashboard-enter min-w-0 gap-3 transition-colors duration-200 hover:bg-secondary/20 hover:ring-primary/40 [--card-spacing:--spacing(5)]">
-      <CardHeader className="gap-4">
-        <div className="flex min-h-9 items-center justify-between gap-3">
-          <CardTitle className="text-sm">{label}</CardTitle>
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
+    <Card className="dashboard-enter min-w-0 gap-2 transition-colors duration-200 hover:bg-secondary/20 hover:ring-primary/40">
+      <CardHeader className="gap-2">
+        <div className="flex min-h-8 items-center justify-between gap-3">
+          <CardTitle className="text-sm">
+            {help ? (
+              <Tooltip>
+                <TooltipTrigger
+                  aria-describedby={helpId}
+                  className="cursor-help rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                >
+                  {label}
+                </TooltipTrigger>
+                <TooltipContent id={helpId} role="tooltip">
+                  {help}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              label
+            )}
+          </CardTitle>
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
             <Icon className="size-4" aria-hidden="true" />
           </span>
         </div>
@@ -386,9 +418,11 @@ function Metric({
           {value}
         </p>
       </CardHeader>
-      <CardContent className="mt-auto">
-        <CardDescription className="text-xs">{note}</CardDescription>
-      </CardContent>
+      {note ? (
+        <CardContent className="mt-auto">
+          <CardDescription className="text-xs">{note}</CardDescription>
+        </CardContent>
+      ) : null}
     </Card>
   );
 }

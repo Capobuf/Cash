@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CircleAlert,
   CloudCog,
-  Database,
   FileText,
   Gauge,
   LoaderCircle,
@@ -60,7 +59,6 @@ import { Separator } from '@/components/ui/separator';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -100,16 +98,8 @@ const titles: Record<View, string> = {
   settings: 'Impostazioni',
 };
 
-const descriptions: Record<View, string> = {
-  dashboard: 'Obiettivi, fiscalità e capacità',
-  quotes: 'Componi e verifica le tue offerte',
+const descriptions: Partial<Record<View, string>> = {
   clients: 'Clienti Fatture in Cloud e sedi correlate',
-  'financial-analysis': 'Obiettivi e dati amministrativi registrati',
-  'bank-summary': 'Analisi delle uscite dal conto',
-  'bank-movements': 'Importazione e categorizzazione delle uscite',
-  'bank-categories': 'Organizza categorie e sottocategorie',
-  catalog: 'Template e contenuti riutilizzabili',
-  settings: 'Profili, risorse, integrazioni e archivio',
 };
 
 function BrandLogo({ className }: { className: string }) {
@@ -308,7 +298,10 @@ export function AppShell({
           : CloudCog;
   return (
     <SidebarProvider>
-      <Sidebar collapsible="none">
+      <Sidebar
+        collapsible="none"
+        className="cash-sidebar sticky top-0 h-svh shrink-0 self-start"
+      >
         <SidebarHeader className="gap-4 p-4">
           <div className="flex items-center">
             <BrandLogo className="size-14 shrink-0" />
@@ -332,7 +325,7 @@ export function AppShell({
             />
           </div>
         </SidebarHeader>
-        <SidebarContent>
+        <SidebarContent className="overscroll-contain">
           {[
             {
               label: 'Preventivazione',
@@ -344,7 +337,7 @@ export function AppShell({
             <SidebarGroup key={group.label}>
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu>
+                <SidebarMenu className="gap-1">
                   {entries
                     .filter((entry) => group.keys.includes(entry.key))
                     .map(({ key, label, icon: Icon }) => (
@@ -362,13 +355,17 @@ export function AppShell({
                   {group.label === 'Analisi finanziaria' ? (
                     <SidebarMenuItem>
                       <SidebarMenuButton
-                        isActive={view.startsWith('bank-')}
+                        className={
+                          view.startsWith('bank-')
+                            ? 'font-semibold [&_svg]:text-primary'
+                            : undefined
+                        }
                         onClick={() => onView('bank-summary')}
                       >
                         <ChartNoAxesCombined aria-hidden="true" />
                         <span>Spese</span>
                       </SidebarMenuButton>
-                      <SidebarMenuSub>
+                      <SidebarMenuSub className="gap-1">
                         {(
                           [
                             { key: 'bank-summary', label: 'Riepilogo' },
@@ -397,26 +394,15 @@ export function AppShell({
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter className="p-4">
-          <div className="flex gap-3 rounded-lg border border-sidebar-border p-3 text-xs text-sidebar-foreground/70">
-            <Database className="mt-0.5 size-4 shrink-0" />
-            <div>
-              <strong className="font-medium text-sidebar-foreground">
-                Archivio locale
-              </strong>
-              <p className="mt-1">
-                SQLite locale. Sincronizza soltanto copie di recupero chiuse.
-              </p>
-            </div>
-          </div>
-        </SidebarFooter>
       </Sidebar>
       <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3 backdrop-blur 2xl:px-8">
           <div className="min-w-0">
-            <p className="text-sm text-muted-foreground">
-              {descriptions[view]}
-            </p>
+            {descriptions[view] ? (
+              <p className="text-sm text-muted-foreground">
+                {descriptions[view]}
+              </p>
+            ) : null}
             <h1 className="text-xl font-semibold tracking-tight">
               {titles[view]}
             </h1>

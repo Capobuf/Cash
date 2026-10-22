@@ -54,7 +54,7 @@ describe('selezione anno', () => {
       />,
     );
 
-    expect(html).toContain('Profilo 2025');
+    expect(html).toContain('>2025</span>');
     expect(html).toContain('12.345,00');
     expect(html).not.toContain('67.890,00');
   });

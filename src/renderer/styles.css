@@ -147,7 +147,7 @@
   --sidebar-accent-foreground: oklch(0 0 0);
   --sidebar-border: oklch(0.9401 0 0);
   --sidebar-ring: oklch(0.783 0.0384 132.737);
-  --font-sans: Plus Jakarta Sans, sans-serif;
+  --font-sans: 'Segoe UI', system-ui, sans-serif;
   --font-serif: Lora, serif;
   --font-mono: IBM Plex Mono, monospace;
   --shadow-color: #000000;
@@ -209,7 +209,7 @@
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: oklch(0.2513 0 0);
   --sidebar-ring: oklch(0.783 0.0384 132.737);
-  --font-sans: Plus Jakarta Sans, sans-serif;
+  --font-sans: 'Segoe UI', system-ui, sans-serif;
   --font-serif: Lora, serif;
   --font-mono: IBM Plex Mono, monospace;
   --shadow-color: #000000;
@@ -322,6 +322,61 @@
   }
 }
 
+/* Cash navigation only: keep the shared sidebar primitives unchanged. */
+@layer utilities {
+  .cash-sidebar
+    :is(
+      [data-slot='sidebar-menu-button'],
+      [data-slot='sidebar-menu-sub-button']
+    ) {
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .cash-sidebar
+    :is(
+      [data-slot='sidebar-menu-button'],
+      [data-slot='sidebar-menu-sub-button']
+    ):not([data-active]):hover {
+    background-color: color-mix(
+      in oklab,
+      var(--sidebar-foreground) 6%,
+      var(--sidebar)
+    );
+    color: var(--sidebar-foreground);
+  }
+
+  .cash-sidebar
+    :is(
+      [data-slot='sidebar-menu-button'],
+      [data-slot='sidebar-menu-sub-button']
+    )[data-active] {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-accent-foreground);
+    font-weight: 600;
+  }
+
+  .cash-sidebar
+    :is(
+      [data-slot='sidebar-menu-button'],
+      [data-slot='sidebar-menu-sub-button']
+    ):focus-visible {
+    outline: 2px solid var(--sidebar-foreground);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cash-sidebar
+      :is(
+        [data-slot='sidebar-menu-button'],
+        [data-slot='sidebar-menu-sub-button']
+      ) {
+      transition: none;
+    }
+  }
+}
+
 @keyframes section-enter {
   from {
     opacity: 0;
@@ -374,6 +429,7 @@
   [data-slot='dropdown-menu-content'],
   [data-slot='dropdown-menu-sub-content'],
   [data-slot='select-content'],
+  [data-slot='tooltip-content'],
   [data-slot='combobox-content'] {
     animation: none;
     transition: none;
