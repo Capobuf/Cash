@@ -7,8 +7,8 @@ l'archivio personale né chiamano servizi esterni.
 
 ## Modifiche
 
-- Sidebar: distanza tra le voci, hover neutro, selezione Moss con indicatore
-  laterale, focus visibile. La sezione Spese evidenzia il padre con il peso del
+- Sidebar: distanza tra le voci, hover neutro, selezione con sfondo Moss e
+  focus visibile. La sezione Spese evidenzia il padre con il peso del
   testo e l'icona; solo la pagina corrente ha lo sfondo selezionato e
   `aria-current="page"`. Nessuna modifica ai primitivi condivisi.
 - Panoramica: hero più breve, aiuto sul valore orario, meno ripetizioni del

@@ -354,7 +354,6 @@
     )[data-active] {
     background-color: var(--sidebar-accent);
     color: var(--sidebar-accent-foreground);
-    box-shadow: inset 3px 0 0 var(--primary);
     font-weight: 600;
   }
 
