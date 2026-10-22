@@ -56,6 +56,14 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1200, height: 2400, show: false, webPreferences: { contextIsolation: false, backgroundThrottling: false, offscreen: true } });
   const js = (code) => win.webContents.executeJavaScript(code, true);
   const wait = (ms = 80) => new Promise(resolve => setTimeout(resolve, ms));
+  const until = async (code, label) => {
+    const deadline = Date.now() + 5000;
+    while (!(await js(code))) {
+      if (Date.now() > deadline) throw new Error('Timed out waiting for ' + label);
+      await wait(20);
+    }
+  };
+  const idle = () => until('!document.querySelector("[data-dnd-dragging], [data-dnd-dropping]")', 'drag cleanup');
   const key = async (keyCode) => { win.webContents.sendInputEvent({ type: 'keyDown', keyCode }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode }); await wait(120); };
   const info = () => js('Checks.info()');
   const click = (label) => js('Checks.click(' + JSON.stringify(label) + ')');
@@ -63,28 +71,34 @@ app.whenReady().then(async () => {
   const handle = (id) => '[data-quote-item="' + id + '"] [data-quote-drag-handle]';
   const drop = (id) => '[data-quote-drop="' + id + '"]';
   const drag = async (source, target, cancel = false) => {
-    await wait(350);
+    await idle();
+    await until('(() => { const e = document.querySelector(' + JSON.stringify(source) + '); const r = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2)); })()', 'unobstructed drag handle');
     const start = await point(source);
     let end = await point(target);
     win.webContents.sendInputEvent({ type: 'mouseMove', ...start });
     win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...start });
-    await wait(200);
+    await until('!!document.querySelector("[data-dnd-dragging]")', 'pointer drag activation');
     for (let i=1; i<=12; i++) {
       win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', x: Math.round(start.x+(end.x-start.x)*i/12), y: Math.round(start.y+(end.y-start.y)*i/12) });
       await wait(20);
     }
     await wait(120);
-    for (let i=0; i<3; i++) {
+    // Append zones move as children enter them. Following a sortable card instead
+    // would chase it after the swap and could undo the intended reorder.
+    for (let i=0; target.startsWith('[data-quote-drop=') && i<3; i++) {
       end = await point(target);
       win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', ...end });
       await wait(120);
     }
     if (cancel) await key('Escape');
     win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...end });
-    await wait(350);
+    await idle();
+    await js('Checks.settle()');
   };
   try {
     await win.loadFile(join(__dirname, 'index.html'));
+    win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1200, height: 2400, deviceScaleFactor: 1, mobile: false });
     await js(readFileSync(join(__dirname, 'fixture.js'), 'utf8'));
     const ids = await js('Checks.setup()');
     assert.deepEqual((await info()).domOrder, ids);
@@ -109,6 +123,7 @@ app.whenReady().then(async () => {
     assert.equal(JSON.stringify(snapshot.quote), beforeCancel, 'escape must not mutate');
     assert.equal(snapshot.writes, writes, 'escape must not save');
     await drag(handle(ids[1]), drop(north));
+    assert.deepEqual((await info()).quote.layout.find(e => e.id === north).itemIds, [ids[0], ids[1]], 'drop after cancellation');
     // Reorder two children with the keyboard, then cancel another keyboard drag.
     await js('document.querySelector(' + JSON.stringify(handle(ids[1])) + ').focus()');
     await key('Space'); await key('Up'); await key('Space');
@@ -164,7 +179,6 @@ app.whenReady().then(async () => {
     assert.equal(snapshot.quote.items.length, 5);
     assert.equal(snapshot.quote.layout.some(e => e.id === north), false);
     assert.equal(snapshot.valid, true);
-    await win.webContents.debugger.attach('1.3');
     for (const width of [375, 768, 1200]) {
       await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height: 2400, deviceScaleFactor: 1, mobile: false });
       await js('Checks.settle()');
