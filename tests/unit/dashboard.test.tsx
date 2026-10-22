@@ -32,6 +32,28 @@ const render = (doc: CashDocument, year = 2026) =>
   );
 
 describe('Panoramica iniziale', () => {
+  it('shows setup actions only while configuration is incomplete', () => {
+    const doc = fixture();
+    expect(render(doc)).toContain('3 configurazioni da completare');
+    expect(render(doc)).toContain('Aggiungi una sede per le trasferte');
+    doc.settings.fuelTerritory = 'Lombardia';
+    doc.sites.push({ ...meta(), name: 'Studio' });
+    doc.vehicles.push({
+      ...meta(),
+      name: 'Auto',
+      fuel: 'benzina',
+      consumption: '15',
+      consumptionUnit: 'km/l',
+      annualKm: '10000',
+      annualInsurance: '500',
+      annualTax: '200',
+      annualMaintenance: '400',
+    });
+    const html = render(doc);
+    expect(html).not.toContain('configurazioni da completare');
+    expect(html).not.toContain('Configurazione operativa');
+  });
+
   it('uses confirmed calculations and shows the hourly reference only in the hero', () => {
     const doc = fixture();
     const result = calculateProfile(doc.profiles[0]!, doc.businessCosts);
@@ -43,7 +65,7 @@ describe('Panoramica iniziale', () => {
     expect(html).toContain(hours(result.value.availableClientMinutes));
     expect(html.match(/Valore orario obiettivo/g)).toHaveLength(1);
     expect(html.match(/Nuovo preventivo/g)).toHaveLength(1);
-    expect(html).toContain('non una tariffa obbligatoria');
+    expect(html).toContain('aria-label="Come interpretare il valore orario"');
     expect(html).not.toContain('Riprendi il lavoro');
   });
 

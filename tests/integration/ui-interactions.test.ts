@@ -57,11 +57,14 @@ app.whenReady().then(async () => {
   const window = new BrowserWindow({ width: 1440, height: 1000, show: false, webPreferences: { contextIsolation: false, backgroundThrottling: false } });
   await window.loadFile(${JSON.stringify(pagePath)});
   try {
+    window.webContents.debugger.attach('1.3');
+    await window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     const result = await window.webContents.executeJavaScript(readFileSync(${JSON.stringify(bundlePath)}, 'utf8') + '\\nWorkspaceChecks.runUiChecks()');
     await window.webContents.executeJavaScript("const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'styles.css'; document.head.append(link); new Promise(resolve => link.onload = resolve)");
     result.push(await window.webContents.executeJavaScript('WorkspaceChecks.runFinancialFlowChecks()', true));
     // Exercise both motion preferences independently of the runner's OS settings.
-    window.webContents.debugger.attach('1.3');
     for (const width of [375, 768, 1024, 1280, 1440]) {
       await window.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
       await window.webContents.executeJavaScript('WorkspaceChecks.runQuoteClientLayoutChecks()');
@@ -116,6 +119,7 @@ app.whenReady().then(async () => {
         'controls',
         'fiscal-form',
         'navigation',
+        'contextual-help',
         'table',
         'bank-filters',
         'financial-loading',

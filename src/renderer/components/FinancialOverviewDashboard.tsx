@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { CircleAlert, Maximize2, Minimize2 } from 'lucide-react';
 import {
   Bar,
   CartesianGrid,
@@ -114,7 +114,7 @@ function Kpi({
     <Card size="sm" className={`min-w-0 ${className ?? ''}`}>
       <CardHeader>
         <CardDescription>{title}</CardDescription>
-        <CardTitle className="text-3xl! leading-none font-semibold tracking-tight tabular-nums 2xl:text-4xl!">
+        <CardTitle className="text-3xl! leading-tight font-semibold tracking-tight wrap-anywhere tabular-nums 2xl:text-4xl!">
           {amount(value)}
         </CardTitle>
         {action ? <CardAction>{action}</CardAction> : null}
@@ -178,9 +178,7 @@ function OverviewKpis({
           />
         </Kpi>
         <Kpi title="Uscite dal conto" value={o.bankExpenses}>
-          <p>
-            {o.bankSummary.count} uscite incluse nei conteggi nel {o.year}
-          </p>
+          <p>{o.bankSummary.count} uscite incluse nei conteggi</p>
           {o.bankExpenseShareOfCollections !== undefined ? (
             <p>
               Uscite / Incassato: {percentage(o.bankExpenseShareOfCollections)}
@@ -203,16 +201,46 @@ function OverviewKpis({
         </Kpi>
         <Kpi title="Da incassare" value={o.outstandingRevenue}>
           {o.overdueRevenue !== undefined && d(o.overdueRevenue).gt(0) ? (
-            <Badge variant="destructive">
+            <Badge
+              variant="destructive"
+              className="h-auto max-w-full whitespace-normal wrap-anywhere"
+            >
               Scaduto: {amount(o.overdueRevenue)}
             </Badge>
           ) : null}
           {a ? (
-            <p>
-              {a.outstandingInvoiceCount} fatture aperte ·{' '}
-              {a.overdueInvoiceCount} scadute
-            </p>
-          ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant="outline"
+                className="h-auto max-w-full flex-wrap justify-start whitespace-normal wrap-anywhere"
+              >
+                <span className="font-semibold tabular-nums">
+                  {a.outstandingInvoiceCount}
+                </span>
+                <span>
+                  {a.outstandingInvoiceCount === 1
+                    ? 'fattura aperta'
+                    : 'fatture aperte'}
+                </span>
+              </Badge>
+              <Badge
+                variant={
+                  a.overdueInvoiceCount > 0 ? 'destructive' : 'secondary'
+                }
+                className="h-auto max-w-full flex-wrap justify-start whitespace-normal wrap-anywhere"
+              >
+                <CircleAlert aria-hidden="true" className="shrink-0" />
+                <span className="font-semibold tabular-nums">
+                  {a.overdueInvoiceCount}
+                </span>
+                <span>
+                  {a.overdueInvoiceCount === 1 ? 'scaduta' : 'scadute'}
+                </span>
+              </Badge>
+            </div>
+          ) : (
+            <p>Conteggi fatture non disponibili</p>
+          )}
         </Kpi>
         <Kpi title="Imposte P.IVA già pagate" value={o.fiscalSituation.paid} />
         <Kpi
@@ -353,8 +381,7 @@ function MonthlyFlow({ overview: o }: { overview: FinancialOverview }) {
       <CardHeader>
         <CardTitle>Flusso mensile di cassa</CardTitle>
         <CardDescription>
-          Incassato, Uscite dal conto e Margine dopo le uscite · nessuna
-          distribuzione mensile della fiscalità residua
+          Fiscalità residua non distribuita sui mesi.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -639,9 +666,6 @@ function MonthlyDetail({ overview: o }: { overview: FinancialOverview }) {
     <Card className="min-w-0">
       <CardHeader>
         <CardTitle>Dettaglio mensile</CardTitle>
-        <CardDescription>
-          Flussi FIC e bancari da gennaio a dicembre.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <DataTable

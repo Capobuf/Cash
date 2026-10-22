@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Info, Maximize2, Minimize2 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { buildBankExpenseFlow } from '../../domain/bank-expense-flow';
 import { MoneyFlowChart } from '@/components/MoneyFlowChart';
@@ -14,6 +14,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   ChartContainer,
   ChartTooltip,
@@ -54,6 +59,8 @@ export function BankSummaryView({
   doc: CashDocument;
   year: number | undefined;
 }) {
+  const flowHelpId = useId();
+  const categoriesHelpId = useId();
   const summary = useMemo(
     () =>
       summarizeBankExpenses(
@@ -141,7 +148,7 @@ export function BankSummaryView({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Spese incluse nei conteggi nell’anno
+            Inclusi nei conteggi
           </CardContent>
         </Card>
         <Card>
@@ -188,6 +195,25 @@ export function BankSummaryView({
         <CardHeader>
           <CardTitle>Flusso delle spese · {year ?? 'nessun anno'}</CardTitle>
           <CardAction>
+            <Tooltip>
+              <TooltipTrigger
+                aria-describedby={flowHelpId}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Come leggere il flusso delle spese"
+                  />
+                }
+              >
+                <Info aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent id={flowHelpId} role="tooltip">
+                Ogni spesa è conteggiata una sola volta. Le spese assegnate a
+                più categorie confluiscono nel ramo “Più categorie”. Sono
+                incluse le categorie automatiche.
+              </TooltipContent>
+            </Tooltip>
             <Button
               type="button"
               variant="ghost"
@@ -207,10 +233,7 @@ export function BankSummaryView({
             </Button>
           </CardAction>
           <CardDescription>
-            Totale delle uscite → categorie principali → sottocategorie. Ogni
-            spesa è conteggiata una sola volta; quelle assegnate a più categorie
-            sono raggruppate nel ramo “Più categorie”. Sono incluse le categorie
-            automatiche.
+            Uscite → categorie → sottocategorie · conteggio unico
           </CardDescription>
           {fullscreenError ? (
             <p role="alert" className="text-sm text-destructive">
@@ -273,7 +296,7 @@ export function BankSummaryView({
         </Card>
         <ExpenseCategoryChart
           title="Spese per categoria"
-          description="Totali delle categorie principali, incluse le sottocategorie. I valori possono sovrapporsi e non formano una ripartizione esclusiva."
+          description="Sottocategorie incluse. Totali sovrapposti, non sommabili."
           rows={categories}
           empty="Nessuna spesa da rappresentare"
         />
@@ -281,11 +304,30 @@ export function BankSummaryView({
       <Card>
         <CardHeader>
           <CardTitle>Riepilogo categorie</CardTitle>
+          <CardAction>
+            <Tooltip>
+              <TooltipTrigger
+                aria-describedby={categoriesHelpId}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Perché i totali delle categorie non sono sommabili"
+                  />
+                }
+              >
+                <Info aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent id={categoriesHelpId} role="tooltip">
+                Ogni spesa compare in tutte le categorie assegnate, a differenza
+                del flusso a conteggio unico. Le sottocategorie sono già incluse
+                nel totale del padre. Le percentuali possono complessivamente
+                superare il 100%.
+              </TooltipContent>
+            </Tooltip>
+          </CardAction>
           <CardDescription>
-            Le sottocategorie sono già comprese nel totale del padre. In questa
-            tabella ogni spesa compare in tutte le categorie assegnate: i totali
-            non sono sommabili tra loro e le percentuali possono
-            complessivamente superare il 100%.
+            Totali non sommabili tra categorie. Sottocategorie già incluse.
           </CardDescription>
         </CardHeader>
         <CardContent>

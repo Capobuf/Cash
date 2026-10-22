@@ -18,6 +18,8 @@ import {
   ClientDetailsDialog,
 } from '../../src/renderer/views/ClientsView';
 import { QuotesView } from '../../src/renderer/views/QuotesView';
+import { DashboardView } from '../../src/renderer/views/DashboardView';
+import { BankSummaryView } from '../../src/renderer/views/BankSummaryView';
 import { addQuote } from '../../src/domain/quotes';
 import { cashDocumentSchema } from '../../src/domain/schema';
 import { TooltipProvider } from '../../src/renderer/components/ui/tooltip';
@@ -679,7 +681,7 @@ export async function runUiChecks() {
     await render(null);
     results.push('fiscal-form');
 
-    const shell = (view: 'catalog' | 'dashboard') => (
+    const shell = (view: 'catalog' | 'dashboard' | 'bank-summary') => (
       <AppShell
         appState={appState}
         view={view}
@@ -716,8 +718,68 @@ export async function runUiChecks() {
       'Dashboard received duplicate entry animation',
     );
     observer.disconnect();
+    await render(shell('bank-summary'));
+    check(
+      document.querySelectorAll('[aria-current="page"]').length === 1 &&
+        document.querySelector('[aria-current="page"]')?.textContent ===
+          'Riepilogo' &&
+        !button('Spese').hasAttribute('data-active'),
+      'Expense parent and current page must not both appear selected',
+    );
     await render(null);
     results.push('navigation');
+
+    await render(
+      <TooltipProvider>
+        <DashboardView
+          doc={doc}
+          year={2026}
+          appState={appState}
+          onEditProfile={() => {}}
+          onOpenQuote={() => {}}
+          onNewQuote={() => {}}
+        />
+        <BankSummaryView doc={doc} year={2026} />
+      </TooltipProvider>,
+    );
+    for (const [label, explanation] of [
+      ['Come interpretare il valore orario', 'non una tariffa obbligatoria'],
+      ['Come leggere il flusso delle spese', 'Più categorie'],
+      [
+        'Perché i totali delle categorie non sono sommabili',
+        'superare il 100%',
+      ],
+    ] as const) {
+      const trigger = find(`button[aria-label="${label}"]`);
+      await act(async () => trigger.focus());
+      // Base UI opens on keyboard focus and positions the popup asynchronously.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      const tooltip = document.getElementById(
+        trigger.getAttribute('aria-describedby') ?? '',
+      );
+      check(
+        tooltip?.getAttribute('role') === 'tooltip',
+        'Missing accessible tooltip',
+      );
+      check(
+        tooltip!.textContent?.includes(explanation),
+        'Contextual explanation lost',
+      );
+      check(
+        trigger.getAttribute('aria-describedby')?.includes(tooltip!.id),
+        'Tooltip is not associated with its trigger',
+      );
+      await key(trigger, 'Escape');
+      await act(async () => trigger.blur());
+    }
+    check(
+      document.body.innerText.includes('Totali non sommabili'),
+      'Category overlap warning must stay visible',
+    );
+    await render(null);
+    results.push('contextual-help');
 
     const rows = Array.from({ length: 55 }, (_, index) => ({
       id: String(index),

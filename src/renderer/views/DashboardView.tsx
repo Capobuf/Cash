@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -6,6 +7,7 @@ import {
   Clock3,
   FileText,
   FilePlus2,
+  Info,
   Settings2,
   WalletCards,
 } from 'lucide-react';
@@ -15,6 +17,11 @@ import { createManualProfile, type CashDocument } from '../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Card,
   CardContent,
@@ -48,6 +55,7 @@ export function DashboardView({
   onOpenQuote: (id: string) => void;
   onNewQuote: () => void;
 }) {
+  const hourlyHelpId = useId();
   const profile = doc.profiles.find((entry) => entry.year === year);
   const calculated = profile?.confirmed
     ? calculateProfile(profile, doc.businessCosts)
@@ -104,8 +112,8 @@ export function DashboardView({
               Il suo valore.
             </h2>
             <p className="mt-4 max-w-lg text-sm leading-relaxed text-foreground/75">
-              Dai una base economica alle tue offerte. Componi tempi, spese e
-              trasferte: il prezzo finale resta una tua scelta.
+              Tempi, spese e trasferte per valutare il tuo lavoro. Il prezzo
+              finale lo scegli tu.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button size="lg" className="h-11 px-4" onClick={onNewQuote}>
@@ -130,7 +138,27 @@ export function DashboardView({
           </div>
           <div className="dashboard-enter dashboard-value min-w-0 rounded-xl border border-border bg-card/90 p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium">Valore orario obiettivo</p>
+              <div className="flex items-center gap-1">
+                <p className="text-sm font-medium">Valore orario obiettivo</p>
+                <Tooltip>
+                  <TooltipTrigger
+                    aria-describedby={hourlyHelpId}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Come interpretare il valore orario"
+                      />
+                    }
+                  >
+                    <Info aria-hidden="true" />
+                  </TooltipTrigger>
+                  <TooltipContent id={hourlyHelpId} role="tooltip">
+                    Il valore da generare per ogni ora dedicata ai clienti. Un
+                    riferimento economico, non una tariffa obbligatoria.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Badge variant="secondary">{year}</Badge>
             </div>
             <p className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums">
@@ -141,11 +169,11 @@ export function DashboardView({
                 €/h
               </span>
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-card-foreground/75">
-              {values
-                ? 'Il valore da generare per ogni ora dedicata ai clienti. Un riferimento economico, non una tariffa obbligatoria.'
-                : unavailableNote}
-            </p>
+            {!values ? (
+              <p className="mt-3 text-sm leading-relaxed text-card-foreground/75">
+                {unavailableNote}
+              </p>
+            ) : null}
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
               <span className="flex items-center gap-2 text-xs font-medium">
                 {values ? (
@@ -177,7 +205,7 @@ export function DashboardView({
           note={
             profile
               ? profile.confirmed
-                ? `Obiettivo annuale ${profile.year}`
+                ? undefined
                 : 'Obiettivo del profilo da verificare'
               : 'Profilo non configurato'
           }
@@ -191,7 +219,7 @@ export function DashboardView({
               ? 'Stima interna non contabile'
               : values
                 ? 'Proiezione fiscale non disponibile'
-                : profileStatus
+                : undefined
           }
         />
         <Metric
@@ -199,9 +227,7 @@ export function DashboardView({
           label="Capacità cliente"
           value={values ? hours(values.availableClientMinutes) : '—'}
           note={
-            values
-              ? `${values.availableDays} giorni disponibili`
-              : profileStatus
+            values ? `${values.availableDays} giorni disponibili` : undefined
           }
         />
       </div>
@@ -211,9 +237,6 @@ export function DashboardView({
           <CardHeader>
             <div>
               <CardTitle>Preventivi recenti</CardTitle>
-              <CardDescription>
-                Riprendi rapidamente il lavoro dove lo avevi lasciato.
-              </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
@@ -283,16 +306,11 @@ export function DashboardView({
               <div>
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   <CalendarDays className="size-4" aria-hidden="true" />
-                  Profilo annuale{' '}
-                  {profile ? (
-                    <Badge variant="secondary">
-                      {profile.confirmed ? 'Confermato' : 'Da verificare'}
-                    </Badge>
-                  ) : null}
+                  Profilo annuale
                 </CardTitle>
                 <CardDescription>
                   {profile
-                    ? `Profilo ${profile.year} · revisione ${profile.revision}`
+                    ? `Revisione ${profile.revision}`
                     : 'Nessun profilo annuale'}
                 </CardDescription>
               </div>
@@ -347,15 +365,7 @@ export function DashboardView({
                 </ul>
               </AlertDescription>
             </Alert>
-          ) : (
-            <Alert>
-              <CheckCircle2 />
-              <AlertTitle>Configurazione operativa</AlertTitle>
-              <AlertDescription>
-                Hai i dati essenziali per preventivi e trasferte.
-              </AlertDescription>
-            </Alert>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -371,7 +381,7 @@ function Metric({
   icon: typeof Clock3;
   label: string;
   value: string;
-  note: string;
+  note?: string;
 }) {
   return (
     <Card className="dashboard-enter min-w-0 gap-3 transition-colors duration-200 hover:bg-secondary/20 hover:ring-primary/40 [--card-spacing:--spacing(5)]">
@@ -386,9 +396,11 @@ function Metric({
           {value}
         </p>
       </CardHeader>
-      <CardContent className="mt-auto">
-        <CardDescription className="text-xs">{note}</CardDescription>
-      </CardContent>
+      {note ? (
+        <CardContent className="mt-auto">
+          <CardDescription className="text-xs">{note}</CardDescription>
+        </CardContent>
+      ) : null}
     </Card>
   );
 }

@@ -90,6 +90,50 @@ function expectConservativeFlow(
 }
 
 describe('panoramica finanziaria unificata', () => {
+  it('distinguishes invoice counters, including zero, without changing amounts', () => {
+    const doc = fixture();
+    doc.financialSnapshot!.issuedDocuments.push(
+      invoice('2500.00', {
+        payments: [
+          { amount: '2500.00', status: 'not_paid', dueDate: '2026-09-01' },
+        ],
+      }),
+      invoice('4000.00', {
+        payments: [
+          { amount: '4000.00', status: 'not_paid', dueDate: '2026-12-01' },
+        ],
+      }),
+    );
+    const result = overview(doc);
+    expect(result).toMatchObject({
+      outstandingRevenue: '6500.00',
+      overdueRevenue: '2500.00',
+    });
+    expect(result.analysis).toMatchObject({
+      outstandingInvoiceCount: 2,
+      overdueInvoiceCount: 1,
+    });
+    const card = htmlFor(result)
+      .split('Da incassare')[1]!
+      .split('Imposte P.IVA')[0]!;
+    expect(card).toContain('6.500,00');
+    expect(card).toContain('2.500,00');
+    expect(card).toMatch(/>2<\/span><span>fatture aperte<\/span>/);
+    expect(card).toMatch(/>1<\/span><span>scaduta<\/span>/);
+    const zero = htmlFor(overview(fixture()))
+      .split('Da incassare')[1]!
+      .split('Imposte P.IVA')[0]!;
+    expect(zero).toMatch(/>0<\/span><span>fatture aperte<\/span>/);
+    expect(zero).toMatch(/>0<\/span><span>scadute<\/span>/);
+    expect(zero).not.toContain('Scaduto:');
+    const missing = htmlFor(overview(createEmptyDocument()))
+      .split('Da incassare')[1]!
+      .split('Imposte P.IVA')[0]!;
+    expect(missing).toContain('Non disponibile');
+    expect(missing).toContain('Conteggi fatture non disponibili');
+    expect(missing).not.toContain('>0</span>');
+  });
+
   it('usa il totale del commercialista sottraendo il pagato una sola volta e preserva la stima', () => {
     const doc = fixture();
     const automatic = overview(doc).analysis?.fiscalProjection;

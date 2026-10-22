@@ -841,10 +841,6 @@ function QuotesList({
       <CardHeader>
         <div>
           <CardTitle>Preventivi</CardTitle>
-          <CardDescription>
-            Spazio di lavoro libero: nessuno stato commerciale e nessun wizard
-            obbligatorio.
-          </CardDescription>
         </div>
         <CardAction>
           <Button onClick={onNew}>
