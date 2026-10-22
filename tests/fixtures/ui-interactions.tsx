@@ -748,6 +748,24 @@ export async function runUiChecks() {
 
     const helpDoc = structuredClone(doc);
     helpDoc.profiles[0]!.confirmed = true;
+    helpDoc.fiscalPaymentOverrides = [{ year: 2026, total: '12582.66' }];
+    helpDoc.financialSnapshot = {
+      source: 'fatture_in_cloud',
+      company: { id: 'company', name: 'Studio di prova' },
+      acquiredAt: '2026-10-22T10:00:00Z',
+      issuedDocuments: [
+        {
+          id: 'invoice',
+          type: 'invoice',
+          date: '2026-10-01',
+          amountGross: '2000.00',
+          payments: [
+            { amount: '2000.00', status: 'paid', paidDate: '2026-10-01' },
+          ],
+        },
+      ],
+      receivedDocuments: [],
+    };
     await render(
       <TooltipProvider>
         <DashboardView
@@ -759,12 +777,19 @@ export async function runUiChecks() {
           onNewQuote={() => {}}
         />
         <BankSummaryView doc={doc} year={2026} />
+        <FinancialOverviewDashboard
+          overview={calculateFinancialOverview(helpDoc, 2026, '2026-10-22')}
+        />
       </TooltipProvider>,
     );
     for (const [label, explanation] of [
       ['Come interpretare il valore orario', 'non una tariffa obbligatoria'],
       ['Netto fiscale stimato', 'Stima interna non contabile'],
       ['Capacità cliente', 'giorni disponibili'],
+      ['Incassato', 'Obiettivo 2026'],
+      ['Fatturato emesso', 'Obiettivo 2026'],
+      ['Uscite dal conto', 'uscite incluse nei conteggi. Uscite / Incassato'],
+      ['Ancora da versare', 'Totale commercialista: 12.582,66'],
       ['Come leggere il flusso delle spese', 'Più categorie'],
       [
         'Perché i totali delle categorie non sono sommabili',
@@ -1231,7 +1256,17 @@ export async function runUiChecks() {
         appState={siteState}
         doc={savedSites}
         client={client}
-        details={{ ...client, fields: [] }}
+        details={{
+          ...client,
+          fields: [
+            { key: 'name', value: client.displayName },
+            { key: 'email', value: 'cliente@example.com' },
+            { key: 'bank_iban', value: 'IBAN dimostrativo' },
+            { key: 'notes', value: 'Note del cliente' },
+            { key: 'custom_field', value: 'Campo aggiuntivo' },
+            { key: 'internal_id', value: 'private-identifier' },
+          ],
+        }}
         loading={false}
         onClose={() => {}}
         onOpenQuote={() => {}}
@@ -1245,6 +1280,20 @@ export async function runUiChecks() {
         document.body.innerText.includes('Sede Nord') &&
         document.body.innerText.includes('Sede Sud'),
       'Created sites missing from client details',
+    );
+    check(
+      [
+        'Anagrafica',
+        'Contatti e indirizzo',
+        'Fatturazione e pagamenti',
+        'Altre informazioni',
+        'cliente@example.com',
+        'IBAN dimostrativo',
+        'Note del cliente',
+        'Campo aggiuntivo',
+      ].every((text) => document.body.innerText.includes(text)) &&
+        !document.body.innerText.includes('private-identifier'),
+      'Client field grouping lost data or exposed an internal identifier',
     );
     results.push('quote-sites');
     return results;

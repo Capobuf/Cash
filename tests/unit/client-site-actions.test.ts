@@ -1,4 +1,4 @@
-import { createElement, type ReactNode } from 'react';
+import { Children, createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createEmptyDocument, meta } from '../../src/domain/model';
@@ -22,10 +22,14 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     children,
     onClick,
   }: {
-    children: string;
+    children: ReactNode;
     onClick: () => void;
   }) => {
-    actions.set(children, onClick);
+    const label = Children.toArray(children)
+      .filter((child) => typeof child === 'string')
+      .join('')
+      .trim();
+    actions.set(label, onClick);
     return null;
   },
 }));
@@ -99,7 +103,7 @@ it('imposta la partenza dalla scheda cliente senza aprire o modificare la sede',
   expect(state.document?.sites).toEqual(document.sites);
   expect(onEditSite).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
-  actions.get('Modifica')!();
+  actions.get('Modifica sede')!();
   expect(onEditSite).toHaveBeenCalledWith(client, site);
 
   state.mutate((current) => {

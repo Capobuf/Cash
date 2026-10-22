@@ -44,7 +44,7 @@ l'archivio personale né chiamano servizi esterni.
 
 ## Verifiche
 
-### Scheda cliente: aggiornamento successivo
+### Scheda cliente
 
 La scheda cliente presenta intestazione e pulsante di chiusura fissi, dati
 raggruppati in anagrafica, contatti, fatturazione e altre informazioni, sedi in
@@ -54,15 +54,14 @@ I preventivi e gli stati vuoti hanno una gerarchia visiva coerente.
 Anteprime con dati dimostrativi: [tema chiaro](images/issue-83/after/client-detail-light.png)
 e [tema scuro](images/issue-83/after/client-detail-dark.png).
 
-### KPI finanziarie e navigazione: aggiornamento successivo
+### KPI finanziarie e navigazione
 
 Rimossa la sottolineatura dai titoli con tooltip in Panoramica. Le KPI finanziarie
 usano importi più compatti, icone e una griglia di altezze uniformi. Titoli su una
 o due righe mantengono gli importi allineati; i dettagli si allineano in basso.
 “Da incassare” mostra il conteggio delle fatture aperte come testo e una sola
 riga separata per numero e importo delle scadute, senza badge impilati.
-Conteggio uscite,
-rapporto uscite/incassato, obiettivo e totale del commercialista sono nei tooltip
+Conteggio uscite, rapporto uscite/incassato, obiettivo e totale del commercialista sono nei tooltip
 dei titoli; avanzamento, scaduti, dati mancanti e azioni restano visibili.
 
 La sidebar di Cash usa `position: sticky`, altezza della finestra e scorrimento
@@ -72,12 +71,12 @@ Anteprime: [KPI chiare](images/issue-83/after/financial-kpi-light.png),
 [KPI scure](images/issue-83/after/financial-kpi-dark.png),
 [sidebar durante lo scorrimento](images/issue-83/after/sidebar-sticky.png).
 
-**Test su questi aggiornamenti rimandati su richiesta dell’utente**, fino al
-termine delle ulteriori modifiche. I risultati sotto si riferiscono al commit
-`96e5dc2`, precedente alle revisioni della scheda cliente, delle KPI finanziarie
-e della sidebar.
+### Esito finale del 22 ottobre 2026
 
-### Verifiche precedenti
+I controlli includono tutte le modifiche alla scheda cliente, alle KPI e alla
+sidebar. Aggiornate le asserzioni legate ai vecchi badge e ai testi spostati nei
+tooltip; i tooltip finanziari sono verificati aprendoli nel DOM Electron.
+Il test delle azioni sulle sedi riconosce ora le etichette insieme alle icone.
 
 - Catture prima/dopo di Panoramica, lista e dettaglio preventivi, Panoramica
   finanziaria, Spese/Riepilogo e Spese/Categorie in entrambi i temi, a 1440 px e
@@ -85,9 +84,19 @@ e della sidebar.
   orizzontale della pagina a 960 px; tabelle e Sankey mantengono lo scorrimento
   interno previsto. Verificati anche lista e menu Clienti con il nuovo font.
   Una sola voce con `aria-current` per vista.
-- Tab raggiunge tutti e cinque i nuovi aiuti con focus visibile; testo del
+- Tab raggiunge i cinque aiuti di Panoramica e Spese con focus visibile; testo del
   tooltip associato con `aria-describedby` e `role="tooltip"`. Escape e
-  passaggio al controllo successivo verificati in Electron.
+  passaggio al controllo successivo verificati in Electron. Il test di
+  interazione verifica anche focus, Escape, associazione ARIA e contenuti dei
+  quattro tooltip finanziari: incassato, fatturato emesso, uscite e residuo fiscale.
+- Griglia KPI: altezze uniformi, importi allineati per riga e assenza di overflow
+  a 1440×1000 e 1280×900; ripetuto a 960×700 e 960×560 con testo al 125%.
+  A 1.200 px di scorrimento la sidebar resta a `top: 0`; la voce Impostazioni
+  è raggiungibile tramite lo scorrimento interno anche a 560 px di altezza.
+- Scheda cliente: nessun overflow orizzontale a 960×700 e 600×600 con testo al
+  125%, e a 375×667. Intestazione e chiusura rimangono ferme mentre scorre il
+  contenuto. Il test conferma che il raggruppamento preserva anche i campi
+  aggiuntivi, esclude gli identificatori interni e conserva le sedi collegate.
 - `prefers-reduced-motion: reduce`: nessuna animazione attiva nelle tre viste
   con grafici/panoramica; transizione sidebar pari a `0s`. I grafici mantengono
   il supporto nativo Recharts tramite `isAnimationActive="auto"`.
@@ -96,9 +105,9 @@ e della sidebar.
   nessun overflow della card e nessuna sostituzione dei dati mancanti con zero.
 - `npm run typecheck`: superato.
 - `npm run lint`: superato.
-- `npm test -- --bail=1`: **83 file, 1.051 test superati** (circa 23 secondi).
+- `npm test -- --bail=1`: **83 file, 1.051 test superati** (25,52 secondi).
 - `npm run build`: superato.
-- Prettier sui file modificati e `git diff --check`: superati.
+- `npm run format:check` sull’intero repository e `git diff --check`: superati.
 
 Ulteriori evidenze: [aiuto valore orario da tastiera](images/issue-83/after/hourly-help-keyboard.png),
 [giorni disponibili da tastiera](images/issue-83/after/capacity-help-keyboard.png),

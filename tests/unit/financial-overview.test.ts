@@ -118,20 +118,21 @@ describe('panoramica finanziaria unificata', () => {
       .split('Imposte P.IVA')[0]!;
     expect(card).toContain('6.500,00');
     expect(card).toContain('2.500,00');
-    expect(card).toMatch(/>2<\/span><span>fatture aperte<\/span>/);
-    expect(card).toMatch(/>1<\/span><span>scaduta<\/span>/);
+    expect(card).toContain('2 fatture aperte');
+    expect(card).toContain('1 scaduta');
     const zero = htmlFor(overview(fixture()))
       .split('Da incassare')[1]!
       .split('Imposte P.IVA')[0]!;
-    expect(zero).toMatch(/>0<\/span><span>fatture aperte<\/span>/);
-    expect(zero).toMatch(/>0<\/span><span>scadute<\/span>/);
-    expect(zero).not.toContain('Scaduto:');
+    expect(zero).toContain('0 fatture aperte');
+    expect(zero).toContain('Nessuna fattura scaduta');
+    expect(zero).not.toContain('text-destructive');
     const missing = htmlFor(overview(createEmptyDocument()))
       .split('Da incassare')[1]!
       .split('Imposte P.IVA')[0]!;
     expect(missing).toContain('Non disponibile');
     expect(missing).toContain('Conteggi fatture non disponibili');
-    expect(missing).not.toContain('>0</span>');
+    expect(missing).not.toContain('0 fatture aperte');
+    expect(missing).not.toContain('Nessuna fattura scaduta');
   });
 
   it('usa il totale del commercialista sottraendo il pagato una sola volta e preserva la stima', () => {
@@ -155,7 +156,8 @@ describe('panoramica finanziaria unificata', () => {
     expect(result.analysis?.fiscalProjection).toEqual(automatic);
     expectConservativeFlow(buildFinancialOverviewFlow(result));
     const html = htmlFor(result);
-    expect(html).toContain('Totale commercialista');
+    expect(html).toContain('Ancora da versare');
+    expect(html).toContain('4.149,33');
     expect(html).toContain('Stima anno e acconti sono distinti');
     expect(html).toContain('Disponibilità stimata');
     expect(html).toContain('17.417,34');
@@ -248,7 +250,6 @@ describe('panoramica finanziaria unificata', () => {
       'Uscite dal conto',
       'Margine dopo le uscite',
       'Uscite bancarie per categoria',
-      'Uscite / Incassato',
     ])
       expect(html).toContain(label);
   });
