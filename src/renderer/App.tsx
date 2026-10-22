@@ -7,6 +7,7 @@ import { BankCategoriesView } from './views/BankCategoriesView';
 import { touch, type CashDocument } from '../domain/model';
 import { copyProfileToYear } from '../domain/profiles';
 import { addQuote } from '../domain/quotes';
+import { removeQuoteItem } from '../domain/quote-layout';
 import {
   AppShell,
   ArchiveLoading,
@@ -366,10 +367,7 @@ function ArchiveWorkspace({
         const quote = document.quotes.find(
           (entry) => entry.id === activeQuoteId,
         );
-        if (quote)
-          touch(quote).items = quote.items.filter(
-            (entry) => entry.id !== target.id,
-          );
+        if (quote) removeQuoteItem(touch(quote), target.id);
       } else if (target.kind === 'sub') {
         const [itemId, subId] = target.id.split(':');
         const quote = document.quotes.find(
@@ -415,6 +413,7 @@ function ArchiveWorkspace({
       />
     ) : view === 'quotes' ? (
       <QuotesView
+        key={`${doc.documentId}:${appState.archiveContext}:${activeQuoteId}`}
         doc={doc}
         hasToken={ficUi.hasToken}
         appState={appState}

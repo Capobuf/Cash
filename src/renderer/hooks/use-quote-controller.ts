@@ -24,6 +24,13 @@ import {
   type SubItemDefinition,
 } from '../../domain/model';
 import { addQuote } from '../../domain/quotes';
+import {
+  appendQuoteItems,
+  orderedQuoteItems,
+  quoteLayout,
+  removeQuoteContainer,
+} from '../../domain/quote-layout';
+import type { QuoteLayoutEntry } from '../../domain/model';
 import { refreshQuote, snapshotProfile } from '../../domain/refresh';
 import { applyVariantSelections, changeVariant } from '../../domain/variants';
 import type { AppState } from '../state';
@@ -73,7 +80,10 @@ export function useQuoteController({
   const archivePath = appState.session?.path;
   const archiveContext = appState.archiveContext;
 
-  const guardQuoteContext = (expectedQuote = quote) => {
+  const guardQuoteContext = (
+    expectedQuote = quote,
+    requireUnchanged = true,
+  ) => {
     const expected = JSON.stringify(expectedQuote);
     const settings = JSON.stringify(doc.settings);
     return () => {
@@ -87,8 +97,9 @@ export function useQuoteController({
         appState.document?.documentId !== doc.documentId ||
         appState.session?.readOnly ||
         appState.status === 'Conflitto esterno' ||
-        JSON.stringify(current) !== expected ||
-        JSON.stringify(appState.document.settings) !== settings
+        (requireUnchanged &&
+          (JSON.stringify(current) !== expected ||
+            JSON.stringify(appState.document.settings) !== settings))
       ) {
         appState.setError({
           code: 'CONFLICT',
@@ -343,19 +354,78 @@ export function useQuoteController({
     await clients.search(query);
   };
 
-  const addItem = (name: string) => {
-    if (!quote) return false;
-    return appState.mutate((document) =>
-      touch(document.quotes.find((entry) => entry.id === quote.id)!).items.push(
-        {
-          ...meta(),
-          name: name.trim(),
-          subItems: [],
-          variantGroups: [],
-          variantSelections: [],
-        },
+  const hasContainer = (containerId?: string) =>
+    !containerId ||
+    appState.document?.quotes
+      .find((entry) => entry.id === quote?.id)
+      ?.layout?.some(
+        (entry) => entry.kind === 'container' && entry.id === containerId,
+      );
+
+  const saveLayout = (layout: QuoteLayoutEntry[]) => {
+    if (!quote || !guardQuoteContext()()) return false;
+    if (JSON.stringify(quoteLayout(quote)) === JSON.stringify(layout))
+      return true;
+    return appState.mutate((document) => {
+      touch(document.quotes.find((entry) => entry.id === quote.id)!).layout =
+        layout;
+    });
+  };
+
+  const addContainer = () =>
+    quote
+      ? saveLayout([
+          ...quoteLayout(quote),
+          {
+            kind: 'container',
+            id: meta().id,
+            name: 'Nuovo contenitore',
+            itemIds: [],
+          },
+        ])
+      : false;
+
+  const renameContainer = (id: string, name: string) => {
+    if (!quote || !name.trim() || !hasContainer(id)) return false;
+    return saveLayout(
+      quoteLayout(quote).map((entry) =>
+        entry.kind === 'container' && entry.id === id
+          ? { ...entry, name: name.trim() }
+          : entry,
       ),
     );
+  };
+
+  const deleteContainer = (id: string) =>
+    quote && hasContainer(id)
+      ? saveLayout(removeQuoteContainer(quoteLayout(quote), id))
+      : false;
+
+  const addItem = (name: string, containerId?: string) => {
+    if (
+      !quote ||
+      !guardQuoteContext(quote, false)() ||
+      !hasContainer(containerId)
+    )
+      return false;
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      appendQuoteItems(
+        target,
+        [
+          {
+            ...meta(),
+            name: name.trim(),
+            subItems: [],
+            variantGroups: [],
+            variantSelections: [],
+          },
+        ],
+        containerId,
+      );
+    });
   };
 
   const renameItem = (itemId: string, name: string) => {
@@ -655,8 +725,9 @@ export function useQuoteController({
     templateId: string,
     choices: Record<string, string>,
     context: TravelContext,
+    containerId?: string,
   ) => {
-    if (!quote) return false;
+    if (!quote || !hasContainer(containerId)) return false;
     const isCurrent = guardQuoteContext();
     if (!isCurrent()) return false;
     const sourceTemplate = doc.catalog.templates.find(
@@ -748,16 +819,20 @@ export function useQuoteController({
       }
       prepared.push(applied.value);
     }
-    return appState.mutate((document) =>
-      touch(document.quotes.find((entry) => entry.id === quote.id)!).items.push(
-        ...prepared,
-      ),
-    );
+    if (!isCurrent()) return false;
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      appendQuoteItems(target, prepared, containerId);
+    });
   };
 
   const saveTemplate = (name: string, itemIds: string[]) => {
     if (!quote) return false;
-    const items = quote.items.filter((item) => itemIds.includes(item.id));
+    const items = orderedQuoteItems(quote).filter((item) =>
+      itemIds.includes(item.id),
+    );
     const built = templateFromQuote(name, items);
     if (!built.ok) {
       appState.setError(built.error);
@@ -1011,6 +1086,10 @@ export function useQuoteController({
     updateClient,
     searchRemoteClients,
     addItem,
+    addContainer,
+    renameContainer,
+    deleteContainer,
+    saveLayout,
     renameItem,
     updateChosenPrice,
     updateReferencePrice,

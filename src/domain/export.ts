@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { orderedQuoteItems } from './quote-layout';
 import {
   err,
   meta,
@@ -29,7 +30,10 @@ export function buildExportLines(
   const byId = new Map(quote.items.map((item) => [item.id, item]));
   const selectedGroups =
     groups ??
-    quote.items.map((item) => ({ itemIds: [item.id], description: item.name }));
+    orderedQuoteItems(quote).map((item) => ({
+      itemIds: [item.id],
+      description: item.name,
+    }));
   if (selectedGroups.length === 0)
     return err({
       code: 'VALIDATION',

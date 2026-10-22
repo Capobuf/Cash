@@ -319,6 +319,10 @@ export interface ExportAttempt extends EntityMeta {
   diagnostic?: string;
 }
 
+export type QuoteLayoutEntry =
+  | { kind: 'item'; itemId: string }
+  | { kind: 'container'; id: string; name: string; itemIds: string[] };
+
 export interface Quote extends EntityMeta {
   number: number;
   date: string;
@@ -327,6 +331,7 @@ export interface Quote extends EntityMeta {
   client?: ClientSnapshot;
   mainSite?: SiteSnapshot;
   items: QuoteItem[];
+  layout?: QuoteLayoutEntry[];
   commission?: DecimalString;
   snapshotRevision: number;
   snapshotUpdatedAt?: string;
