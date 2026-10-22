@@ -62,6 +62,12 @@ app.whenReady().then(async () => {
     result.push(await window.webContents.executeJavaScript('WorkspaceChecks.runFinancialFlowChecks()', true));
     // Exercise both motion preferences independently of the runner's OS settings.
     window.webContents.debugger.attach('1.3');
+    for (const width of [375, 768, 1024, 1280, 1440]) {
+      await window.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
+      await window.webContents.executeJavaScript('WorkspaceChecks.runQuoteClientLayoutChecks()');
+    }
+    await window.webContents.debugger.sendCommand('Emulation.clearDeviceMetricsOverride');
+    result.push('quote-client-layout');
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await window.webContents.executeJavaScript('WorkspaceChecks.renderMotionPreview(false)');
     const painted = async () => window.webContents.executeJavaScript("Promise.all(document.getAnimations().filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))).then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
@@ -116,6 +122,7 @@ app.whenReady().then(async () => {
         'backup-controls',
         'bank-import',
         'financial-flow',
+        'quote-client-layout',
         'reduced-motion',
       ];
       expect(JSON.parse(result!.slice('WORKSPACE_RESULT:'.length))).toEqual(
