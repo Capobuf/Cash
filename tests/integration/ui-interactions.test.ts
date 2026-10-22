@@ -99,7 +99,7 @@ app.whenReady().then(async () => {
         electron,
         [runner, '--no-sandbox', '--disable-gpu'],
         {
-          timeout: 25000,
+          timeout: 60000,
           windowsHide: true,
           env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
           maxBuffer: 1024 * 1024,
@@ -134,5 +134,6 @@ app.whenReady().then(async () => {
         await rm(directory, { recursive: true, force: true });
     }
   },
-  30000,
+  // Include bundling, CSS compilation, Electron startup and cleanup on hosted Windows.
+  90000,
 );

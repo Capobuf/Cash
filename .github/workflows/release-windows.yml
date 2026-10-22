@@ -54,7 +54,11 @@ jobs:
         run: npm run lint
 
       - name: Tests
-        run: npm test
+        run: npm test -- --exclude 'tests/performance/**' --bail=1
+
+      # Measure timing budgets without competing with the integration suite.
+      - name: Performance tests
+        run: npm test -- tests/performance --maxWorkers=1 --bail=1
 
       - name: Build Windows installer and portable
         run: npm run package:win
