@@ -50,7 +50,15 @@ describe('titoli e riepilogo nelle viste dei preventivi', () => {
           onNewQuote={vi.fn()}
         />,
       );
-    for (const name of ['MCH Italia', 'Altro cliente', undefined]) {
+    for (const [name, customTitle] of [
+      ['MCH Italia', undefined],
+      ['Altro cliente', undefined],
+      [undefined, undefined],
+      ['MCH Italia', 'Configurazione rete sede nord'],
+      ['Altro cliente', 'Configurazione rete sede nord'],
+      [undefined, 'Configurazione rete sede nord'],
+    ]) {
+      quote.customTitle = customTitle;
       quote.client = name
         ? {
             source: 'fatture_in_cloud',
@@ -59,7 +67,8 @@ describe('titoli e riepilogo nelle viste dei preventivi', () => {
             displayName: name,
           }
         : undefined;
-      const title = name ? `${name} - Preventivo #12` : 'Preventivo #12';
+      const title =
+        customTitle ?? (name ? `${name} - Preventivo #12` : 'Preventivo #12');
       const list = renderQuotes();
       const detail = renderQuotes(quote.id);
       const dashboard = renderDashboard();

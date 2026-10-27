@@ -320,6 +320,18 @@ export function useQuoteController({
     return updated ? 'updated' : 'invalid';
   };
 
+  const renameQuote = (title: string) => {
+    if (!quote) return false;
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      const customTitle = title.trim();
+      if (customTitle) target.customTitle = customTitle;
+      else delete target.customTitle;
+    });
+  };
+
   const updateClient = (client?: FicClientSnapshot) => {
     if (!quote) return false;
     return appState.mutate((document) => {
@@ -1083,6 +1095,7 @@ export function useQuoteController({
     loadMoreClients: clients.loadMore,
     newQuote,
     updateQuote,
+    renameQuote,
     updateClient,
     searchRemoteClients,
     addItem,

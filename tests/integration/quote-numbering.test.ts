@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createEmptyDocument, type Result } from '../../src/domain/model';
-import { addQuote } from '../../src/domain/quotes';
+import { addQuote, quoteTitle } from '../../src/domain/quotes';
 import {
   createArchive,
   saveArchive,
@@ -59,6 +59,33 @@ function downgrade(path: string) {
 }
 
 describe('numerazione persistente dei preventivi', () => {
+  it('apre i preventivi esistenti e conserva titolo personalizzato e ripristino dopo riapertura SQLite', async () => {
+    const path = join(await directory(), 'Cash.sqlite');
+    const document = comprehensiveDocument();
+    const before = structuredClone(document.quotes[0]!);
+    let session = unwrap(await createArchive(path, document));
+    closeArchive(path);
+    session = unwrap(await openArchive(path));
+    expect(session.document!.quotes[0]).toEqual(before);
+    expect(session.document!.quotes[0]).not.toHaveProperty('customTitle');
+    const automaticTitle = quoteTitle(before);
+    let next = structuredClone(session.document!);
+    next.quotes[0]!.customTitle = 'Configurazione rete sede nord';
+    unwrap(await saveArchive(path, next, session.token));
+    closeArchive(path);
+    session = unwrap(await openArchive(path));
+    const renamed = session.document!.quotes[0]!;
+    expect(quoteTitle(renamed)).toBe('Configurazione rete sede nord');
+    expect({ ...renamed, customTitle: undefined }).toEqual(before);
+    expect(session.document!.nextQuoteNumber).toBe(document.nextQuoteNumber);
+    next = structuredClone(session.document!);
+    delete next.quotes[0]!.customTitle;
+    unwrap(await saveArchive(path, next, session.token));
+    closeArchive(path);
+    session = unwrap(await openArchive(path));
+    expect(quoteTitle(session.document!.quotes[0]!)).toBe(automaticTitle);
+    expect(session.document!.quotes[0]).not.toHaveProperty('customTitle');
+  });
   it('migra un archivio SQLite precedente vuoto con il primo numero disponibile pari a 1', async () => {
     const path = join(await directory(), 'Cash.sqlite');
     unwrap(await createArchive(path, createEmptyDocument()));

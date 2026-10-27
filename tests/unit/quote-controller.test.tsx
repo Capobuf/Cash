@@ -13,6 +13,7 @@ import {
   type ReusableSubItem,
 } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
+import { quoteTitle } from '../../src/domain/quotes';
 import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState } from '../../src/renderer/state';
 import { useQuoteController } from '../../src/renderer/hooks/use-quote-controller';
@@ -639,6 +640,59 @@ describe('esito delle modifiche ai preventivi', () => {
     vi.unstubAllGlobals();
   });
 
+  it('rinomina, aggiorna updatedAt e ripristina il titolo automatico senza alterare i dati del preventivo', async () => {
+    const { controller, state, document, save } = setup();
+    const before = structuredClone(document.quotes[0]!);
+    vi.setSystemTime(new Date(Date.now() + 1000));
+    expect(controller.renameQuote('  Configurazione rete sede nord  ')).toBe(
+      true,
+    );
+    const renamed = state.document!.quotes[0]!;
+    expect(renamed.customTitle).toBe('Configurazione rete sede nord');
+    expect(renamed.updatedAt).not.toBe(before.updatedAt);
+    expect({
+      ...renamed,
+      customTitle: undefined,
+      updatedAt: before.updatedAt,
+    }).toEqual(before);
+    await state.save();
+    expect(save.mock.calls.at(-1)?.[1].quotes[0]!.customTitle).toBe(
+      renamed.customTitle,
+    );
+    expect(
+      controller.updateClient({
+        ...before.client!,
+        displayName: 'Altro cliente',
+      }),
+    ).toBe(true);
+    expect(quoteTitle(state.document!.quotes[0]!)).toBe(renamed.customTitle);
+    expect(controller.renameQuote(' \t ')).toBe(true);
+    expect(state.document!.quotes[0]!).not.toHaveProperty('customTitle');
+    expect(quoteTitle(state.document!.quotes[0]!)).toBe(
+      `Altro cliente - Preventivo #${before.number}`,
+    );
+    expect(controller.renameQuote('Nuovo titolo')).toBe(true);
+    expect(controller.renameQuote('')).toBe(true);
+    expect(state.document!.nextQuoteNumber).toBe(document.nextQuoteNumber);
+  });
+
+  it.each(['readOnly', 'conflict', 'pending'])(
+    'blocca la rinomina se l’archivio non è modificabile: %s',
+    (mode) => {
+      const test = setup();
+      if (mode === 'readOnly')
+        test.state.acceptNativeSession({
+          ...session(test.document),
+          readOnly: true,
+        });
+      if (mode === 'conflict') test.state.status = 'Conflitto esterno';
+      if (mode === 'pending')
+        Object.assign(test.state, { restoringBackup: true });
+      expect(test.controller.renameQuote('Titolo')).toBe(false);
+      expect(test.state.document).toEqual(test.document);
+    },
+  );
+
   it.each(['10,999', '10.999', '-1', 'NaN', 'Infinity'])(
     'rifiuta gli importi non validi %s prima di modificare il preventivo',
     (amount) => {
@@ -753,6 +807,7 @@ describe('esito delle modifiche ai preventivi', () => {
     const mutate = vi.spyOn(test.state, 'mutate').mockReturnValue(false);
     const { controller, item } = test;
     const commands = [
+      () => controller.renameQuote('Titolo'),
       () => controller.addItem('Nuova voce'),
       () => controller.renameItem(item.id, 'Nome aggiornato'),
       () => controller.updateChosenPrice(item.id, '200'),
