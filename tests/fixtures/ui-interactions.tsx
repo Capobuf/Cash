@@ -1135,7 +1135,9 @@ export async function runUiChecks() {
         await click(find('#quote-site'));
         check(
           [...document.querySelectorAll('[role=option]')].some(
-            (option) => option.textContent === name,
+            (option) =>
+              option.textContent ===
+              `${name} · Cliente corrente: ${client.displayName}`,
           ),
           'New site missing from current selector',
         );
@@ -1149,7 +1151,10 @@ export async function runUiChecks() {
         ),
         'Site associated with wrong client',
       );
-      await choose('#quote-site', 'Sede Nord');
+      await choose(
+        '#quote-site',
+        `Sede Nord · Cliente corrente: ${client.displayName}`,
+      );
       const selectedSite = JSON.stringify(
         siteState.document!.quotes[0]!.mainSite,
       );
@@ -1189,7 +1194,10 @@ export async function runUiChecks() {
       await act(async () =>
         siteState.acceptNativeSession(session(structuredClone(savedSites))),
       );
-      await choose('#quote-site', 'Sede Sud');
+      await choose(
+        '#quote-site',
+        `Sede Sud · Cliente corrente: ${client.displayName}`,
+      );
       check(
         siteState.document!.quotes[0]!.mainSite?.name === 'Sede Sud',
         'Reopened site cannot be selected',
@@ -1236,8 +1244,8 @@ export async function runUiChecks() {
       );
       await click(find('#quote-site'));
       check(
-        ![...document.querySelectorAll('[role=option]')].some(
-          (option) => option.textContent === 'Sede Nord',
+        ![...document.querySelectorAll('[role=option]')].some((option) =>
+          option.textContent?.startsWith('Sede Nord ·'),
         ),
         'Site leaked into a different company',
       );

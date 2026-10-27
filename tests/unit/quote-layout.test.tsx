@@ -93,6 +93,108 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('disposizione dei preventivi', () => {
+  it('inserisce attività valide o righe da stimare fra voci senza duplicare dati economici', async () => {
+    const { controller, current, quote, state } = setup();
+    const first = quote.items[0]!.id;
+    expect(controller().addItem('Acquisizione', undefined, first)).toBe(true);
+    expect(
+      controller().addItem('Configurazione', undefined, first, {
+        kind: 'time',
+        description: 'Configurazione NAS',
+        minutes: 90,
+      }),
+    ).toBe(true);
+    expect(orderedQuoteItems(current()).map((item) => item.name)).toEqual([
+      'Router',
+      'Configurazione',
+      'Acquisizione',
+      'Switch',
+      'Firewall',
+    ]);
+    expect(current().items.at(-2)!.subItems).toEqual([]);
+    expect(current().items.at(-2)!.chosenPrice).toBeUndefined();
+    expect(current().items.at(-1)!.subItems).toHaveLength(1);
+    expect(calculateQuote(current().items, '50.00').minutes).toBe(270);
+    const before = structuredClone(current());
+    expect(
+      controller().addItem('Invalida', undefined, first, {
+        kind: 'time',
+        description: 'Zero',
+        minutes: 0,
+      }),
+    ).toBe(false);
+    expect(
+      controller().addItem('Invalida', undefined, first, {
+        kind: 'expense',
+        description: 'Spesa',
+        amount: '-1',
+      }),
+    ).toBe(false);
+    expect(current()).toEqual(before);
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+    await state.save();
+  });
+
+  it('inserisce tutte le voci di un template dopo una riga, anche dentro un contenitore', async () => {
+    const { controller, current, container, template, state } = setup();
+    const first = current().items[0]!.id;
+    expect(
+      await controller().insertTemplate(template.id, {}, {}, undefined, first),
+    ).toBe(true);
+    expect(orderedQuoteItems(current()).map((item) => item.name)).toEqual([
+      'Router',
+      'LAN',
+      'Wi-Fi',
+      'Switch',
+      'Firewall',
+    ]);
+    expect(controller().addContainer('Sede Nord')).toBe(true);
+    const id = container().id;
+    expect(container().name).toBe('Sede Nord');
+    expect(controller().addItem('A', id)).toBe(true);
+    const anchor = current().items.at(-1)!.id;
+    expect(controller().addItem('B', id)).toBe(true);
+    expect(
+      await controller().insertTemplate(template.id, {}, {}, id, anchor),
+    ).toBe(true);
+    expect(
+      container().itemIds.map(
+        (itemId) => current().items.find((item) => item.id === itemId)!.name,
+      ),
+    ).toEqual(['A', 'LAN', 'Wi-Fi', 'B']);
+    expect(
+      new Set(orderedQuoteItems(current()).map((item) => item.id)).size,
+    ).toBe(current().items.length);
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+    await state.save();
+  });
+
+  it('rifiuta inserimenti in posizioni rimosse o spostate e modifiche da un altro archivio', async () => {
+    const { controller, current, state, template } = setup();
+    const previous = controller();
+    const first = current().items[0]!.id;
+    state.mutate((doc) => removeQuoteItem(doc.quotes[0]!, first));
+    const before = structuredClone(current());
+    expect(previous.addItem('Stale', undefined, first)).toBe(false);
+    expect(
+      await controller().insertTemplate(template.id, {}, {}, undefined, first),
+    ).toBe(false);
+    expect(current()).toEqual(before);
+    const stale = controller();
+    state.acceptNativeSession({ ...state.session!, path: 'other.sqlite' });
+    expect(stale.renameItem(current().items[0]!.id, 'Altro')).toBe(false);
+    expect(stale.updateChosenPrice(current().items[0]!.id, '200')).toBe(false);
+    expect(
+      stale.saveSimpleSub(current().items[0]!.id, {
+        kind: 'time',
+        description: 'Attività',
+        minutes: 20,
+      }),
+    ).toBe(false);
+    expect(current()).toEqual(before);
+    await state.save();
+  });
+
   it('lascia i preventivi legacy senza metadati e con ordine e totale originali', () => {
     const { doc, quote } = setup();
     expect(cashDocumentSchema.parse(doc).quotes[0]!.layout).toBeUndefined();

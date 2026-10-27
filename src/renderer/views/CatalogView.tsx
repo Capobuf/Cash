@@ -1,3 +1,4 @@
+import { normalizeSearch, templateSearchText } from '@/lib/template-search';
 import { SelectField } from '@/components/ui/selection-field';
 import { BookOpen, Layers3, Plus, Upload } from 'lucide-react';
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
@@ -539,30 +540,6 @@ export function CatalogView({
       ) : null}
     </>
   );
-}
-
-function normalizeSearch(value: string): string {
-  return value.trim().toLocaleLowerCase('it');
-}
-
-function templateSearchText(template: Template): string {
-  const values = [template.name];
-  for (const item of template.items) {
-    values.push(
-      item.name,
-      ...item.subItems.map((subItem) => subItem.description),
-    );
-    for (const group of item.variantGroups) {
-      values.push(group.name);
-      for (const option of group.options) {
-        values.push(
-          option.name,
-          ...option.subItems.map((subItem) => subItem.description),
-        );
-      }
-    }
-  }
-  return normalizeSearch(values.join(' '));
 }
 
 function templateHasKind(template: Template, kind: Kind): boolean {

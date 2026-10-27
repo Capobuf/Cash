@@ -25,7 +25,6 @@ import {
 } from '../../domain/model';
 import { addQuote } from '../../domain/quotes';
 import {
-  appendQuoteItems,
   orderedQuoteItems,
   quoteLayout,
   removeQuoteContainer,
@@ -36,6 +35,7 @@ import { applyVariantSelections, changeVariant } from '../../domain/variants';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 import { decimalInputValue } from '../lib/format';
+import { canInsertAt, insertQuoteItems } from '../lib/quote-insertion';
 
 export interface TravelInput {
   description: string;
@@ -384,14 +384,14 @@ export function useQuoteController({
     });
   };
 
-  const addContainer = () =>
-    quote
+  const addContainer = (name = 'Nuovo contenitore') =>
+    quote && name.trim()
       ? saveLayout([
           ...quoteLayout(quote),
           {
             kind: 'container',
             id: meta().id,
-            name: 'Nuovo contenitore',
+            name: name.trim(),
             itemIds: [],
           },
         ])
@@ -413,35 +413,45 @@ export function useQuoteController({
       ? saveLayout(removeQuoteContainer(quoteLayout(quote), id))
       : false;
 
-  const addItem = (name: string, containerId?: string) => {
+  const addItem = (
+    name: string,
+    containerId?: string,
+    afterItemId?: string,
+    input?: SimpleSubInput,
+  ) => {
     if (
       !quote ||
       !guardQuoteContext(quote, false)() ||
-      !hasContainer(containerId)
+      !canInsertAt(
+        appState.document!.quotes.find((entry) => entry.id === quote.id)!,
+        { containerId, afterItemId },
+      )
     )
       return false;
+    const sub = input ? prepareSimpleSub(input) : undefined;
+    if (input && !sub) return false;
     return appState.mutate((document) => {
       const target = touch(
         document.quotes.find((entry) => entry.id === quote.id)!,
       );
-      appendQuoteItems(
+      insertQuoteItems(
         target,
         [
           {
             ...meta(),
             name: name.trim(),
-            subItems: [],
+            subItems: sub ? [sub] : [],
             variantGroups: [],
             variantSelections: [],
           },
         ],
-        containerId,
+        { containerId, afterItemId },
       );
     });
   };
 
   const renameItem = (itemId: string, name: string) => {
-    if (!quote) return false;
+    if (!quote || !guardQuoteContext(quote, false)()) return false;
     return appState.mutate((document) => {
       const item = touch(
         touch(
@@ -454,7 +464,7 @@ export function useQuoteController({
   };
 
   const updateChosenPrice = (itemId: string, chosenPrice: string) => {
-    if (!quote) return false;
+    if (!quote || !guardQuoteContext(quote, false)()) return false;
     const value = chosenPrice.trim()
       ? parseDecimalInput(decimalInputValue(chosenPrice), 2)
       : undefined;
@@ -528,12 +538,8 @@ export function useQuoteController({
     });
   };
 
-  const saveSimpleSub = (
-    itemId: string,
-    input: SimpleSubInput,
-    subId?: string,
-  ) => {
-    if (!quote || !input.description.trim()) return false;
+  const prepareSimpleSub = (input: SimpleSubInput) => {
+    if (!input.description.trim()) return undefined;
     if (
       input.kind === 'time' &&
       (!Number.isFinite(input.minutes) || input.minutes <= 0)
@@ -543,17 +549,40 @@ export function useQuoteController({
         field: 'minutes',
         message: 'La durata deve essere maggiore di zero.',
       });
-      return false;
+      return undefined;
     }
     let amount: string | undefined;
     if (input.kind === 'expense') {
       const parsed = parseDecimalInput(decimalInputValue(input.amount), 2);
       if (!parsed.ok) {
         appState.setError({ ...parsed.error, field: 'amount' });
-        return false;
+        return undefined;
       }
       amount = parsed.value;
     }
+    return input.kind === 'time'
+      ? {
+          ...meta(),
+          kind: 'time' as const,
+          description: input.description.trim(),
+          minutes: input.minutes,
+        }
+      : {
+          ...meta(),
+          kind: 'expense' as const,
+          description: input.description.trim(),
+          amount: amount!,
+        };
+  };
+
+  const saveSimpleSub = (
+    itemId: string,
+    input: SimpleSubInput,
+    subId?: string,
+  ) => {
+    if (!quote || !guardQuoteContext(quote, false)()) return false;
+    const sub = prepareSimpleSub(input);
+    if (!sub) return false;
     return appState.mutate((document) => {
       const item = touch(
         touch(
@@ -561,36 +590,21 @@ export function useQuoteController({
         ).items.find((entry) => entry.id === itemId)!,
       );
       const existing = item.subItems.find((entry) => entry.id === subId);
-      if (existing && input.kind === 'time' && existing.kind === 'time') {
-        existing.description = input.description.trim();
-        existing.minutes = input.minutes;
+      if (existing && sub.kind === 'time' && existing.kind === 'time') {
+        existing.description = sub.description;
+        existing.minutes = sub.minutes;
         if (existing.variantOwner) existing.manuallyModified = true;
         touch(existing);
       } else if (
         existing &&
-        input.kind === 'expense' &&
+        sub.kind === 'expense' &&
         existing.kind === 'expense'
       ) {
-        existing.description = input.description.trim();
-        existing.amount = amount!;
+        existing.description = sub.description;
+        existing.amount = sub.amount;
         if (existing.variantOwner) existing.manuallyModified = true;
         touch(existing);
-      } else
-        item.subItems.push(
-          input.kind === 'time'
-            ? {
-                ...meta(),
-                kind: 'time',
-                description: input.description.trim(),
-                minutes: input.minutes,
-              }
-            : {
-                ...meta(),
-                kind: 'expense',
-                description: input.description.trim(),
-                amount: amount!,
-              },
-        );
+      } else item.subItems.push(sub);
     });
   };
 
@@ -738,8 +752,10 @@ export function useQuoteController({
     choices: Record<string, string>,
     context: TravelContext,
     containerId?: string,
+    afterItemId?: string,
   ) => {
-    if (!quote || !hasContainer(containerId)) return false;
+    if (!quote || !canInsertAt(quote, { containerId, afterItemId }))
+      return false;
     const isCurrent = guardQuoteContext();
     if (!isCurrent()) return false;
     const sourceTemplate = doc.catalog.templates.find(
@@ -836,7 +852,7 @@ export function useQuoteController({
       const target = touch(
         document.quotes.find((entry) => entry.id === quote.id)!,
       );
-      appendQuoteItems(target, prepared, containerId);
+      insertQuoteItems(target, prepared, { containerId, afterItemId });
     });
   };
 
