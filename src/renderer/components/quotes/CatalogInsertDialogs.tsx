@@ -1,3 +1,5 @@
+import { normalizeSearch, templateSearchText } from '@/lib/template-search';
+import { siteOptions } from '@/lib/site-options';
 import { Spinner } from '@/components/ui/spinner';
 import { SearchableSelect } from '@/components/ui/selection-field';
 import { Search } from 'lucide-react';
@@ -110,10 +112,7 @@ export function CatalogPickerDialog({
                     onValueChange={(value) => setSiteId(value)}
                     options={[
                       { value: '', label: 'Scegli' },
-                      ...doc.sites.map((site) => ({
-                        value: site.id,
-                        label: site.name,
-                      })),
+                      ...siteOptions(doc.sites, quote.client),
                     ]}
                   />
                 </Field>
@@ -190,9 +189,10 @@ export function InsertTemplateDialog({
     doc.catalog.templates[0]?.id ?? '',
   );
   const templates = doc.catalog.templates.filter((entry) =>
-    entry.name.toLowerCase().includes(query.trim().toLowerCase()),
+    templateSearchText(entry).includes(normalizeSearch(query)),
   );
-  const template = templates.find((entry) => entry.id === templateId);
+  const template =
+    templates.find((entry) => entry.id === templateId) ?? templates[0];
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [siteId, setSiteId] = useState(quote.mainSite?.sourceId ?? '');
   const [vehicleId, setVehicleId] = useState(
@@ -244,7 +244,7 @@ export function InsertTemplateDialog({
               {templates.map((entry) => (
                 <ChoiceButton
                   key={entry.id}
-                  selected={entry.id === templateId}
+                  selected={entry.id === template?.id}
                   title={entry.name}
                   detail={`${entry.items.length} ${entry.items.length === 1 ? 'voce' : 'voci'}`}
                   onClick={() => {
@@ -351,10 +351,7 @@ export function InsertTemplateDialog({
                           onValueChange={(value) => setSiteId(value)}
                           options={[
                             { value: '', label: 'Scegli sede' },
-                            ...doc.sites.map((site) => ({
-                              value: site.id,
-                              label: site.name,
-                            })),
+                            ...siteOptions(doc.sites, quote.client),
                           ]}
                         />
                       </Field>
@@ -479,10 +476,7 @@ export function VariantChangeDialog({
                 onValueChange={(value) => setSiteId(value)}
                 options={[
                   { value: '', label: 'Scegli sede' },
-                  ...doc.sites.map((site) => ({
-                    value: site.id,
-                    label: site.name,
-                  })),
+                  ...siteOptions(doc.sites, quote.client),
                 ]}
               />
             </Field>

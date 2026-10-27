@@ -17,12 +17,16 @@ import {
   ComboboxList,
   ComboboxTrigger,
   ComboboxValue,
+  ComboboxGroup,
+  ComboboxLabel,
+  ComboboxCollection,
 } from './combobox';
 
 export type SelectionOption = {
   value: string;
   label: string | number;
   disabled?: boolean;
+  group?: string;
 };
 type SelectionProps = Pick<
   ComponentProps<typeof SelectTrigger>,
@@ -110,9 +114,22 @@ export function SearchableSelect({
   size,
   ...triggerProps
 }: Omit<SelectionProps, 'defaultValue'>) {
+  const groups = options.some((option) => option.group)
+    ? [...new Set(options.map((option) => option.group ?? ''))].map(
+        (label) => ({
+          label,
+          items: options.filter((option) => (option.group ?? '') === label),
+        }),
+      )
+    : undefined;
+  const renderOption = (option: SelectionOption) => (
+    <ComboboxItem key={option.value} value={option} disabled={option.disabled}>
+      {option.label}
+    </ComboboxItem>
+  );
   return (
-    <Combobox
-      items={options}
+    <Combobox<SelectionOption>
+      items={groups ?? options}
       value={options.find((option) => option.value === String(value)) ?? null}
       name={name}
       required={required}
@@ -151,17 +168,20 @@ export function SearchableSelect({
           }}
         />
         <ComboboxEmpty>Nessuna opzione corrisponde alla ricerca.</ComboboxEmpty>
-        <ComboboxList>
-          {(option: SelectionOption) => (
-            <ComboboxItem
-              key={option.value}
-              value={option}
-              disabled={option.disabled}
-            >
-              {option.label}
-            </ComboboxItem>
-          )}
-        </ComboboxList>
+        {groups ? (
+          <ComboboxList>
+            {(group: { label: string; items: SelectionOption[] }) => (
+              <ComboboxGroup key={group.label} items={group.items}>
+                {group.label ? (
+                  <ComboboxLabel>{group.label}</ComboboxLabel>
+                ) : null}
+                <ComboboxCollection>{renderOption}</ComboboxCollection>
+              </ComboboxGroup>
+            )}
+          </ComboboxList>
+        ) : (
+          <ComboboxList>{renderOption}</ComboboxList>
+        )}
       </ComboboxContent>
     </Combobox>
   );

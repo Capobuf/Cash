@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 import { expect, it } from 'vitest';
 
 it.skipIf(process.platform === 'linux' && !process.env.DISPLAY)(
-  'organizza le card con mouse e tastiera, annulla il drag e conserva controlli, template ed export',
+  'organizza le righe con mouse e tastiera, annulla il drag e conserva controlli, template ed export',
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cash-layout-ui-'));
     try {
@@ -124,13 +124,11 @@ app.whenReady().then(async () => {
     assert.equal(await js('Array.from(document.querySelectorAll("button")).find(e => e.getAttribute("aria-label") === "Rinomina preventivo").disabled'), true);
     await js('Checks.setReadOnly(false)');
     await click('Nuovo contenitore');
-    await click('Rinomina contenitore Nuovo contenitore');
-    await js('Checks.fill("input[id^=container-name-]", "Sede Nord")');
-    await click('Conferma');
+    await js('Checks.fill("#new-container-name", "Sede Nord")');
+    await click('Crea contenitore');
     await click('Nuovo contenitore');
-    await click('Rinomina contenitore Nuovo contenitore');
-    await js('Checks.fill("input[id^=container-name-]", "Sede Sud")');
-    await click('Conferma');
+    await js('Checks.fill("#new-container-name", "Sede Sud")');
+    await click('Crea contenitore');
     let snapshot = await info();
     const [north, south] = snapshot.quote.layout.filter(e => e.kind === 'container').map(e => e.id);
     await drag(handle(ids[0]), drop(north));
@@ -205,6 +203,7 @@ app.whenReady().then(async () => {
       await js('Checks.settle()');
       assert.equal((await info()).overflow, false, 'horizontal overflow at ' + width);
     }
+    await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1200, height: 2400, deviceScaleFactor: 1, mobile: false });
     await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await js('Checks.settle()');
     await drag(handle(ids[0]), drop(south));
@@ -217,6 +216,13 @@ app.whenReady().then(async () => {
     await js('Checks.setReadOnly(true)');
     assert.equal(await js('Array.from(document.querySelectorAll("[data-quote-drag-handle]")).every(e => e.disabled)'), true);
     await js('Checks.setReadOnly(false)');
+    // Leaving an inline edit for the dedicated handle must commit the edit and
+    // still allow that same gesture to move the row.
+    await js('Checks.fill(' + JSON.stringify('#quote-name-' + ids[0]) + ', "Router aggiornato")');
+    assert.equal(await js('document.activeElement?.id'), 'quote-name-' + ids[0], 'inline field focused before pointer drag');
+    await drag(handle(ids[0]), drop('quote-root'));
+    assert.equal((await info()).quote.items.find(item => item.id === ids[0]).name, 'Router aggiornato');
+    assert.deepEqual((await info()).quote.layout.at(-1), { kind: 'item', itemId: ids[0] });
     const beforeSwitch = (await info()).quote;
     // Switch context during a pending pointer operation.
     const start = await point(handle(ids[2]));
@@ -228,6 +234,10 @@ app.whenReady().then(async () => {
     assert.deepEqual((await info()).quote, beforeSwitch);
     const visibleOrder = (await info()).order;
     assert.deepEqual(await js('Checks.showExport()'), visibleOrder, 'export follows visible order');
+    assert.equal(await js('Checks.runOperationalChecks()'), 'OPERATIONAL_UI_OK');
+    if (process.env.CASH_UI_SCREENSHOTS) {
+      writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-operational-table.png'), (await win.webContents.capturePage()).toPNG());
+    }
     process.stdout.write('LAYOUT_UI_OK\n', () => app.exit(0));
   } catch(error) {
     process.stderr.write(String(error) + '\n' + JSON.stringify(await info().catch(() => ({}))) + '\n' + await js('document.body.innerText').catch(() => ''), () => app.exit(1));

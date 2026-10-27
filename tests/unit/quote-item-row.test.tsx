@@ -6,9 +6,9 @@ import {
   type QuoteItem,
 } from '../../src/domain/model';
 import {
-  QuoteItemCard,
+  QuoteItemRow,
   type QuoteItemActions,
-} from '../../src/renderer/components/QuoteItemCard';
+} from '../../src/renderer/components/quotes/QuoteItemRow';
 
 function nasItem(): QuoteItem {
   const option = { ...meta(), name: 'Nessuna', subItems: [] };
@@ -32,6 +32,7 @@ function nasItem(): QuoteItem {
 function actions(): QuoteItemActions {
   return {
     rename: vi.fn(),
+    saveSimpleSub: vi.fn(),
     updateChosenPrice: vi.fn(),
     editSub: vi.fn(),
     saveSub: vi.fn(),
@@ -43,7 +44,7 @@ function actions(): QuoteItemActions {
 }
 
 describe('azioni della voce del preventivo', () => {
-  it('mostra direttamente matita e cestino al posto del menu a tre puntini', () => {
+  it('mostra nome editabile e cestino nella riga senza dialog', () => {
     const item = {
       ...meta(),
       name: 'Installazione',
@@ -52,11 +53,12 @@ describe('azioni della voce del preventivo', () => {
       variantSelections: [],
     };
     const html = renderToStaticMarkup(
-      <QuoteItemCard
+      <QuoteItemRow
         item={item}
         doc={createEmptyDocument()}
         actions={{
           rename: vi.fn(),
+          saveSimpleSub: vi.fn(),
           updateChosenPrice: vi.fn(),
           editSub: vi.fn(),
           saveSub: vi.fn(),
@@ -68,14 +70,14 @@ describe('azioni della voce del preventivo', () => {
       />,
     );
 
-    expect(html).toContain('aria-label="Rinomina Installazione"');
+    expect(html).toContain('aria-label="Nome voce Installazione"');
     expect(html).toContain('aria-label="Elimina Installazione"');
     expect(html).not.toContain('aria-label="Azioni per Installazione"');
   });
 
   it('nasconde varianti e attività nella voce chiusa mantenendo il riepilogo', () => {
     const html = renderToStaticMarkup(
-      <QuoteItemCard
+      <QuoteItemRow
         item={nasItem()}
         hourly="100.00"
         doc={createEmptyDocument()}
@@ -90,14 +92,14 @@ describe('azioni della voce del preventivo', () => {
     expect(html).toContain('Prezzo scelto');
     expect(html).toContain('Valore teorico');
     expect(html).toContain(
-      'aria-label="Rinomina Installazione/configurazione NAS"',
+      'aria-label="Nome voce Installazione/configurazione NAS"',
     );
   });
 
   it('rivela varianti e selezione quando si apre un dato tecnico mancante', () => {
     const item = nasItem();
     const html = renderToStaticMarkup(
-      <QuoteItemCard
+      <QuoteItemRow
         item={item}
         hourly="100.00"
         doc={createEmptyDocument()}

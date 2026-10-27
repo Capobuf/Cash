@@ -10,10 +10,13 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import type { Quote, QuoteLayoutEntry } from '../../../domain/model';
 import { quoteLayout } from '../../../domain/quote-layout';
+import type { QuoteInsertionPoint } from '@/lib/quote-insertion';
+import { quoteColumns } from './QuoteItemRow';
+import { commitActiveQuoteInput } from './InlineQuoteInput';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel } from '@/components/ui/field';
 import {
@@ -47,121 +50,228 @@ interface Props {
   quote: Quote;
   disabled: boolean;
   hasTemplates: boolean;
-  renderItem: (id: string, handle: ReactNode) => ReactNode;
+  renderItem: (
+    id: string,
+    handle: ReactNode,
+    insertAfter: () => void,
+  ) => ReactNode;
+  renderInsertion: (
+    point: QuoteInsertionPoint,
+    onClose?: () => void,
+  ) => ReactNode;
   onSave: (layout: QuoteLayoutEntry[]) => boolean;
-  onAddContainer: () => boolean;
+  onAddContainer: (name: string) => boolean;
   onRenameContainer: (id: string, name: string) => boolean;
   onDeleteContainer: (id: string) => boolean;
-  onAddItem: (containerId: string) => void;
   onInsertTemplate: (containerId: string) => void;
 }
 
 export function QuoteLayoutEditor(props: Props) {
   const { quote, disabled, onSave } = props;
   const [draft, setDraft] = useState<QuoteLayoutEntry[]>();
+  const [creating, setCreating] = useState(false);
+  const [containerName, setContainerName] = useState('');
   const pending = useRef<QuoteLayoutEntry[] | undefined>(undefined);
   // Keep the controller's original context guard for the entire gesture.
   const commit = useRef(onSave);
   const layout = draft ?? quoteLayout(quote);
   return (
     <div className="min-w-0 space-y-3">
-      <Button
-        variant="outline"
-        disabled={disabled}
-        onClick={props.onAddContainer}
-      >
-        <FolderPlus />
-        Nuovo contenitore
-      </Button>
-      <p id="quote-drag-help" className="text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-semibold">Lavoro da eseguire</h3>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() => {
+            setContainerName('');
+            setCreating(true);
+          }}
+        >
+          <FolderPlus />
+          Nuovo contenitore
+        </Button>
+      </div>
+      <p id="quote-drag-help" className="sr-only">
         Trascina dalla maniglia. Da tastiera: Spazio per iniziare, frecce per
         spostare, Spazio per confermare, Esc per annullare.
       </p>
-      <DragDropProvider
-        onDragStart={() => {
-          pending.current = quoteLayout(quote);
-          commit.current = onSave;
-        }}
-        onDragOver={(event) => {
-          if (disabled || !pending.current) return;
-          const current = pending.current;
-          const groups: Record<string, string[]> = {
-            [ROOT]: current.map((entry) =>
-              entry.kind === 'item' ? entry.itemId : entry.id,
-            ),
-          };
-          for (const entry of current)
-            if (entry.kind === 'container')
-              groups[groupId(entry.id)] = entry.itemIds;
-          const { source, target } = event.operation;
-          const appendGroup = target?.data.appendGroup;
-          const moved =
-            source && typeof appendGroup === 'string' && groups[appendGroup]
-              ? Object.fromEntries(
-                  Object.entries(groups).map(([group, ids]) => [
-                    group,
-                    [
-                      ...ids.filter((id) => id !== source.id),
-                      ...(group === appendGroup ? [String(source.id)] : []),
-                    ],
-                  ]),
-                )
-              : move(groups, event);
-          // React renders the preview; do not also reorder DOM nodes optimistically.
-          event.preventDefault();
-          if (moved === groups) return;
-          const containers = new Map(
-            current
-              .filter((entry) => entry.kind === 'container')
-              .map((entry) => [entry.id, entry]),
-          );
-          const next = moved[ROOT]!.map((id): QuoteLayoutEntry => {
-            const container = containers.get(id);
-            return container
-              ? { ...container, itemIds: moved[groupId(id)]! }
-              : { kind: 'item', itemId: id };
-          });
-          if (JSON.stringify(next) !== JSON.stringify(current)) {
-            pending.current = next;
-            setDraft(next);
-          }
-        }}
-        onDragEnd={(event) => {
-          const next = pending.current;
-          pending.current = undefined;
-          setDraft(undefined);
-          if (!disabled && !event.canceled && event.operation.target && next)
-            commit.current(next);
-        }}
+      <div
+        className="overflow-x-auto rounded-lg border"
+        role="region"
+        aria-label="Editor operativo del preventivo"
+        tabIndex={0}
       >
-        <div className="space-y-3" data-quote-layout>
-          {layout.map((entry, index) =>
-            entry.kind === 'item' ? (
-              <SortableItem
-                key={entry.itemId}
-                id={entry.itemId}
-                name={
-                  quote.items.find((item) => item.id === entry.itemId)!.name
-                }
-                index={index}
+        <div
+          role="table"
+          aria-label="Voci del preventivo"
+          className="min-w-[840px]"
+        >
+          <div
+            role="row"
+            className={`${quoteColumns} min-h-10 border-b bg-muted/50 text-xs font-medium text-muted-foreground`}
+          >
+            <div role="columnheader">
+              <span className="sr-only">Ordine e tipo</span>
+            </div>
+            <div role="columnheader">Lavoro</div>
+            <div role="columnheader" className="text-right">
+              Tempo
+            </div>
+            <div role="columnheader" className="text-right">
+              Spese (€)
+            </div>
+            <div role="columnheader" className="text-right">
+              Valore teorico
+            </div>
+            <div role="columnheader" className="text-right">
+              Prezzo scelto (€)
+            </div>
+            <div role="columnheader">
+              <span className="sr-only">Azioni</span>
+            </div>
+          </div>
+          <DragDropProvider
+            onDragStart={() => {
+              pending.current = quoteLayout(quote);
+              commit.current = onSave;
+            }}
+            onDragOver={(event) => {
+              if (disabled || !pending.current) return;
+              const current = pending.current;
+              const groups: Record<string, string[]> = {
+                [ROOT]: current.map((entry) =>
+                  entry.kind === 'item' ? entry.itemId : entry.id,
+                ),
+              };
+              for (const entry of current)
+                if (entry.kind === 'container')
+                  groups[groupId(entry.id)] = entry.itemIds;
+              const { source, target } = event.operation;
+              const appendGroup = target?.data.appendGroup;
+              const moved =
+                source && typeof appendGroup === 'string' && groups[appendGroup]
+                  ? Object.fromEntries(
+                      Object.entries(groups).map(([group, ids]) => [
+                        group,
+                        [
+                          ...ids.filter((id) => id !== source.id),
+                          ...(group === appendGroup ? [String(source.id)] : []),
+                        ],
+                      ]),
+                    )
+                  : move(groups, event);
+              // React renders the preview; do not also reorder DOM nodes optimistically.
+              event.preventDefault();
+              if (moved === groups) return;
+              const containers = new Map(
+                current
+                  .filter((entry) => entry.kind === 'container')
+                  .map((entry) => [entry.id, entry]),
+              );
+              const next = moved[ROOT]!.map((id): QuoteLayoutEntry => {
+                const container = containers.get(id);
+                return container
+                  ? { ...container, itemIds: moved[groupId(id)]! }
+                  : { kind: 'item', itemId: id };
+              });
+              if (JSON.stringify(next) !== JSON.stringify(current)) {
+                pending.current = next;
+                setDraft(next);
+              }
+            }}
+            onDragEnd={(event) => {
+              const next = pending.current;
+              pending.current = undefined;
+              setDraft(undefined);
+              if (
+                !disabled &&
+                !event.canceled &&
+                event.operation.target &&
+                next
+              )
+                commit.current(next);
+            }}
+          >
+            <div data-quote-layout role="rowgroup">
+              {layout.map((entry, index) =>
+                entry.kind === 'item' ? (
+                  <SortableItem
+                    key={entry.itemId}
+                    id={entry.itemId}
+                    name={
+                      quote.items.find((item) => item.id === entry.itemId)!.name
+                    }
+                    index={index}
+                    disabled={disabled}
+                    renderItem={props.renderItem}
+                    renderInsertion={props.renderInsertion}
+                  />
+                ) : (
+                  <ContainerCard
+                    key={entry.id}
+                    container={entry}
+                    index={index}
+                    {...props}
+                  />
+                ),
+              )}
+              <DropZone
                 disabled={disabled}
-                renderItem={props.renderItem}
+                label="Sposta fuori dai contenitori, in fondo al preventivo"
               />
-            ) : (
-              <ContainerCard
-                key={entry.id}
-                container={entry}
-                index={index}
-                {...props}
-              />
-            ),
-          )}
-          <DropZone
-            disabled={disabled}
-            label="Sposta fuori dai contenitori, in fondo al preventivo"
-          />
+              <div role="row">
+                <div role="cell" aria-colspan={7}>
+                  {props.renderInsertion({})}
+                </div>
+              </div>
+            </div>
+          </DragDropProvider>
         </div>
-      </DragDropProvider>
+      </div>
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent>
+          <form
+            className="contents"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!disabled && props.onAddContainer(containerName))
+                setCreating(false);
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Nuovo contenitore</DialogTitle>
+            </DialogHeader>
+            <Field>
+              <FieldLabel htmlFor="new-container-name">
+                Nome contenitore
+              </FieldLabel>
+              <Input
+                id="new-container-name"
+                autoFocus
+                required
+                value={containerName}
+                onChange={(event) => setContainerName(event.target.value)}
+              />
+            </Field>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreating(false)}
+              >
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                disabled={disabled || !containerName.trim()}
+              >
+                Crea contenitore
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -185,6 +295,18 @@ function Handle({
       aria-label={label}
       aria-describedby="quote-drag-help"
       data-quote-drag-handle
+      onPointerDownCapture={(event) => {
+        // The drag sensor prevents the browser's normal focus change. Commit
+        // an active cell before capturing the guarded layout transaction.
+        let saved = false;
+        flushSync(() => {
+          saved = commitActiveQuoteInput();
+        });
+        if (!saved) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
     >
       <GripVertical />
     </Button>
@@ -198,6 +320,7 @@ function SortableItem({
   containerId,
   disabled,
   renderItem,
+  renderInsertion,
 }: {
   id: string;
   name: string;
@@ -205,7 +328,9 @@ function SortableItem({
   containerId?: string;
   disabled: boolean;
   renderItem: Props['renderItem'];
+  renderInsertion: Props['renderInsertion'];
 }) {
+  const [inserting, setInserting] = useState(false);
   const { ref, handleRef, isDragSource, isDropTarget } = useSortable({
     id,
     index,
@@ -219,7 +344,7 @@ function SortableItem({
     <div
       ref={ref}
       data-quote-item={id}
-      className={`min-w-0 rounded-xl ${isDragSource ? 'opacity-50' : ''} ${isDropTarget ? 'ring-2 ring-primary' : ''}`}
+      className={`min-w-0 ${isDragSource ? 'opacity-50' : ''} ${isDropTarget ? 'ring-2 ring-inset ring-primary' : ''}`}
     >
       {renderItem(
         id,
@@ -228,7 +353,17 @@ function SortableItem({
           label={`Sposta voce ${name.trim() || 'senza nome'}`}
           disabled={disabled}
         />,
+        () => setInserting((open) => !open),
       )}
+      {inserting ? (
+        <div role="row">
+          <div role="cell" aria-colspan={7}>
+            {renderInsertion({ containerId, afterItemId: id }, () =>
+              setInserting(false),
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -252,9 +387,12 @@ function DropZone({
     <div
       ref={ref}
       data-quote-drop={containerId ?? ROOT}
-      className={`flex min-h-12 items-center justify-center rounded-lg border border-dashed px-3 py-2 text-center text-xs ${isDropTarget ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary' : 'border-border text-muted-foreground'}`}
+      role="row"
+      className={`flex min-h-12 items-center justify-center border-b border-dashed px-3 py-1 text-center text-xs ${isDropTarget ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary' : 'border-border text-muted-foreground'}`}
     >
-      {label}
+      <span role="cell" aria-colspan={7}>
+        {label}
+      </span>
     </div>
   );
 }
@@ -278,69 +416,79 @@ function ContainerCard({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState(container.name);
+  const [inserting, setInserting] = useState(false);
   return (
-    <Card
+    <div
       ref={sourceRef}
       data-quote-container={container.id}
-      className={`min-w-0 gap-3 border-dashed py-3 ${isDragSource ? 'opacity-50' : ''}`}
+      className={`min-w-0 border-l-2 border-primary/30 ${isDragSource ? 'opacity-50' : ''}`}
     >
       <div
         ref={targetRef}
-        className={`flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 ${isDropTarget ? 'ring-2 ring-primary' : ''}`}
+        role="row"
+        className={isDropTarget ? 'ring-2 ring-inset ring-primary' : undefined}
       >
-        <Handle
-          handleRef={handleRef}
-          label={`Sposta contenitore ${container.name}`}
-          disabled={disabled}
-        />
-        <h3 className="min-w-0 flex-1 break-words font-semibold">
-          {container.name}
-        </h3>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Rinomina contenitore ${container.name}`}
-          disabled={disabled}
-          onClick={() => {
-            setName(container.name);
-            setRenaming(true);
-          }}
+        <div
+          role="cell"
+          aria-colspan={7}
+          className="flex min-w-0 items-center gap-2 bg-muted/50 px-2 py-1"
         >
-          <Pencil />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="outline" size="sm" disabled={disabled} />}
+          <Handle
+            handleRef={handleRef}
+            label={`Sposta contenitore ${container.name}`}
+            disabled={disabled}
+          />
+          <h3 className="min-w-0 flex-1 break-words font-semibold">
+            {container.name}
+          </h3>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Rinomina contenitore ${container.name}`}
+            disabled={disabled}
+            onClick={() => {
+              setName(container.name);
+              setRenaming(true);
+            }}
           >
-            <Plus />
-            Aggiungi
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => props.onAddItem(container.id)}>
+            <Pencil />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="outline" size="sm" disabled={disabled} />
+              }
+            >
               <Plus />
-              Sezione vuota
-            </DropdownMenuItem>
-            {props.hasTemplates ? (
-              <DropdownMenuItem
-                onClick={() => props.onInsertTemplate(container.id)}
-              >
-                <BookOpen />
-                Da template
+              Aggiungi
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setInserting(true)}>
+                <Plus />
+                Aggiungi riga
               </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Elimina contenitore ${container.name}`}
-          disabled={disabled}
-          onClick={() => setDeleting(true)}
-        >
-          <Trash2 />
-        </Button>
+              {props.hasTemplates ? (
+                <DropdownMenuItem
+                  onClick={() => props.onInsertTemplate(container.id)}
+                >
+                  <BookOpen />
+                  Da template
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Elimina contenitore ${container.name}`}
+            disabled={disabled}
+            onClick={() => setDeleting(true)}
+          >
+            <Trash2 />
+          </Button>
+        </div>
       </div>
-      <CardContent className="min-w-0 space-y-3 px-3">
+      <div className="min-w-0">
         {container.itemIds.map((id, itemIndex) => (
           <SortableItem
             key={id}
@@ -350,6 +498,7 @@ function ContainerCard({
             containerId={container.id}
             disabled={disabled}
             renderItem={props.renderItem}
+            renderInsertion={props.renderInsertion}
           />
         ))}
         <DropZone
@@ -361,7 +510,16 @@ function ContainerCard({
               : `Trascina una voce in ${container.name}`
           }
         />
-      </CardContent>
+        {inserting ? (
+          <div role="row">
+            <div role="cell" aria-colspan={7}>
+              {props.renderInsertion({ containerId: container.id }, () =>
+                setInserting(false),
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
       <Dialog open={renaming} onOpenChange={setRenaming}>
         <DialogContent>
           <form
@@ -425,6 +583,6 @@ function ContainerCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 }

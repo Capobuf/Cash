@@ -20,9 +20,11 @@ Usa il selettore **Anno** nella barra laterale per passare al periodo che vuoi c
 
 1. Apri **Preventivi** e seleziona **Nuovo preventivo**.
 2. Imposta data e profilo annuale; associa il cliente e la sede principale quando disponibili.
-3. Seleziona **Aggiungi voce** per creare le sezioni del lavoro, oppure **Inserisci template** per partire da contenuti del catalogo.
-4. All'interno di ogni voce aggiungi **attività**, **spese** e **trasferte** secondo necessità.
-5. Inserisci il **Prezzo scelto** e controlla sulla destra l'**Analisi economica** prima di formulare l'offerta.
+3. In **Lavoro da eseguire**, scrivi il nome della prossima attività e premi **Invio** o **Aggiungi riga**. Puoi lasciare durata e spesa vuote e quantificarle in seguito. Sono disponibili anche **Trasferta**, **Spesa**, **Riga generica** e **Da template**.
+4. Modifica nome, durata e importo direttamente nelle celle. Espandi una voce per consultarne le sottovoci e scegliere le varianti; le trasferte mantengono il dialogo con percorso e parametri.
+5. Inserisci il **Prezzo scelto** nella riga: l'**Analisi economica**, accanto o sotto la tabella secondo la larghezza della finestra, aggiorna subito il totale durante un input valido.
+
+Il pulsante **+** di una riga permette di inserire il lavoro successivo in quel punto. La ricerca dei template considera anche nomi delle voci, descrizioni delle attività e opzioni di variante.
 
 ![Elenco dei preventivi](images/screenshots/quotes-list.webp)
 
@@ -45,7 +47,7 @@ Nel dialogo, **Ripristina titolo automatico** torna al nome basato su cliente e 
 
 ### Organizzare le voci in contenitori
 
-**Nuovo contenitore** crea subito un gruppo vuoto: puoi rinominarlo, aggiungere una **Sezione vuota** oppure inserire tutte le voci di un template con **Aggiungi → Da template**. I contenitori servono solo a organizzare il lavoro e non cambiano prezzi o totali.
+Con **Nuovo contenitore** scegli il nome e crea il gruppo in un solo passaggio. Usa **Aggiungi → Aggiungi riga** oppure **Aggiungi → Da template** per inserirvi il lavoro. I contenitori sono facoltativi, servono solo a organizzare le voci e non cambiano prezzi o totali.
 
 Usa la maniglia per spostare una voce dentro un contenitore, fra le sue voci, in un altro contenitore o fuori. Puoi anche riordinare i contenitori insieme alle voci indipendenti. Da tastiera, porta il focus sulla maniglia e premi **Spazio**, usa le **frecce** e conferma con **Spazio**; **Esc** annulla lo spostamento.
 
@@ -54,6 +56,8 @@ Eliminando un contenitore, le sue voci restano nel preventivo nello stesso ordin
 ### Calcolare una trasferta
 
 Aggiungi una sottovoce di tipo **Trasferta** e compila partenza, destinazione, veicolo, occorrenze e indicazione **Andata e ritorno**.
+
+Nei selettori delle trasferte, nome, indirizzo disponibile e cliente associato distinguono le sedi omonime. La **Sede principale** separa le sedi del cliente selezionato dalle altre sedi senza cliente; resta disponibile la creazione contestuale di una sede con il pulsante **+**.
 
 ![Modifica di una trasferta](images/screenshots/quote-travel-dialog.webp)
 

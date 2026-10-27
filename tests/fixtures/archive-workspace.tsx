@@ -754,7 +754,7 @@ export async function runWorkspaceChecks() {
       'Partial navigation caused an archive save',
     );
     check(
-      document.activeElement === technical,
+      document.activeElement === find(`#quote-technical-${missingItem.id}`),
       'Partial theoretical total did not focus the missing technical data',
     );
     check(
@@ -778,16 +778,12 @@ export async function runWorkspaceChecks() {
       'Partial chosen total did not focus the missing price',
     );
     check(
-      missingChosen
-        .closest('[data-slot="input-group"]')
-        ?.classList.contains('ring-2'),
+      missingChosen.closest('[role="cell"]')?.classList.contains('ring-2'),
       'Missing price was not highlighted',
     );
     await fill(`#chosen-${missingItem.id}`, '0');
     check(
-      !missingChosen
-        .closest('[data-slot="input-group"]')
-        ?.classList.contains('ring-2'),
+      !missingChosen.closest('[role="cell"]')?.classList.contains('ring-2'),
       'Completed price stayed highlighted',
     );
     await act(async () => {
@@ -855,7 +851,8 @@ export async function runWorkspaceChecks() {
     });
     const firstItem = state.document!.quotes[0]!.items[0]!;
     const expandSelector = `[aria-label="Apri o chiudi ${firstItem.name}"]`;
-    await clickSelector(expandSelector);
+    if (find(expandSelector).getAttribute('aria-expanded') === 'true')
+      await clickSelector(expandSelector);
     check(
       find(expandSelector).getAttribute('aria-expanded') === 'false',
       'Test item did not collapse',
@@ -892,7 +889,7 @@ export async function runWorkspaceChecks() {
     await clickSelector('[aria-label="Mostra cosa manca per Tempo"]');
     await afterNavigation();
     check(
-      document.activeElement === technical,
+      document.activeElement === find(`#quote-technical-${missingItem.id}`),
       'Partial time did not focus the item without technical data',
     );
     await clickSelector(
@@ -935,11 +932,16 @@ export async function runWorkspaceChecks() {
     );
     results.push('quote-price-preview');
     await click('Aggiungi voce');
-    await fill('#item-name', 'Old quote draft');
+    await fill(
+      '[data-quote-quick-add="root:end"] input[aria-label="Nome del lavoro da aggiungere"]',
+      'Old quote draft',
+    );
     await replace('D');
     check(
-      !document.querySelector('#item-name'),
-      'Quote editor dialog survived archive change',
+      !document.querySelector(
+        '[data-quote-quick-add="root:end"] input[aria-label="Nome del lavoro da aggiungere"]',
+      ),
+      'Quick insertion draft survived archive change',
     );
     check(
       !document.querySelector('[data-slot="dialog-content"]'),
@@ -1195,7 +1197,11 @@ export async function runWorkspaceChecks() {
         [...document.querySelectorAll('h2')].some(
           (heading) => heading.textContent === quoteTitle(linkedQuote),
         ) &&
-        document.body.innerText.includes('Preventivo F'),
+        [
+          ...document.querySelectorAll<HTMLInputElement>(
+            'input[id^=quote-name-]',
+          ),
+        ].some((input) => input.value === 'Preventivo F'),
       'Client quote shortcut did not open the linked quote detail',
     );
     results.push('client-quotes-navigation');

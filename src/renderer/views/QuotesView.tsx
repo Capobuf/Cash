@@ -1,3 +1,6 @@
+import { siteOptions } from '@/lib/site-options';
+import { QuoteQuickAdd } from '@/components/quotes/QuoteQuickAdd';
+import type { QuoteInsertionPoint } from '@/lib/quote-insertion';
 import { SelectField, SearchableSelect } from '@/components/ui/selection-field';
 import {
   ArrowLeft,
@@ -9,13 +12,11 @@ import {
   Plus,
   RefreshCw,
   UserRound,
-  Wrench,
 } from 'lucide-react';
 import { useState } from 'react';
 import { calculateQuote } from '../../domain/calculations';
 import { quoteTitle } from '../../domain/quotes';
-import { type CashDocument, type QuoteItem } from '../../domain/model';
-import { siteMatchesClient } from '../../domain/locations';
+import { type CashDocument } from '../../domain/model';
 import { Analysis } from '@/components/Analysis';
 import { SiteDialog } from '@/components/EntityDialogs';
 import {
@@ -25,7 +26,6 @@ import {
 } from '@/components/quotes/CatalogInsertDialogs';
 import { CustomerDialog } from '@/components/quotes/CustomerDialog';
 import { ExportDialog } from '@/components/quotes/ExportDialog';
-import { ItemNameDialog } from '@/components/quotes/ItemNameDialog';
 import { QuoteTitleDialog } from '@/components/quotes/QuoteTitleDialog';
 import { QuoteLayoutEditor } from '@/components/quotes/QuoteLayoutEditor';
 import {
@@ -34,9 +34,9 @@ import {
 } from '@/components/quotes/CatalogSaveDialogs';
 import { SubItemDialog } from '@/components/quotes/SubItemDialog';
 import {
-  QuoteItemCard,
+  QuoteItemRow,
   type QuoteItemActions,
-} from '@/components/QuoteItemCard';
+} from '@/components/quotes/QuoteItemRow';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -99,7 +99,6 @@ type Overlay =
   | { kind: 'title' }
   | { kind: 'customer' }
   | { kind: 'site'; context: string }
-  | { kind: 'item'; item?: QuoteItem; containerId?: string }
   | {
       kind: 'sub';
       itemId: string;
@@ -114,7 +113,7 @@ type Overlay =
       groupId: string;
       optionId: string;
     }
-  | { kind: 'insert-template'; containerId?: string }
+  | ({ kind: 'insert-template' } & QuoteInsertionPoint)
   | { kind: 'save-template' }
   | { kind: 'export' };
 
@@ -236,7 +235,8 @@ export function QuotesView({
   const itemActions: QuoteItemActions = {
     showMissing,
     clearMissing: () => setAnalysisNavigation(undefined),
-    rename: (item) => setOverlay({ kind: 'item', item }),
+    rename: controller.renameItem,
+    saveSimpleSub: controller.saveSimpleSub,
     previewChosenPrice: (itemId, value) =>
       setPricePreview((previous) => ({ ...previous, [itemId]: value })),
     updateChosenPrice: (itemId, value) => {
@@ -332,14 +332,24 @@ export function QuotesView({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {doc.catalog.templates.length ? (
-            <Button onClick={() => setOverlay({ kind: 'insert-template' })}>
+            <Button
+              disabled={readOnly}
+              onClick={() => setOverlay({ kind: 'insert-template' })}
+            >
               <BookOpen />
               Inserisci template
             </Button>
           ) : null}
           <Button
             variant={doc.catalog.templates.length ? 'outline' : 'default'}
-            onClick={() => setOverlay({ kind: 'item' })}
+            disabled={readOnly}
+            onClick={() =>
+              document
+                .querySelector<HTMLInputElement>(
+                  '[data-quote-quick-add="root:end"] input',
+                )
+                ?.focus()
+            }
           >
             <Plus />
             Aggiungi voce
@@ -474,9 +484,7 @@ export function QuotesView({
                   }
                   options={[
                     { value: '', label: 'Nessuna' },
-                    ...doc.sites
-                      .filter((site) => siteMatchesClient(site, quote.client))
-                      .map((site) => ({ value: site.id, label: site.name })),
+                    ...siteOptions(doc.sites, quote.client, true),
                   ]}
                 />
               </div>
@@ -529,7 +537,7 @@ export function QuotesView({
           </Field>
         </CardContent>
       </Card>
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-3">
           <QuoteLayoutEditor
             key={`${doc.documentId}:${appState.archiveContext}:${quote.id}`}
@@ -540,22 +548,55 @@ export function QuotesView({
             onAddContainer={controller.addContainer}
             onRenameContainer={controller.renameContainer}
             onDeleteContainer={controller.deleteContainer}
-            onAddItem={(containerId) => {
-              controller.addItem('', containerId);
-            }}
             onInsertTemplate={(containerId) =>
               setOverlay({ kind: 'insert-template', containerId })
             }
-            renderItem={(id, dragHandle) => {
+            renderInsertion={(point, onClose) => (
+              <QuoteQuickAdd
+                key={`${point.containerId ?? 'root'}:${point.afterItemId ?? 'end'}`}
+                point={point}
+                disabled={readOnly}
+                hasTemplates={doc.catalog.templates.length > 0}
+                autoFocus={Boolean(onClose)}
+                onClose={onClose}
+                onTemplate={(position) =>
+                  setOverlay({ kind: 'insert-template', ...position })
+                }
+                onAdd={(name, position, input, travel) => {
+                  if (
+                    !controller.addItem(
+                      name,
+                      position.containerId,
+                      position.afterItemId,
+                      input,
+                    )
+                  )
+                    return false;
+                  const item = appState
+                    .document!.quotes.find((entry) => entry.id === quote.id)!
+                    .items.at(-1)!;
+                  if (travel)
+                    setOverlay({
+                      kind: 'sub',
+                      itemId: item.id,
+                      initialKind: 'travel',
+                    });
+                  return item.id;
+                }}
+              />
+            )}
+            renderItem={(id, dragHandle, onInsertAfter) => {
               const item = quote.items.find((entry) => entry.id === id)!;
               return (
-                <QuoteItemCard
+                <QuoteItemRow
                   key={item.id}
                   item={item}
                   hourly={hourly}
                   doc={doc}
                   actions={itemActions}
                   dragHandle={dragHandle}
+                  disabled={readOnly}
+                  onInsertAfter={onInsertAfter}
                   missingTargets={missingTargets.filter(
                     (target) => target.itemId === item.id,
                   )}
@@ -563,80 +604,8 @@ export function QuotesView({
               );
             }}
           />
-          {!quote.items.length && !quote.layout?.length ? (
-            <Card>
-              <CardContent className="grid min-h-64 place-items-center text-center">
-                <div>
-                  {doc.catalog.templates.length ? (
-                    <BookOpen className="mx-auto size-9 text-muted-foreground" />
-                  ) : (
-                    <Wrench className="mx-auto size-9 text-muted-foreground" />
-                  )}
-                  <p className="mt-3 font-medium">
-                    {doc.catalog.templates.length
-                      ? 'Inizia da un template'
-                      : 'Aggiungi la prima voce'}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {doc.catalog.templates.length
-                      ? 'Scegli una base pronta e personalizzala liberamente.'
-                      : 'Puoi costruire il preventivo interamente a mano; i Template potranno velocizzare i lavori ricorrenti.'}
-                  </p>
-                  <div className="mt-4 flex flex-wrap justify-center gap-2">
-                    {doc.catalog.templates.length ? (
-                      <Button
-                        onClick={() => setOverlay({ kind: 'insert-template' })}
-                      >
-                        <BookOpen />
-                        Inserisci template
-                      </Button>
-                    ) : null}
-                    <Button
-                      variant={
-                        doc.catalog.templates.length ? 'outline' : 'default'
-                      }
-                      onClick={() => setOverlay({ kind: 'item' })}
-                    >
-                      <Plus />
-                      Aggiungi voce
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-          {quote.items.length || quote.layout?.length ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    disabled={readOnly}
-                  />
-                }
-              >
-                <Plus />
-                Aggiungi sezione
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {doc.catalog.templates.length ? (
-                  <DropdownMenuItem
-                    onClick={() => setOverlay({ kind: 'insert-template' })}
-                  >
-                    <BookOpen />
-                    Da template
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem onClick={() => setOverlay({ kind: 'item' })}>
-                  <Plus />
-                  Sezione vuota
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
         </div>
-        <aside className="space-y-3 xl:sticky xl:top-24">
+        <aside className="space-y-3 2xl:sticky 2xl:top-24">
           <Card>
             <CardHeader>
               <div>
@@ -704,22 +673,6 @@ export function QuotesView({
           onSelect={selectCustomer}
         />
       ) : null}
-      {overlay?.kind === 'item' ? (
-        <ItemNameDialog
-          open
-          initial={overlay.item?.name}
-          title={overlay.item ? 'Rinomina voce' : 'Nuova voce commerciale'}
-          onOpenChange={(open) => {
-            if (!open) setOverlay(undefined);
-          }}
-          onSave={(name) => {
-            const saved = overlay.item
-              ? controller.renameItem(overlay.item.id, name)
-              : controller.addItem(name, overlay.containerId);
-            if (saved) setOverlay(undefined);
-          }}
-        />
-      ) : null}
       {overlay?.kind === 'sub' && overlayItem ? (
         <SubItemDialog
           key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}`}
@@ -728,6 +681,8 @@ export function QuotesView({
           doc={doc}
           appState={appState}
           defaultDestinationSiteId={quote.mainSite?.sourceId}
+          client={quote.client}
+          initialDescription={overlayItem.name}
           onClose={() => setOverlay(undefined)}
           onSaveSimple={(input) =>
             controller.saveSimpleSub(overlay.itemId, input, overlay.subId)
@@ -792,6 +747,7 @@ export function QuotesView({
               choices,
               context,
               overlay.containerId,
+              overlay.afterItemId,
             )
           }
         />

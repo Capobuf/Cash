@@ -1,3 +1,4 @@
+import { siteOptions } from '@/lib/site-options';
 import { SearchableSelect } from '@/components/ui/selection-field';
 import { MapPin, Plus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
@@ -8,7 +9,11 @@ import {
 import { parseDuration } from '../../../domain/duration';
 import { parseDecimalInput } from '../../../domain/decimal';
 import { siteHasUsableLocation } from '../../../domain/locations';
-import { type CashDocument, type QuoteSubItem } from '../../../domain/model';
+import {
+  type CashDocument,
+  type QuoteSubItem,
+  type FicClientSnapshot,
+} from '../../../domain/model';
 import { SiteDialog, VehicleDialog } from '@/components/EntityDialogs';
 import {
   AlertDialog,
@@ -53,6 +58,8 @@ export function SubItemDialog({
   doc,
   appState,
   defaultDestinationSiteId,
+  client,
+  initialDescription,
   onClose,
   onSaveSimple,
   onSaveTravel,
@@ -62,6 +69,8 @@ export function SubItemDialog({
   doc: CashDocument;
   appState: AppState;
   defaultDestinationSiteId?: string;
+  client?: FicClientSnapshot;
+  initialDescription?: string;
   onClose: () => void;
   onSaveSimple: (input: SimpleSubInput) => boolean;
   onSaveTravel: (input: TravelInput) => Promise<boolean>;
@@ -258,7 +267,7 @@ export function SubItemDialog({
                 <Input
                   id="sub-description"
                   name="description"
-                  defaultValue={sub?.description}
+                  defaultValue={sub?.description ?? initialDescription}
                   autoFocus
                   required={kind !== 'travel'}
                 />
@@ -314,10 +323,7 @@ export function SubItemDialog({
                         onValueChange={(value) => setDepartureSiteId(value)}
                         options={[
                           { value: '', label: 'Scegli sede' },
-                          ...doc.sites.map((site) => ({
-                            value: site.id,
-                            label: site.name,
-                          })),
+                          ...siteOptions(doc.sites, client),
                         ]}
                       />
                     </Field>
@@ -331,10 +337,7 @@ export function SubItemDialog({
                         onValueChange={(value) => setDestinationSiteId(value)}
                         options={[
                           { value: '', label: 'Scegli sede' },
-                          ...doc.sites.map((site) => ({
-                            value: site.id,
-                            label: site.name,
-                          })),
+                          ...siteOptions(doc.sites, client),
                         ]}
                       />
                     </Field>
