@@ -85,10 +85,19 @@ app.whenReady().then(async () => {
     await wait(120);
     // Append zones move as children enter them. Following a sortable card instead
     // would chase it after the swap and could undo the intended reorder.
-    for (let i=0; target.startsWith('[data-quote-drop=') && i<3; i++) {
-      end = await point(target);
-      win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', ...end });
-      await wait(120);
+    // Release only once the intended zone is highlighted and stops moving.
+    if (target.startsWith('[data-quote-drop=')) {
+      const deadline = Date.now() + 5000;
+      let stable = 0;
+      while (stable < 2) {
+        end = await point(target);
+        win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', ...end });
+        await js('Checks.settle()');
+        const current = await point(target);
+        const active = await js('document.querySelector(' + JSON.stringify(target) + ').classList.contains("ring-2")');
+        stable = active && current.x === end.x && current.y === end.y ? stable + 1 : 0;
+        if (Date.now() > deadline) throw new Error('Timed out following drop zone ' + target);
+      }
     }
     if (cancel) await key('Escape');
     win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...end });
@@ -205,9 +214,13 @@ app.whenReady().then(async () => {
     }
     await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1200, height: 2400, deviceScaleFactor: 1, mobile: false });
     await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    // Exercise preview commits on a slow renderer, where deferred layout updates
+    // used to leave collision detection stuck on an earlier sortable row.
+    await win.webContents.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: 4 });
     await js('Checks.settle()');
     await drag(handle(ids[0]), drop(south));
     assert.deepEqual((await info()).quote.layout.find(e => e.id === south).itemIds, [ids[0]]);
+    await win.webContents.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: 1 });
     if (process.env.CASH_UI_SCREENSHOTS) {
       mkdirSync(process.env.CASH_UI_SCREENSHOTS, {recursive: true});
       await js('document.documentElement.classList.add("dark"); Checks.settle()');

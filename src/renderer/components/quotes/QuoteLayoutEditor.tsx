@@ -177,7 +177,9 @@ export function QuoteLayoutEditor(props: Props) {
               });
               if (JSON.stringify(next) !== JSON.stringify(current)) {
                 pending.current = next;
-                setDraft(next);
+                // Commit the preview before dnd-kit measures the next target;
+                // a deferred render can leave collision detection on an old row.
+                flushSync(() => setDraft(next));
               }
             }}
             onDragEnd={(event) => {
