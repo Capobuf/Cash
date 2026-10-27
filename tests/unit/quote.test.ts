@@ -37,6 +37,65 @@ const vehicle: Vehicle = {
 };
 
 describe('preventivo', () => {
+  it('distingue valori mancanti da zero e aggrega solo i valori disponibili delle righe incomplete', () => {
+    const item: QuoteItem = {
+      ...meta(),
+      name: 'Gestione cliente',
+      chosenPrice: '5.00',
+      variantGroups: [],
+      variantSelections: [],
+      subItems: [
+        { ...meta(), kind: 'time', description: 'Tempo noto', minutes: 60 },
+        { ...meta(), kind: 'time', description: '' },
+        {
+          ...meta(),
+          kind: 'expense',
+          description: 'Spesa nota',
+          amount: '10.00',
+        },
+        { ...meta(), kind: 'expense', description: '' },
+      ],
+    };
+    expect(calculateItem(item, '60.00')).toMatchObject({
+      minutes: 60,
+      expenses: '10.00',
+      theoreticalValue: '70.00',
+      chosenPrice: '5.00',
+      minutesPartial: true,
+      expensesPartial: true,
+      theoreticalPartial: true,
+    });
+    expect(calculateItem(item, '60.00').yieldPerHour).toBeUndefined();
+    expect(calculateQuote([item], '60.00')).toMatchObject({
+      minutes: 60,
+      expenses: '10.00',
+      theoreticalValue: '70.00',
+      chosenTotal: '5.00',
+    });
+    expect(
+      calculateQuote(
+        [
+          { ...item, subItems: [item.subItems[0]!] },
+          { ...item, ...meta(), subItems: [item.subItems[3]!] },
+        ],
+        '60.00',
+      ),
+    ).toMatchObject({
+      minutes: 60,
+      minutesPartial: false,
+      expensesPartial: true,
+    });
+    const blank = { ...item, subItems: [item.subItems[1]!, item.subItems[3]!] };
+    expect(calculateItem(blank, '60.00')).toMatchObject({
+      minutes: undefined,
+      expenses: undefined,
+      theoreticalValue: undefined,
+      chosenPrice: '5.00',
+      minutesPartial: true,
+      expensesPartial: true,
+    });
+  });
+
   it('converte il percorso A/R senza arrotondamenti intermedi', () => {
     expect(
       valuesFromRoute(

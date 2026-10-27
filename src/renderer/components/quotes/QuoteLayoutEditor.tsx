@@ -1,31 +1,15 @@
 import { DragDropProvider, useDroppable } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
 import { move } from '@dnd-kit/helpers';
-import {
-  BookOpen,
-  FolderPlus,
-  GripVertical,
-  Pencil,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { BookOpen, FolderPlus, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import type { Quote, QuoteLayoutEntry } from '../../../domain/model';
+import { meta, type Quote, type QuoteLayoutEntry } from '../../../domain/model';
 import { quoteLayout } from '../../../domain/quote-layout';
 import type { QuoteInsertionPoint } from '@/lib/quote-insertion';
-import { quoteColumns } from './QuoteItemRow';
-import { commitActiveQuoteInput } from './InlineQuoteInput';
+import { QuoteTableHeader } from './QuoteItemRow';
+import { commitActiveQuoteInput, InlineQuoteInput } from './InlineQuoteInput';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Field, FieldLabel } from '@/components/ui/field';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -54,29 +38,46 @@ interface Props {
     id: string,
     handle: ReactNode,
     insertAfter: () => void,
+    insertTemplateAfter: () => void,
   ) => ReactNode;
   renderInsertion: (
     point: QuoteInsertionPoint,
     onClose?: () => void,
+    slot?: string,
   ) => ReactNode;
   onSave: (layout: QuoteLayoutEntry[]) => boolean;
   onAddContainer: (name: string) => boolean;
   onRenameContainer: (id: string, name: string) => boolean;
   onDeleteContainer: (id: string) => boolean;
-  onInsertTemplate: (containerId: string) => void;
+  onInsertTemplate: (point: QuoteInsertionPoint, slot?: string) => void;
+  onInsertRow: (point: QuoteInsertionPoint, slot: string) => void;
 }
 
 export function QuoteLayoutEditor(props: Props) {
   const { quote, disabled, onSave } = props;
   const [draft, setDraft] = useState<QuoteLayoutEntry[]>();
-  const [creating, setCreating] = useState(false);
-  const [containerName, setContainerName] = useState('');
+  const editorRef = useRef<HTMLDivElement>(null);
   const pending = useRef<QuoteLayoutEntry[] | undefined>(undefined);
   // Keep the controller's original context guard for the entire gesture.
   const commit = useRef(onSave);
   const layout = draft ?? quoteLayout(quote);
+  // Keep consecutive ungrouped runs in place: grouping all root items would
+  // silently change the visible order of legacy mixed layouts.
+  const sections: { container?: Container; start: number; ids: string[] }[] =
+    [];
+  layout.forEach((entry, index) => {
+    if (entry.kind === 'container')
+      sections.push({ container: entry, start: index, ids: entry.itemIds });
+    else {
+      const last = sections.at(-1);
+      if (last && !last.container) last.ids.push(entry.itemId);
+      else sections.push({ start: index, ids: [entry.itemId] });
+    }
+  });
+  if (!sections.length || sections.at(-1)?.container)
+    sections.push({ start: layout.length, ids: [] });
   return (
-    <div className="min-w-0 space-y-3">
+    <div ref={editorRef} className="min-w-0 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-semibold">Lavoro da eseguire</h3>
         <Button
@@ -84,8 +85,16 @@ export function QuoteLayoutEditor(props: Props) {
           size="sm"
           disabled={disabled}
           onClick={() => {
-            setContainerName('');
-            setCreating(true);
+            if (!props.onAddContainer('Nuovo contenitore')) return;
+            requestAnimationFrame(() => {
+              const inputs =
+                editorRef.current?.querySelectorAll<HTMLInputElement>(
+                  '[data-quote-container] input[aria-label^="Titolo contenitore"]',
+                );
+              const input = inputs?.[inputs.length - 1];
+              input?.focus();
+              input?.select();
+            });
           }}
         >
           <FolderPlus />
@@ -96,184 +105,155 @@ export function QuoteLayoutEditor(props: Props) {
         Trascina dalla maniglia. Da tastiera: Spazio per iniziare, frecce per
         spostare, Spazio per confermare, Esc per annullare.
       </p>
-      <div
-        className="overflow-x-auto rounded-lg border"
-        role="region"
-        aria-label="Editor operativo del preventivo"
-        tabIndex={0}
-      >
-        <div
-          role="table"
-          aria-label="Voci del preventivo"
-          className="min-w-[840px]"
+      <div aria-label="Editor operativo del preventivo">
+        <DragDropProvider
+          onDragStart={() => {
+            pending.current = quoteLayout(quote);
+            commit.current = onSave;
+          }}
+          onDragOver={(event) => {
+            if (disabled || !pending.current) return;
+            const current = pending.current;
+            const groups: Record<string, string[]> = {
+              [ROOT]: current.map((entry) =>
+                entry.kind === 'item' ? entry.itemId : entry.id,
+              ),
+            };
+            for (const entry of current)
+              if (entry.kind === 'container')
+                groups[groupId(entry.id)] = entry.itemIds;
+            const { source, target } = event.operation;
+            const appendGroup = target?.data.appendGroup;
+            const moved =
+              source && typeof appendGroup === 'string' && groups[appendGroup]
+                ? Object.fromEntries(
+                    Object.entries(groups).map(([group, ids]) => [
+                      group,
+                      [
+                        ...ids.filter((id) => id !== source.id),
+                        ...(group === appendGroup ? [String(source.id)] : []),
+                      ],
+                    ]),
+                  )
+                : move(groups, event);
+            // React renders the preview; do not also reorder DOM nodes optimistically.
+            event.preventDefault();
+            if (moved === groups) return;
+            const containers = new Map(
+              current
+                .filter((entry) => entry.kind === 'container')
+                .map((entry) => [entry.id, entry]),
+            );
+            const next = moved[ROOT]!.map((id): QuoteLayoutEntry => {
+              const container = containers.get(id);
+              return container
+                ? { ...container, itemIds: moved[groupId(id)]! }
+                : { kind: 'item', itemId: id };
+            });
+            if (JSON.stringify(next) !== JSON.stringify(current)) {
+              pending.current = next;
+              // Commit the preview before dnd-kit measures the next target;
+              // a deferred render can leave collision detection on an old row.
+              flushSync(() => setDraft(next));
+            }
+          }}
+          onDragEnd={(event) => {
+            const next = pending.current;
+            pending.current = undefined;
+            setDraft(undefined);
+            if (!disabled && !event.canceled && event.operation.target && next)
+              commit.current(next);
+          }}
         >
-          <div
-            role="row"
-            className={`${quoteColumns} min-h-10 border-b bg-muted/50 text-xs font-medium text-muted-foreground`}
-          >
-            <div role="columnheader">
-              <span className="sr-only">Ordine e tipo</span>
-            </div>
-            <div role="columnheader">Lavoro</div>
-            <div role="columnheader" className="text-right">
-              Tempo
-            </div>
-            <div role="columnheader" className="text-right">
-              Spese (€)
-            </div>
-            <div role="columnheader" className="text-right">
-              Valore teorico
-            </div>
-            <div role="columnheader" className="text-right">
-              Prezzo scelto (€)
-            </div>
-            <div role="columnheader">
-              <span className="sr-only">Azioni</span>
-            </div>
+          <div data-quote-layout className="space-y-4">
+            {sections.map(({ container, start, ids }) =>
+              container ? (
+                <ContainerCard
+                  key={container.id}
+                  container={container}
+                  index={start}
+                  {...props}
+                />
+              ) : (
+                <section key={`root-${start}`} className="min-w-0">
+                  <div className="py-1 font-semibold">
+                    <InlineQuoteInput
+                      label="Titolo del contenitore iniziale"
+                      value=""
+                      placeholder="Titolo contenitore"
+                      disabled={disabled}
+                      onCommit={(name) => {
+                        if (!name.trim()) return true;
+                        const next = [...layout];
+                        next.splice(start, ids.length, {
+                          kind: 'container',
+                          id: meta().id,
+                          name: name.trim(),
+                          itemIds: ids,
+                        });
+                        return onSave(next);
+                      }}
+                    />
+                  </div>
+                  <QuoteTable label="Voci non raggruppate">
+                    {ids.map((id, index) => (
+                      <SortableItem
+                        key={id}
+                        id={id}
+                        name={quote.items.find((item) => item.id === id)!.name}
+                        index={start + index}
+                        disabled={disabled}
+                        renderItem={props.renderItem}
+                        onInsertRow={props.onInsertRow}
+                        onInsertTemplate={props.onInsertTemplate}
+                        renderInsertion={props.renderInsertion}
+                      />
+                    ))}
+                    {start + ids.length === layout.length ? (
+                      <DropZone
+                        disabled={disabled}
+                        label="Sposta fuori dai contenitori"
+                      />
+                    ) : null}
+                    {props.renderInsertion(
+                      {
+                        afterItemId:
+                          start + ids.length === layout.length
+                            ? undefined
+                            : ids.at(-1),
+                      },
+                      undefined,
+                      `root-${start}`,
+                    )}
+                  </QuoteTable>
+                </section>
+              ),
+            )}
           </div>
-          <DragDropProvider
-            onDragStart={() => {
-              pending.current = quoteLayout(quote);
-              commit.current = onSave;
-            }}
-            onDragOver={(event) => {
-              if (disabled || !pending.current) return;
-              const current = pending.current;
-              const groups: Record<string, string[]> = {
-                [ROOT]: current.map((entry) =>
-                  entry.kind === 'item' ? entry.itemId : entry.id,
-                ),
-              };
-              for (const entry of current)
-                if (entry.kind === 'container')
-                  groups[groupId(entry.id)] = entry.itemIds;
-              const { source, target } = event.operation;
-              const appendGroup = target?.data.appendGroup;
-              const moved =
-                source && typeof appendGroup === 'string' && groups[appendGroup]
-                  ? Object.fromEntries(
-                      Object.entries(groups).map(([group, ids]) => [
-                        group,
-                        [
-                          ...ids.filter((id) => id !== source.id),
-                          ...(group === appendGroup ? [String(source.id)] : []),
-                        ],
-                      ]),
-                    )
-                  : move(groups, event);
-              // React renders the preview; do not also reorder DOM nodes optimistically.
-              event.preventDefault();
-              if (moved === groups) return;
-              const containers = new Map(
-                current
-                  .filter((entry) => entry.kind === 'container')
-                  .map((entry) => [entry.id, entry]),
-              );
-              const next = moved[ROOT]!.map((id): QuoteLayoutEntry => {
-                const container = containers.get(id);
-                return container
-                  ? { ...container, itemIds: moved[groupId(id)]! }
-                  : { kind: 'item', itemId: id };
-              });
-              if (JSON.stringify(next) !== JSON.stringify(current)) {
-                pending.current = next;
-                // Commit the preview before dnd-kit measures the next target;
-                // a deferred render can leave collision detection on an old row.
-                flushSync(() => setDraft(next));
-              }
-            }}
-            onDragEnd={(event) => {
-              const next = pending.current;
-              pending.current = undefined;
-              setDraft(undefined);
-              if (
-                !disabled &&
-                !event.canceled &&
-                event.operation.target &&
-                next
-              )
-                commit.current(next);
-            }}
-          >
-            <div data-quote-layout role="rowgroup">
-              {layout.map((entry, index) =>
-                entry.kind === 'item' ? (
-                  <SortableItem
-                    key={entry.itemId}
-                    id={entry.itemId}
-                    name={
-                      quote.items.find((item) => item.id === entry.itemId)!.name
-                    }
-                    index={index}
-                    disabled={disabled}
-                    renderItem={props.renderItem}
-                    renderInsertion={props.renderInsertion}
-                  />
-                ) : (
-                  <ContainerCard
-                    key={entry.id}
-                    container={entry}
-                    index={index}
-                    {...props}
-                  />
-                ),
-              )}
-              <DropZone
-                disabled={disabled}
-                label="Sposta fuori dai contenitori, in fondo al preventivo"
-              />
-              <div role="row">
-                <div role="cell" aria-colspan={7}>
-                  {props.renderInsertion({})}
-                </div>
-              </div>
-            </div>
-          </DragDropProvider>
-        </div>
+        </DragDropProvider>
       </div>
-      <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent>
-          <form
-            className="contents"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!disabled && props.onAddContainer(containerName))
-                setCreating(false);
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Nuovo contenitore</DialogTitle>
-            </DialogHeader>
-            <Field>
-              <FieldLabel htmlFor="new-container-name">
-                Nome contenitore
-              </FieldLabel>
-              <Input
-                id="new-container-name"
-                autoFocus
-                required
-                value={containerName}
-                onChange={(event) => setContainerName(event.target.value)}
-              />
-            </Field>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreating(false)}
-              >
-                Annulla
-              </Button>
-              <Button
-                type="submit"
-                disabled={disabled || !containerName.trim()}
-              >
-                Crea contenitore
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+    </div>
+  );
+}
+
+function QuoteTable({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="overflow-x-auto rounded-md border"
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+    >
+      <div role="table" aria-label={label} className="min-w-[920px]">
+        <QuoteTableHeader />
+        <div role="rowgroup">{children}</div>
+      </div>
     </div>
   );
 }
@@ -307,6 +287,10 @@ function Handle({
         if (!saved) {
           event.preventDefault();
           event.stopPropagation();
+        } else {
+          // The pointer sensor suppresses native focus changes. Move focus to
+          // the handle so an input cannot consume Escape during the gesture.
+          event.currentTarget.focus();
         }
       }}
     >
@@ -322,6 +306,8 @@ function SortableItem({
   containerId,
   disabled,
   renderItem,
+  onInsertRow,
+  onInsertTemplate,
   renderInsertion,
 }: {
   id: string;
@@ -330,9 +316,10 @@ function SortableItem({
   containerId?: string;
   disabled: boolean;
   renderItem: Props['renderItem'];
+  onInsertRow: Props['onInsertRow'];
+  onInsertTemplate: Props['onInsertTemplate'];
   renderInsertion: Props['renderInsertion'];
 }) {
-  const [inserting, setInserting] = useState(false);
   const { ref, handleRef, isDragSource, isDropTarget } = useSortable({
     id,
     index,
@@ -355,17 +342,16 @@ function SortableItem({
           label={`Sposta voce ${name.trim() || 'senza nome'}`}
           disabled={disabled}
         />,
-        () => setInserting((open) => !open),
+        () => {
+          onInsertRow({ containerId, afterItemId: id }, `after-${id}`);
+        },
+        () => onInsertTemplate({ containerId, afterItemId: id }, `after-${id}`),
       )}
-      {inserting ? (
-        <div role="row">
-          <div role="cell" aria-colspan={7}>
-            {renderInsertion({ containerId, afterItemId: id }, () =>
-              setInserting(false),
-            )}
-          </div>
-        </div>
-      ) : null}
+      {renderInsertion(
+        { containerId, afterItemId: id },
+        undefined,
+        `after-${id}`,
+      )}
     </div>
   );
 }
@@ -390,7 +376,7 @@ function DropZone({
       ref={ref}
       data-quote-drop={containerId ?? ROOT}
       role="row"
-      className={`flex min-h-12 items-center justify-center border-b border-dashed px-3 py-1 text-center text-xs ${isDropTarget ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary' : 'border-border text-muted-foreground'}`}
+      className={`flex min-h-7 items-center justify-center border-b border-dashed px-3 py-1 text-center text-xs ${isDropTarget ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary' : 'border-border text-muted-foreground'}`}
     >
       <span role="cell" aria-colspan={7}>
         {label}
@@ -415,46 +401,31 @@ function ContainerCard({
       disabled,
       transition: null,
     });
-  const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [name, setName] = useState(container.name);
-  const [inserting, setInserting] = useState(false);
   return (
     <div
       ref={sourceRef}
       data-quote-container={container.id}
-      className={`min-w-0 border-l-2 border-primary/30 ${isDragSource ? 'opacity-50' : ''}`}
+      className={`min-w-0 ${isDragSource ? 'opacity-50' : ''}`}
     >
       <div
         ref={targetRef}
-        role="row"
         className={isDropTarget ? 'ring-2 ring-inset ring-primary' : undefined}
       >
-        <div
-          role="cell"
-          aria-colspan={7}
-          className="flex min-w-0 items-center gap-2 bg-muted/50 px-2 py-1"
-        >
+        <div className="flex min-w-0 items-center gap-2 py-1">
           <Handle
             handleRef={handleRef}
             label={`Sposta contenitore ${container.name}`}
             disabled={disabled}
           />
-          <h3 className="min-w-0 flex-1 break-words font-semibold">
-            {container.name}
-          </h3>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Rinomina contenitore ${container.name}`}
-            disabled={disabled}
-            onClick={() => {
-              setName(container.name);
-              setRenaming(true);
-            }}
-          >
-            <Pencil />
-          </Button>
+          <div className="min-w-0 flex-1 font-semibold">
+            <InlineQuoteInput
+              label={`Titolo contenitore ${container.name}`}
+              value={container.name}
+              disabled={disabled}
+              onCommit={(name) => props.onRenameContainer(container.id, name)}
+            />
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -465,13 +436,25 @@ function ContainerCard({
               Aggiungi
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setInserting(true)}>
+              <DropdownMenuItem
+                onClick={() =>
+                  props.onInsertRow(
+                    { containerId: container.id },
+                    `container-${container.id}`,
+                  )
+                }
+              >
                 <Plus />
                 Aggiungi riga
               </DropdownMenuItem>
               {props.hasTemplates ? (
                 <DropdownMenuItem
-                  onClick={() => props.onInsertTemplate(container.id)}
+                  onClick={() => {
+                    props.onInsertTemplate(
+                      { containerId: container.id },
+                      `container-${container.id}`,
+                    );
+                  }}
                 >
                   <BookOpen />
                   Da template
@@ -490,7 +473,7 @@ function ContainerCard({
           </Button>
         </div>
       </div>
-      <div className="min-w-0">
+      <QuoteTable label={container.name}>
         {container.itemIds.map((id, itemIndex) => (
           <SortableItem
             key={id}
@@ -500,6 +483,8 @@ function ContainerCard({
             containerId={container.id}
             disabled={disabled}
             renderItem={props.renderItem}
+            onInsertRow={props.onInsertRow}
+            onInsertTemplate={props.onInsertTemplate}
             renderInsertion={props.renderInsertion}
           />
         ))}
@@ -512,56 +497,12 @@ function ContainerCard({
               : `Trascina una voce in ${container.name}`
           }
         />
-        {inserting ? (
-          <div role="row">
-            <div role="cell" aria-colspan={7}>
-              {props.renderInsertion({ containerId: container.id }, () =>
-                setInserting(false),
-              )}
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <Dialog open={renaming} onOpenChange={setRenaming}>
-        <DialogContent>
-          <form
-            className="contents"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!disabled && props.onRenameContainer(container.id, name))
-                setRenaming(false);
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Rinomina contenitore</DialogTitle>
-            </DialogHeader>
-            <Field>
-              <FieldLabel htmlFor={`container-name-${container.id}`}>
-                Nome contenitore
-              </FieldLabel>
-              <Input
-                id={`container-name-${container.id}`}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                autoFocus
-                required
-              />
-            </Field>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setRenaming(false)}
-              >
-                Annulla
-              </Button>
-              <Button type="submit" disabled={disabled || !name.trim()}>
-                Conferma
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        {props.renderInsertion(
+          { containerId: container.id },
+          undefined,
+          `container-${container.id}`,
+        )}
+      </QuoteTable>
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -494,34 +494,40 @@ export async function runWorkspaceChecks() {
     });
     const savedBeforeCustomerSearch = counts.saves;
     await click('Inserisci template');
-    const templateQuery = '[aria-label="Cerca template da inserire"]';
     check(
-      find('[data-slot="dialog-content"]').innerText.includes('Template C'),
+      !find('[data-quote-template-editor]').querySelector('[role="table"]'),
+      'Template picker selected a template automatically',
+    );
+    await clickSelector('#quote-template-picker');
+    const templateQuery = '[aria-label="Cerca opzioni"]';
+    const templateOptions = () =>
+      [...document.querySelectorAll('[role="option"]')]
+        .map((entry) => entry.textContent)
+        .join('|');
+    check(
+      templateOptions().includes('Template C'),
       'Template picker did not show the initial list',
     );
     await fill(templateQuery, 'Nessun risultato');
     check(
-      find('[data-slot="dialog-content"]').innerText.includes(
-        'Nessun template trovato.',
-      ) &&
-        !find('[data-slot="dialog-content"]').innerText.includes('Template C'),
-      'Template search did not filter the list and preview',
+      !document.querySelector('[role="option"]'),
+      'Template search did not filter the list',
     );
-    const insertButton = [...document.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Inserisci 0 voci',
-    );
+    const insertButton = [
+      ...find('[data-quote-template-editor]').querySelectorAll('button'),
+    ].find((button) => button.textContent?.trim() === 'Inserisci template');
     check(
       insertButton?.disabled,
-      'Filtered-out template can still be inserted',
+      'An unselected template can still be inserted',
     );
     await fill(templateQuery, '  TEMPLATE C  ');
     check(
-      find('[data-slot="dialog-content"]').innerText.includes('Template C'),
+      templateOptions().includes('Template C'),
       'Template search did not ignore case and surrounding spaces',
     );
     await fill(templateQuery, '');
     check(
-      find('[data-slot="dialog-content"]').innerText.includes('Template C'),
+      templateOptions().includes('Template C'),
       'Clearing the template search did not restore the list',
     );
     check(
@@ -530,6 +536,7 @@ export async function runWorkspaceChecks() {
     );
     await click('Annulla');
     await click('Inserisci template');
+    await clickSelector('#quote-template-picker');
     check(
       (find(templateQuery) as HTMLInputElement).value === '',
       'Template search survived closing the picker',
@@ -642,7 +649,7 @@ export async function runWorkspaceChecks() {
     });
     await fill(chosenSelector, '400');
     check(
-      find('aside').innerText.includes(eur('400.00')),
+      find('[data-quote-totals]').innerText.includes(eur('400.00')),
       'Chosen total did not update before blur without profile',
     );
     check(
@@ -661,7 +668,7 @@ export async function runWorkspaceChecks() {
     check(chosen.value === '400,', 'Decimal separator was overwritten');
     await fill(chosenSelector, '400,25');
     check(
-      find('aside').innerText.includes(eur('400.25')),
+      find('[data-quote-totals]').innerText.includes(eur('400.25')),
       'Decimal price did not update the total',
     );
     check(document.activeElement === chosen, 'Price input lost focus');
@@ -693,7 +700,7 @@ export async function runWorkspaceChecks() {
     );
     await fill(chosenSelector, '0');
     check(
-      find('aside').innerText.includes(eur('0.00')),
+      find('[data-quote-totals]').innerText.includes(eur('0.00')),
       'Explicit zero did not appear in the total',
     );
     await act(async () => {
@@ -702,7 +709,7 @@ export async function runWorkspaceChecks() {
     });
     await fill(chosenSelector, '');
     check(
-      find('aside').innerText.includes('Non inserito'),
+      find('[data-quote-totals]').innerText.includes('Non inserito'),
       'Empty price is not distinct from zero',
     );
     await act(async () => {
@@ -734,7 +741,7 @@ export async function runWorkspaceChecks() {
       });
     });
     check(
-      find('aside').innerText.includes('Parziale'),
+      find('[data-quote-totals]').innerText.includes('Parziale'),
       'Partial theoretical total is not labelled',
     );
     const missingItem = state.document!.quotes[0]!.items[1]!;
@@ -906,7 +913,7 @@ export async function runWorkspaceChecks() {
         document.quotes[0]!.items[0]!.subItems.pop();
       });
     });
-    const theoreticalBefore = find('aside').innerText;
+    const theoreticalBefore = find('[data-quote-totals]').innerText;
     await act(async () => {
       state.mutate((document) => {
         document.quotes[0]!.items[0]!.subItems.push({
@@ -918,7 +925,7 @@ export async function runWorkspaceChecks() {
       });
     });
     check(
-      find('aside').innerText !== theoreticalBefore,
+      find('[data-quote-totals]').innerText !== theoreticalBefore,
       'Added expense did not update analysis',
     );
     await act(async () => {
@@ -927,21 +934,19 @@ export async function runWorkspaceChecks() {
       });
     });
     check(
-      find('aside').innerText.includes('Non calcolabile'),
+      find('[data-quote-totals]').innerText.includes('Non calcolabile'),
       'Removing technical data did not update analysis',
     );
     results.push('quote-price-preview');
     await click('Aggiungi voce');
-    await fill(
-      '[data-quote-quick-add="root:end"] input[aria-label="Nome del lavoro da aggiungere"]',
-      'Old quote draft',
-    );
+    const createdItem = state.document!.quotes[0]!.items.at(-1)!;
+    const createdSelector = `#quote-name-${createdItem.id}`;
+    check(createdItem.name === '', 'New quote row was not created immediately');
+    await fill(createdSelector, 'Old quote draft');
     await replace('D');
     check(
-      !document.querySelector(
-        '[data-quote-quick-add="root:end"] input[aria-label="Nome del lavoro da aggiungere"]',
-      ),
-      'Quick insertion draft survived archive change',
+      !document.querySelector(createdSelector),
+      'Inline quote editor survived archive change',
     );
     check(
       !document.querySelector('[data-slot="dialog-content"]'),

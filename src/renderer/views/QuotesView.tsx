@@ -1,5 +1,8 @@
 import { siteOptions } from '@/lib/site-options';
-import { QuoteQuickAdd } from '@/components/quotes/QuoteQuickAdd';
+import {
+  QuoteAddMenu,
+  type QuickKind,
+} from '@/components/quotes/QuoteQuickAdd';
 import type { QuoteInsertionPoint } from '@/lib/quote-insertion';
 import { SelectField, SearchableSelect } from '@/components/ui/selection-field';
 import {
@@ -20,24 +23,20 @@ import { type CashDocument } from '../../domain/model';
 import { Analysis } from '@/components/Analysis';
 import { SiteDialog } from '@/components/EntityDialogs';
 import {
-  CatalogPickerDialog,
-  InsertTemplateDialog,
+  CatalogPickerEditor,
+  InsertTemplateEditor,
   VariantChangeDialog,
 } from '@/components/quotes/CatalogInsertDialogs';
 import { CustomerDialog } from '@/components/quotes/CustomerDialog';
 import { ExportDialog } from '@/components/quotes/ExportDialog';
 import { QuoteTitleDialog } from '@/components/quotes/QuoteTitleDialog';
 import { QuoteLayoutEditor } from '@/components/quotes/QuoteLayoutEditor';
-import {
-  SaveSubDialog,
-  SaveTemplateDialog,
-} from '@/components/quotes/CatalogSaveDialogs';
+import { SaveTemplateEditor } from '@/components/quotes/CatalogSaveDialogs';
 import { SubItemDialog } from '@/components/quotes/SubItemDialog';
 import {
   QuoteItemRow,
   type QuoteItemActions,
 } from '@/components/quotes/QuoteItemRow';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,7 +53,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -106,14 +104,13 @@ type Overlay =
       initialKind?: 'time' | 'expense' | 'travel';
     }
   | { kind: 'catalog'; itemId: string }
-  | { kind: 'save-sub'; itemId: string; subId: string }
   | {
       kind: 'variant-change';
       itemId: string;
       groupId: string;
       optionId: string;
     }
-  | ({ kind: 'insert-template' } & QuoteInsertionPoint)
+  | ({ kind: 'insert-template'; slot?: string } & QuoteInsertionPoint)
   | { kind: 'save-template' }
   | { kind: 'export' };
 
@@ -149,6 +146,10 @@ export function QuotesView({
   });
   const { quote } = controller;
   const [overlay, setOverlay] = useState<Overlay>();
+  const [rowKinds, setRowKinds] = useState<Record<string, QuickKind>>({});
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pendingUpdate, setPendingUpdate] = useState<PendingQuoteUpdate>();
   const [pricePreview, setPricePreview] = useState<
     Record<string, string | undefined>
@@ -232,6 +233,43 @@ export function QuotesView({
         );
   };
 
+  const expandItem = (id: string, open = true) =>
+    setExpandedItems((current) => {
+      const next = new Set(current);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const startInsertion = (
+    point: QuoteInsertionPoint,
+    _slot?: string,
+    kind: QuickKind = 'generic',
+  ) => {
+    if (readOnly) return;
+    if (!controller.addItem('', point.containerId, point.afterItemId)) return;
+    const item = appState
+      .document!.quotes.find((entry) => entry.id === quote.id)!
+      .items.at(-1)!;
+    setRowKinds((current) => ({ ...current, [item.id]: kind }));
+    setOverlay(undefined);
+    requestAnimationFrame(() =>
+      document.getElementById(`quote-name-${item.id}`)?.focus(),
+    );
+  };
+  const appendSub = async (
+    itemId: string,
+    kind: 'time' | 'expense' | 'travel',
+  ) => {
+    if (readOnly) return;
+    const id = await controller.addSubItem(itemId, kind);
+    if (!id) return;
+    expandItem(itemId);
+    setOverlay(undefined);
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`quote-sub-${id}`);
+      (row?.querySelector<HTMLElement>('input,button') ?? row)?.focus();
+    });
+  };
   const itemActions: QuoteItemActions = {
     showMissing,
     clearMissing: () => setAnalysisNavigation(undefined),
@@ -248,8 +286,20 @@ export function QuotesView({
       });
       return saved;
     },
-    editSub: (itemId, subId) => setOverlay({ kind: 'sub', itemId, subId }),
-    saveSub: (itemId, subId) => setOverlay({ kind: 'save-sub', itemId, subId }),
+    editSub: (itemId, subId) => {
+      expandItem(itemId);
+      const sub = quote.items
+        .find((entry) => entry.id === itemId)
+        ?.subItems.find((entry) => entry.id === subId);
+      if (sub?.kind === 'travel') setOverlay({ kind: 'sub', itemId, subId });
+      else
+        requestAnimationFrame(() =>
+          document.getElementById(`quote-sub-description-${subId}`)?.focus(),
+        );
+    },
+    saveSub: (itemId, subId) => {
+      controller.saveSubToCatalog(itemId, subId);
+    },
     changeVariant: (itemId, group, optionId) => {
       const item = quote.items.find((entry) => entry.id === itemId);
       if (
@@ -274,9 +324,13 @@ export function QuotesView({
         });
       else void controller.switchVariant(itemId, group.id, optionId, {}, true);
     },
-    addSub: (itemId, initialKind) =>
-      setOverlay({ kind: 'sub', itemId, initialKind }),
-    addCatalog: (itemId) => setOverlay({ kind: 'catalog', itemId }),
+    addSub: (itemId, initialKind) => {
+      void appendSub(itemId, initialKind);
+    },
+    addCatalog: (itemId) => {
+      expandItem(itemId);
+      setOverlay({ kind: 'catalog', itemId });
+    },
     requestDelete,
   };
 
@@ -343,13 +397,7 @@ export function QuotesView({
           <Button
             variant={doc.catalog.templates.length ? 'outline' : 'default'}
             disabled={readOnly}
-            onClick={() =>
-              document
-                .querySelector<HTMLInputElement>(
-                  '[data-quote-quick-add="root:end"] input',
-                )
-                ?.focus()
-            }
+            onClick={() => startInsertion({})}
           >
             <Plus />
             Aggiungi voce
@@ -384,18 +432,23 @@ export function QuotesView({
             >
               <MoreHorizontal />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-auto min-w-0">
               <DropdownMenuItem
+                className="size-8 justify-center p-0"
+                aria-label="Salva come template"
+                title="Salva come template"
                 disabled={!quote.items.length}
                 onClick={() => setOverlay({ kind: 'save-template' })}
               >
-                Salva come template
+                <BookOpen />
               </DropdownMenuItem>
               <DropdownMenuItem
+                className="size-8 justify-center p-0"
+                aria-label="Aggiorna con valori correnti"
+                title="Aggiorna con valori correnti"
                 onClick={() => void controller.performRefresh()}
               >
                 <RefreshCw />
-                Aggiorna con valori correnti
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -535,115 +588,166 @@ export function QuotesView({
               />
             </InputGroup>
           </Field>
-        </CardContent>
-      </Card>
-      <div className="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-3">
-          <QuoteLayoutEditor
-            key={`${doc.documentId}:${appState.archiveContext}:${quote.id}`}
-            quote={quote}
-            disabled={readOnly}
-            hasTemplates={doc.catalog.templates.length > 0}
-            onSave={controller.saveLayout}
-            onAddContainer={controller.addContainer}
-            onRenameContainer={controller.renameContainer}
-            onDeleteContainer={controller.deleteContainer}
-            onInsertTemplate={(containerId) =>
-              setOverlay({ kind: 'insert-template', containerId })
-            }
-            renderInsertion={(point, onClose) => (
-              <QuoteQuickAdd
-                key={`${point.containerId ?? 'root'}:${point.afterItemId ?? 'end'}`}
-                point={point}
-                disabled={readOnly}
-                hasTemplates={doc.catalog.templates.length > 0}
-                autoFocus={Boolean(onClose)}
-                onClose={onClose}
-                onTemplate={(position) =>
-                  setOverlay({ kind: 'insert-template', ...position })
-                }
-                onAdd={(name, position, input, travel) => {
-                  if (
-                    !controller.addItem(
-                      name,
-                      position.containerId,
-                      position.afterItemId,
-                      input,
-                    )
-                  )
-                    return false;
-                  const item = appState
-                    .document!.quotes.find((entry) => entry.id === quote.id)!
-                    .items.at(-1)!;
-                  if (travel)
-                    setOverlay({
-                      kind: 'sub',
-                      itemId: item.id,
-                      initialKind: 'travel',
-                    });
-                  return item.id;
+          <div className="col-span-full">
+            {overlay?.kind === 'site' &&
+            overlay.context === siteContext &&
+            quote.client ? (
+              <SiteDialog
+                inline
+                open
+                appState={appState}
+                doc={doc}
+                fixedClient={quote.client}
+                onOpenChange={(open) => {
+                  if (!open) setOverlay(undefined);
                 }}
               />
-            )}
-            renderItem={(id, dragHandle, onInsertAfter) => {
-              const item = quote.items.find((entry) => entry.id === id)!;
-              return (
-                <QuoteItemRow
-                  key={item.id}
-                  item={item}
-                  hourly={hourly}
-                  doc={doc}
-                  actions={itemActions}
-                  dragHandle={dragHandle}
-                  disabled={readOnly}
-                  onInsertAfter={onInsertAfter}
-                  missingTargets={missingTargets.filter(
-                    (target) => target.itemId === item.id,
-                  )}
-                />
-              );
-            }}
-          />
-        </div>
-        <aside className="space-y-3 2xl:sticky 2xl:top-24">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Analisi economica</CardTitle>
-                <CardDescription>
-                  Riepilogo complessivo del preventivo. La provvigione resta
-                  esclusa.
-                </CardDescription>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+      <div className="min-w-0 space-y-3">
+        <QuoteLayoutEditor
+          key={`${doc.documentId}:${appState.archiveContext}:${quote.id}`}
+          quote={quote}
+          disabled={readOnly}
+          hasTemplates={doc.catalog.templates.length > 0}
+          onInsertRow={startInsertion}
+          onSave={controller.saveLayout}
+          onAddContainer={controller.addContainer}
+          onRenameContainer={controller.renameContainer}
+          onDeleteContainer={controller.deleteContainer}
+          onInsertTemplate={(point, slot) =>
+            setOverlay({ kind: 'insert-template', ...point, slot })
+          }
+          renderInsertion={(point, onClose, slot) =>
+            overlay?.kind === 'insert-template' &&
+            (overlay.slot
+              ? overlay.slot === slot
+              : overlay.containerId === point.containerId &&
+                overlay.afterItemId === point.afterItemId) ? (
+              <div role="row">
+                <div role="cell" aria-colspan={7}>
+                  <InsertTemplateEditor
+                    key={`${point.containerId ?? 'root'}:${point.afterItemId ?? 'end'}`}
+                    doc={doc}
+                    quote={quote}
+                    disabled={readOnly}
+                    onClose={() => {
+                      setOverlay(undefined);
+                      onClose?.();
+                    }}
+                    onInsert={(templateId, choices, context) =>
+                      controller.insertTemplate(
+                        templateId,
+                        choices,
+                        context,
+                        overlay.containerId,
+                        overlay.afterItemId,
+                      )
+                    }
+                  />
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <Analysis value={total} onShowMissing={showMissing} />
-              {!hourly ? (
-                <Alert>
-                  <AlertTitle>Obiettivo orario non disponibile</AlertTitle>
-                  <AlertDescription>
-                    Associa un profilo confermato e calcolabile.
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-            </CardContent>
-          </Card>
-        </aside>
-      </div>
-
-      {overlay?.kind === 'site' &&
-      overlay.context === siteContext &&
-      quote.client ? (
-        <SiteDialog
-          open
-          appState={appState}
-          doc={doc}
-          fixedClient={quote.client}
-          onOpenChange={(open) => {
-            if (!open) setOverlay(undefined);
+            ) : slot?.startsWith('after-') ? null : (
+              <QuoteAddMenu
+                disabled={readOnly}
+                hasTemplates={doc.catalog.templates.length > 0}
+                onSelect={(kind) => {
+                  if (kind === 'template')
+                    setOverlay({ kind: 'insert-template', ...point, slot });
+                  else startInsertion(point, slot, kind);
+                }}
+              />
+            )
+          }
+          renderItem={(
+            id,
+            dragHandle,
+            onInsertAfter,
+            onInsertTemplateAfter,
+          ) => {
+            const item = quote.items.find((entry) => entry.id === id)!;
+            return (
+              <QuoteItemRow
+                key={item.id}
+                item={item}
+                emptyKind={rowKinds[id]}
+                hourly={hourly}
+                doc={doc}
+                actions={itemActions}
+                expanded={expandedItems.has(id)}
+                onExpandedChange={(open) => expandItem(id, open)}
+                editor={
+                  overlay?.kind === 'sub' && overlay.itemId === id ? (
+                    <SubItemDialog
+                      inline
+                      disabled={readOnly}
+                      key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}`}
+                      sub={overlaySub}
+                      initialKind={overlay.initialKind}
+                      doc={doc}
+                      appState={appState}
+                      defaultDestinationSiteId={quote.mainSite?.sourceId}
+                      client={quote.client}
+                      initialDescription={item.name}
+                      onClose={() => setOverlay(undefined)}
+                      onSaveSimple={(input) =>
+                        controller.saveSimpleSub(
+                          overlay.itemId,
+                          input,
+                          overlay.subId,
+                        )
+                      }
+                      onSaveTravel={(input) =>
+                        controller.saveTravel(
+                          overlay.itemId,
+                          input,
+                          overlay.subId,
+                        )
+                      }
+                    />
+                  ) : overlay?.kind === 'catalog' && overlay.itemId === id ? (
+                    <CatalogPickerEditor
+                      disabled={readOnly}
+                      itemId={overlay.itemId}
+                      doc={doc}
+                      quote={quote}
+                      onClose={() => setOverlay(undefined)}
+                      onAdd={(item, context) =>
+                        controller.addReusable(overlay.itemId, item, context)
+                      }
+                    />
+                  ) : undefined
+                }
+                dragHandle={dragHandle}
+                disabled={readOnly}
+                onInsertAfter={onInsertAfter}
+                onInsertTemplateAfter={onInsertTemplateAfter}
+                missingTargets={missingTargets.filter(
+                  (target) => target.itemId === item.id,
+                )}
+              />
+            );
           }}
         />
-      ) : null}
+        {overlay?.kind === 'save-template' ? (
+          <SaveTemplateEditor
+            disabled={readOnly}
+            quote={quote}
+            onClose={() => setOverlay(undefined)}
+            onSave={controller.saveTemplate}
+          />
+        ) : null}
+        <Analysis totals value={total} onShowMissing={showMissing} />
+        {!hourly ? (
+          <p className="px-4 text-xs text-muted-foreground">
+            Obiettivo orario non disponibile. Associa un profilo confermato e
+            calcolabile.
+          </p>
+        ) : null}
+      </div>
+
       {overlay?.kind === 'title' ? (
         <QuoteTitleDialog
           quote={quote}
@@ -673,46 +777,6 @@ export function QuotesView({
           onSelect={selectCustomer}
         />
       ) : null}
-      {overlay?.kind === 'sub' && overlayItem ? (
-        <SubItemDialog
-          key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}`}
-          sub={overlaySub}
-          initialKind={overlay.initialKind}
-          doc={doc}
-          appState={appState}
-          defaultDestinationSiteId={quote.mainSite?.sourceId}
-          client={quote.client}
-          initialDescription={overlayItem.name}
-          onClose={() => setOverlay(undefined)}
-          onSaveSimple={(input) =>
-            controller.saveSimpleSub(overlay.itemId, input, overlay.subId)
-          }
-          onSaveTravel={(input) =>
-            controller.saveTravel(overlay.itemId, input, overlay.subId)
-          }
-        />
-      ) : null}
-      {overlay?.kind === 'catalog' ? (
-        <CatalogPickerDialog
-          itemId={overlay.itemId}
-          doc={doc}
-          quote={quote}
-          onClose={() => setOverlay(undefined)}
-          onAdd={(item, context) =>
-            controller.addReusable(overlay.itemId, item, context)
-          }
-        />
-      ) : null}
-      {overlay?.kind === 'save-sub' && overlaySub ? (
-        <SaveSubDialog
-          description={overlaySub.description}
-          onClose={() => setOverlay(undefined)}
-          onConfirm={() => {
-            if (controller.saveSubToCatalog(overlay.itemId, overlay.subId))
-              setOverlay(undefined);
-          }}
-        />
-      ) : null}
       {overlay?.kind === 'variant-change' && overlayItem && overlayGroup ? (
         <VariantChangeDialog
           group={overlayGroup}
@@ -734,29 +798,6 @@ export function QuotesView({
               force,
             )
           }
-        />
-      ) : null}
-      {overlay?.kind === 'insert-template' ? (
-        <InsertTemplateDialog
-          doc={doc}
-          quote={quote}
-          onClose={() => setOverlay(undefined)}
-          onInsert={(templateId, choices, context) =>
-            controller.insertTemplate(
-              templateId,
-              choices,
-              context,
-              overlay.containerId,
-              overlay.afterItemId,
-            )
-          }
-        />
-      ) : null}
-      {overlay?.kind === 'save-template' ? (
-        <SaveTemplateDialog
-          quote={quote}
-          onClose={() => setOverlay(undefined)}
-          onSave={controller.saveTemplate}
         />
       ) : null}
       {overlay?.kind === 'export' && ficReady ? (

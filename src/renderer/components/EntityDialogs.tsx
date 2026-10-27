@@ -39,6 +39,7 @@ import { formReader, moneyInputValue } from '@/lib/format';
 import type { AppState } from '../state';
 
 interface DialogBaseProps {
+  inline?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: (id: string) => void;
@@ -159,6 +160,7 @@ export function CostDialog({
 
 export function SiteDialog({
   open,
+  inline = false,
   onOpenChange,
   appState,
   site,
@@ -320,6 +322,161 @@ export function SiteDialog({
     onSaved?.(id);
     onOpenChange(false);
   };
+  const Header = inline ? 'div' : DialogHeader;
+  const Title = inline ? 'h4' : DialogTitle;
+  const Description = inline ? 'p' : DialogDescription;
+  const Footer = inline ? 'div' : DialogFooter;
+  const form = (
+    <form
+      key={site?.id ?? 'new-site'}
+      onSubmit={submit}
+      className={inline ? 'space-y-4 border-y py-3' : 'contents'}
+    >
+      <Header>
+        <Title>{site ? 'Modifica sede' : 'Nuova sede'}</Title>
+        <Description>
+          Localizza la Sede con un’azione esplicita. Nessuna ricerca viene
+          eseguita mentre digiti.
+        </Description>
+      </Header>
+      <fieldset disabled={saving} className="contents">
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="site-name">Nome</FieldLabel>
+            <Input
+              id="site-name"
+              autoFocus={inline}
+              name="name"
+              defaultValue={site?.name}
+              required
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="site-mode">Cerca tramite</FieldLabel>
+            <SelectField
+              id="site-mode"
+              value={mode}
+              onValueChange={(value) => setMode(value as typeof mode)}
+              options={[
+                { value: 'address', label: 'Indirizzo' },
+                { value: 'coordinates', label: 'Coordinate' },
+              ]}
+            />
+          </Field>
+          {mode === 'address' ? (
+            <Field>
+              <FieldLabel htmlFor="site-address">Indirizzo</FieldLabel>
+              <Input
+                id="site-address"
+                value={address}
+                onChange={(event) => {
+                  setAddress(event.target.value);
+                  setResolved(undefined);
+                }}
+                placeholder="Via, città"
+              />
+              <FieldDescription>
+                Dopo una modifica usa di nuovo Cerca prima del routing.
+              </FieldDescription>
+            </Field>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="site-coordinates">Coordinate</FieldLabel>
+              <Input
+                id="site-coordinates"
+                value={coordinateText}
+                onChange={(event) => {
+                  setCoordinateText(event.target.value);
+                  setResolved(undefined);
+                }}
+                placeholder="41.4682252, 14.5621986"
+              />
+              <FieldDescription>
+                Formato Google Maps: latitudine, longitudine.
+              </FieldDescription>
+            </Field>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void search()}
+            disabled={searching}
+          >
+            {searching ? 'Ricerca…' : 'Cerca'}
+          </Button>
+          {searchError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{searchError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {results.length ? (
+            <div
+              className="space-y-2"
+              role="listbox"
+              aria-label="Risultati indirizzo"
+            >
+              {results.map((result) => (
+                <Button
+                  key={result.id}
+                  type="button"
+                  variant="outline"
+                  className="h-auto w-full justify-start whitespace-normal py-3 text-left"
+                  onClick={() => choose(result)}
+                >
+                  {result.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <Field>
+            <FieldLabel>Cliente</FieldLabel>
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              {fixedClient?.displayName ??
+                site?.client?.displayName ??
+                'Nessuno — Altre sedi'}
+            </div>
+          </Field>
+        </FieldGroup>
+        {saveError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
+        ) : null}
+        <Footer className={inline ? 'flex flex-wrap gap-2' : undefined}>
+          {site ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="mr-auto"
+              onClick={() =>
+                appState.mutate((document) => {
+                  document.settings.defaultDepartureSiteId = site.id;
+                })
+              }
+            >
+              Imposta come partenza predefinita
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Annulla
+          </Button>
+          <Button type="submit">
+            {saving ? 'Salvataggio…' : 'Salva sede'}
+          </Button>
+        </Footer>
+      </fieldset>
+    </form>
+  );
+  if (inline)
+    return open ? (
+      <section aria-label="Nuova sede" className="min-w-0 text-sm">
+        {form}
+      </section>
+    ) : null;
   return (
     <Dialog
       open={open}
@@ -327,150 +484,7 @@ export function SiteDialog({
         if (!saving) onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
-        <form
-          key={site?.id ?? 'new-site'}
-          onSubmit={submit}
-          className="contents"
-        >
-          <DialogHeader>
-            <DialogTitle>{site ? 'Modifica sede' : 'Nuova sede'}</DialogTitle>
-            <DialogDescription>
-              Localizza la Sede con un’azione esplicita. Nessuna ricerca viene
-              eseguita mentre digiti.
-            </DialogDescription>
-          </DialogHeader>
-          <fieldset disabled={saving} className="contents">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="site-name">Nome</FieldLabel>
-                <Input
-                  id="site-name"
-                  name="name"
-                  defaultValue={site?.name}
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="site-mode">Cerca tramite</FieldLabel>
-                <SelectField
-                  id="site-mode"
-                  value={mode}
-                  onValueChange={(value) => setMode(value as typeof mode)}
-                  options={[
-                    { value: 'address', label: 'Indirizzo' },
-                    { value: 'coordinates', label: 'Coordinate' },
-                  ]}
-                />
-              </Field>
-              {mode === 'address' ? (
-                <Field>
-                  <FieldLabel htmlFor="site-address">Indirizzo</FieldLabel>
-                  <Input
-                    id="site-address"
-                    value={address}
-                    onChange={(event) => {
-                      setAddress(event.target.value);
-                      setResolved(undefined);
-                    }}
-                    placeholder="Via, città"
-                  />
-                  <FieldDescription>
-                    Dopo una modifica usa di nuovo Cerca prima del routing.
-                  </FieldDescription>
-                </Field>
-              ) : (
-                <Field>
-                  <FieldLabel htmlFor="site-coordinates">Coordinate</FieldLabel>
-                  <Input
-                    id="site-coordinates"
-                    value={coordinateText}
-                    onChange={(event) => {
-                      setCoordinateText(event.target.value);
-                      setResolved(undefined);
-                    }}
-                    placeholder="41.4682252, 14.5621986"
-                  />
-                  <FieldDescription>
-                    Formato Google Maps: latitudine, longitudine.
-                  </FieldDescription>
-                </Field>
-              )}
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void search()}
-                disabled={searching}
-              >
-                {searching ? 'Ricerca…' : 'Cerca'}
-              </Button>
-              {searchError ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{searchError}</AlertDescription>
-                </Alert>
-              ) : null}
-              {results.length ? (
-                <div
-                  className="space-y-2"
-                  role="listbox"
-                  aria-label="Risultati indirizzo"
-                >
-                  {results.map((result) => (
-                    <Button
-                      key={result.id}
-                      type="button"
-                      variant="outline"
-                      className="h-auto w-full justify-start whitespace-normal py-3 text-left"
-                      onClick={() => choose(result)}
-                    >
-                      {result.label}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-              <Field>
-                <FieldLabel>Cliente</FieldLabel>
-                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                  {fixedClient?.displayName ??
-                    site?.client?.displayName ??
-                    'Nessuno — Altre sedi'}
-                </div>
-              </Field>
-            </FieldGroup>
-            {saveError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{saveError}</AlertDescription>
-              </Alert>
-            ) : null}
-            <DialogFooter>
-              {site ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="mr-auto"
-                  onClick={() =>
-                    appState.mutate((document) => {
-                      document.settings.defaultDepartureSiteId = site.id;
-                    })
-                  }
-                >
-                  Imposta come partenza predefinita
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Annulla
-              </Button>
-              <Button type="submit">
-                {saving ? 'Salvataggio…' : 'Salva sede'}
-              </Button>
-            </DialogFooter>
-          </fieldset>
-        </form>
-      </DialogContent>
+      <DialogContent className="sm:max-w-2xl">{form}</DialogContent>
     </Dialog>
   );
 }
@@ -495,6 +509,7 @@ const blankVehicle: Pick<
 };
 export function VehicleDialog({
   open,
+  inline = false,
   onOpenChange,
   appState,
   vehicle: existing,
@@ -562,102 +577,108 @@ export function VehicleDialog({
     onSaved?.(id);
     onOpenChange(false);
   };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <form
-          key={existing?.id ?? 'new-vehicle'}
-          onSubmit={submit}
-          className="contents"
-        >
-          <DialogHeader>
-            <DialogTitle>
-              {existing ? 'Modifica veicolo' : 'Nuovo veicolo'}
-            </DialogTitle>
-            <DialogDescription>
-              I costi annuali confluiscono nel costo chilometrico e non vanno
-              duplicati nei costi aziendali.
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup className="grid grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor="vehicle-name">Nome</FieldLabel>
-              <Input
-                id="vehicle-name"
-                name="name"
-                defaultValue={vehicle.name}
+  const Header = inline ? 'div' : DialogHeader;
+  const Title = inline ? 'h4' : DialogTitle;
+  const Description = inline ? 'p' : DialogDescription;
+  const Footer = inline ? 'div' : DialogFooter;
+  const form = (
+    <form
+      key={existing?.id ?? 'new-vehicle'}
+      onSubmit={submit}
+      className={inline ? 'space-y-4 border-y py-3' : 'contents'}
+    >
+      <Header>
+        <Title>{existing ? 'Modifica veicolo' : 'Nuovo veicolo'}</Title>
+        <Description>
+          I costi annuali confluiscono nel costo chilometrico e non vanno
+          duplicati nei costi aziendali.
+        </Description>
+      </Header>
+      <FieldGroup className="grid grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="vehicle-name">Nome</FieldLabel>
+          <Input
+            id="vehicle-name"
+            autoFocus={inline}
+            name="name"
+            defaultValue={vehicle.name}
+            required
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="vehicle-fuel">Carburante</FieldLabel>
+          <SelectField
+            id="vehicle-fuel"
+            name="fuel"
+            value={fuel}
+            onValueChange={(value) => setFuel(value as Vehicle['fuel'])}
+            options={[
+              ...(['Benzina', 'Gasolio', 'GPL', 'Metano'] as const).map(
+                (value) => ({ value: String(value), label: value }),
+              ),
+            ]}
+          />
+        </Field>
+        <NumberInput
+          id="consumption"
+          label="Consumo medio"
+          value={vehicle.consumption}
+          suffix={fuel === 'Metano' ? 'kg/100 km' : 'km/l'}
+        />
+        <NumberInput
+          id="annualKm"
+          label="Percorrenza annua"
+          value={vehicle.annualKm}
+          suffix="km"
+        />
+        {(
+          [
+            ['annualInsurance', 'Assicurazione annua', vehicle.annualInsurance],
+            ['annualTax', 'Bollo annuo', vehicle.annualTax],
+            [
+              'annualMaintenance',
+              'Manutenzione annua',
+              vehicle.annualMaintenance,
+            ],
+          ] as const
+        ).map(([name, label, value]) => (
+          <Field key={name}>
+            <FieldLabel htmlFor={`vehicle-${name}`}>{label}</FieldLabel>
+            <InputGroup>
+              <InputGroupAddon>
+                <InputGroupText>€</InputGroupText>
+              </InputGroupAddon>
+              <InputGroupInput
+                id={`vehicle-${name}`}
+                name={name}
+                defaultValue={moneyInputValue(value)}
                 required
               />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="vehicle-fuel">Carburante</FieldLabel>
-              <SelectField
-                id="vehicle-fuel"
-                name="fuel"
-                value={fuel}
-                onValueChange={(value) => setFuel(value as Vehicle['fuel'])}
-                options={[
-                  ...(['Benzina', 'Gasolio', 'GPL', 'Metano'] as const).map(
-                    (value) => ({ value: String(value), label: value }),
-                  ),
-                ]}
-              />
-            </Field>
-            <NumberInput
-              id="consumption"
-              label="Consumo medio"
-              value={vehicle.consumption}
-              suffix={fuel === 'Metano' ? 'kg/100 km' : 'km/l'}
-            />
-            <NumberInput
-              id="annualKm"
-              label="Percorrenza annua"
-              value={vehicle.annualKm}
-              suffix="km"
-            />
-            {(
-              [
-                [
-                  'annualInsurance',
-                  'Assicurazione annua',
-                  vehicle.annualInsurance,
-                ],
-                ['annualTax', 'Bollo annuo', vehicle.annualTax],
-                [
-                  'annualMaintenance',
-                  'Manutenzione annua',
-                  vehicle.annualMaintenance,
-                ],
-              ] as const
-            ).map(([name, label, value]) => (
-              <Field key={name}>
-                <FieldLabel htmlFor={`vehicle-${name}`}>{label}</FieldLabel>
-                <InputGroup>
-                  <InputGroupAddon>
-                    <InputGroupText>€</InputGroupText>
-                  </InputGroupAddon>
-                  <InputGroupInput
-                    id={`vehicle-${name}`}
-                    name={name}
-                    defaultValue={moneyInputValue(value)}
-                    required
-                  />
-                </InputGroup>
-              </Field>
-            ))}
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Annulla
-            </Button>
-            <Button type="submit">Salva veicolo</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+            </InputGroup>
+          </Field>
+        ))}
+      </FieldGroup>
+      <Footer className={inline ? 'flex flex-wrap gap-2' : undefined}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onOpenChange(false)}
+        >
+          Annulla
+        </Button>
+        <Button type="submit">Salva veicolo</Button>
+      </Footer>
+    </form>
+  );
+  if (inline)
+    return open ? (
+      <section aria-label="Nuovo veicolo" className="min-w-0 text-sm">
+        {form}
+      </section>
+    ) : null;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">{form}</DialogContent>
     </Dialog>
   );
 }

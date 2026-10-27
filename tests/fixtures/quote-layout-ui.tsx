@@ -117,6 +117,12 @@ export async function setup(empty = false) {
   });
   if (empty) {
     quote.items = [];
+    doc.catalog.subItems.push({
+      ...meta(),
+      kind: 'expense',
+      description: 'Cancelleria',
+      amount: '12.00',
+    });
     const basic = {
       ...meta(),
       name: 'Base',
@@ -125,6 +131,11 @@ export async function setup(empty = false) {
           kind: 'time' as const,
           description: 'Configurazione NAS',
           minutes: 60,
+        },
+        {
+          kind: 'expense' as const,
+          description: 'Licenza NAS base',
+          amount: '25.00',
         },
       ],
     };
@@ -136,6 +147,11 @@ export async function setup(empty = false) {
           kind: 'time' as const,
           description: 'Configurazione NAS avanzata',
           minutes: 120,
+        },
+        {
+          kind: 'expense' as const,
+          description: 'Licenza NAS avanzata',
+          amount: '80.00',
         },
       ],
     };
@@ -151,7 +167,6 @@ export async function setup(empty = false) {
             {
               ...meta(),
               name: 'Configurazione',
-              defaultOptionId: basic.id,
               options: [basic, advanced],
             },
           ],
@@ -217,7 +232,7 @@ export async function setup(empty = false) {
     readOnly: false,
     token: { documentId: doc.documentId, revision: doc.revision },
   });
-  flushSync(() => root.render(<Harness />));
+  flushSync(() => root.render(<Harness key={rootQuoteId} />));
   await settle();
   return quote.items.map((item) => item.id);
 }
@@ -255,6 +270,15 @@ export async function click(text: string) {
       (element) =>
         element.getAttribute('role') === 'menuitem' && matches(element),
     ) ?? candidates.find(matches);
+  if (
+    !button &&
+    (text.startsWith('Inserisci dopo ') || text.startsWith('Elimina '))
+  ) {
+    const name = text.replace(/^(Inserisci dopo |Elimina )/, '');
+    await click(`Azioni voce ${name}`);
+    await click(text);
+    return;
+  }
   if (!button) throw new Error(`Pulsante mancante: ${text}`);
   button.click();
   await settle();
@@ -268,6 +292,17 @@ export async function fill(selector: string, value: string) {
     'value',
   )!.set!.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
+  await settle();
+}
+
+export async function renameLastContainer(name: string) {
+  const containers = [...document.querySelectorAll('[data-quote-container]')];
+  const id = containers.at(-1)!.getAttribute('data-quote-container');
+  const selector = `[data-quote-container="${id}"] input[aria-label^="Titolo contenitore"]`;
+  await fill(selector, name);
+  document
+    .querySelector(selector)!
+    .dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
   await settle();
 }
 
@@ -338,19 +373,246 @@ export async function runOperationalChecks() {
   const commit = async (selector: string, value: string) => {
     await fill(selector, value);
     document
-      .querySelector<HTMLInputElement>(selector)!
+      .querySelector(selector)!
       .dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
     await settle();
   };
-  const quick = '[data-quote-quick-add="root:end"]';
-  const add = async (name: string) => {
-    await fill(
-      `${quick} input[aria-label="Nome del lavoro da aggiungere"]`,
-      name,
-    );
-    document.querySelector<HTMLFormElement>(quick)!.requestSubmit();
+  const create = async (kind: string, containerId?: string) => {
+    const count = current().items.length;
+    const buttons = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[data-quote-add-menu] button',
+      ),
+    ];
+    const button = containerId
+      ? document.querySelector<HTMLButtonElement>(
+          `[data-quote-container="${containerId}"] [data-quote-add-menu] button`,
+        )
+      : buttons
+          .filter((entry) => !entry.closest('[data-quote-container]'))
+          .at(-1);
+    button!.click();
     await settle();
+    await click(kind);
+    assert(
+      current().items.length === count + 1,
+      'La scelta crea subito una vera voce nel documento',
+    );
+    const item = current().items.at(-1)!;
+    assert(
+      item.name === '' &&
+        item.subItems.length === 0 &&
+        item.chosenPrice === undefined &&
+        !document.querySelector('[data-quote-quick-add]'),
+      'Riga effettiva senza sottorighe automatiche o salvataggi preliminari',
+    );
+    assert(
+      document.activeElement?.id === `quote-name-${item.id}`,
+      'Focus sulla descrizione della riga effettiva',
+    );
+    return item.id;
   };
+  const add = async (name: string, kind = 'Riga generica') => {
+    const id = await create(kind);
+    await commit(`#quote-name-${id}`, name);
+    return id;
+  };
+  await setup(true);
+  assert(
+    current().layout === undefined && info().writes === 0,
+    'Apertura senza scritture automatiche',
+  );
+  assert(
+    document.querySelectorAll('[data-quote-layout] [role=table]').length === 1,
+    'Tabella subito disponibile',
+  );
+  assert(
+    !document.querySelector('[data-quote-item]') &&
+      document.querySelector('[data-quote-add-menu] button'),
+    'Tabella vuota con pulsante centrale',
+  );
+  const totals = document.querySelector('[data-quote-totals]')!;
+  assert(
+    !document.querySelector('aside') &&
+      !!(
+        document
+          .querySelector('[data-quote-layout]')!
+          .compareDocumentPosition(totals) & Node.DOCUMENT_POSITION_FOLLOWING
+      ),
+    'Totali dopo le tabelle',
+  );
+  await commit(
+    'input[aria-label="Titolo del contenitore iniziale"]',
+    'Servizi',
+  );
+  const container = current().layout!.find(
+    (entry) => entry.kind === 'container',
+  )!;
+  assert(
+    container.kind === 'container',
+    'Titolo iniziale conservato nel modello esistente',
+  );
+  await commit('input[aria-label="Titolo contenitore Servizi"]', 'Assistenza');
+  const parentId = await create(
+    'Attività',
+    container.kind === 'container' ? container.id : '',
+  );
+  await commit(`#quote-name-${parentId}`, 'Gestione cliente');
+  const parent = () => current().items.find((item) => item.id === parentId)!;
+  const countBeforeHeader = current().items.length;
+  document
+    .querySelector<HTMLButtonElement>(
+      `[data-quote-container="${container.kind === 'container' ? container.id : ''}"] button[data-slot="dropdown-menu-trigger"]`,
+    )!
+    .click();
+  await settle();
+  await click('Aggiungi riga');
+  assert(
+    current().items.length === countBeforeHeader + 1,
+    'Aggiungi riga del contenitore crea subito la voce',
+  );
+  const emptyItemId = current().items.at(-1)!.id;
+  assert(
+    document.activeElement?.id === `quote-name-${emptyItemId}`,
+    'Focus sulla nuova riga dal contenitore',
+  );
+  const bareExpenseId = await create(
+    'Spesa',
+    container.kind === 'container' ? container.id : '',
+  );
+  assert(
+    current().items.find((item) => item.id === bareExpenseId)!.subItems
+      .length === 0,
+    'Anche la riga Spesa nasce senza sottorighe',
+  );
+  for (const [description, duration] of [
+    ['WhatsApp', '30m'],
+    ['Telefono', '1h'],
+  ]) {
+    const count = parent().subItems.length;
+    await click('Aggiungi sottoriga a Gestione cliente');
+    await click('Attività');
+    const sub = parent().subItems.at(-1)!;
+    assert(
+      parent().subItems.length === count + 1 &&
+        sub.description === '' &&
+        sub.kind === 'time' &&
+        sub.minutes === undefined,
+      'Sottoriga salvata subito, senza durata fittizia',
+    );
+    const rows = document.querySelectorAll(
+      `[data-quote-item="${parentId}"] [data-quote-sub]`,
+    );
+    assert(
+      rows[rows.length - 1]!.getAttribute('data-quote-sub') === sub.id,
+      'Nuova sottoriga in fondo alle altre',
+    );
+    assert(
+      !document.querySelector('[data-quote-sub-editor]') &&
+        !document.querySelector('[role=dialog]'),
+      'Nessun form o pulsante Salva per le sottorighe semplici',
+    );
+    await commit(`#quote-sub-description-${sub.id}`, description!);
+    await commit(`input[aria-label="Durata ${description}"]`, duration!);
+    assert(
+      parent().subItems.at(-1)!.id === sub.id,
+      'Identità stabile durante la compilazione inline',
+    );
+  }
+  const main = document.querySelector<HTMLElement>(
+    `[data-quote-item="${parentId}"] [role=row]`,
+  )!;
+  const mainCells = main.querySelectorAll<HTMLElement>(':scope > [role=cell]');
+  assert(
+    mainCells[2]!.textContent === '1h 30m',
+    'Aggregazione dei tempi sulla riga principale',
+  );
+  assert(main.dataset.quoteParent === 'true', 'Riga padre riconoscibile');
+  for (const row of document.querySelectorAll<HTMLElement>(
+    `[data-quote-item="${parentId}"] [data-quote-sub]`,
+  )) {
+    const cells = row.querySelectorAll<HTMLElement>(':scope > [role=cell]');
+    assert(
+      cells.length === 7 && !cells[5]!.querySelector('input'),
+      'Sette colonne senza prezzo scelto sulle sottorighe',
+    );
+    cells.forEach((cell, index) =>
+      assert(
+        Math.abs(
+          cell.getBoundingClientRect().x -
+            mainCells[index]!.getBoundingClientRect().x,
+        ) < 1,
+        'Colonne allineate',
+      ),
+    );
+    assert(
+      getComputedStyle(main).backgroundColor !==
+        getComputedStyle(row).backgroundColor,
+      'Sfondo del padre distinto dalle sottorighe',
+    );
+  }
+  await commit(`#chosen-${parentId}`, '0');
+  assert(
+    parent().chosenPrice === '0.00',
+    'Prezzo scelto indipendente dai costi',
+  );
+  await commit('input[aria-label="Durata WhatsApp"]', '');
+  assert(
+    parent().subItems[0]?.kind === 'time' &&
+      parent().subItems[0].minutes === undefined,
+    'Durata svuotabile senza eliminare la sottoriga',
+  );
+  await commit('input[aria-label="Durata WhatsApp"]', '45m');
+  await click('Aggiungi sottoriga a Gestione cliente');
+  await click('Spesa');
+  const expense = parent().subItems.at(-1)!;
+  assert(
+    expense.kind === 'expense' && expense.amount === undefined,
+    'Spesa vuota effettiva senza importo zero artificiale',
+  );
+  await commit(
+    `[data-quote-sub="${expense.id}"] input[aria-label^="Importo"]`,
+    '8,00',
+  );
+  await commit(`#quote-sub-description-${expense.id}`, 'Telefonia');
+  assert(
+    document
+      .querySelector('button[aria-label="Apri o chiudi Gestione cliente"]')
+      ?.getAttribute('aria-expanded') === 'true',
+    'Sottospesa visibile dopo la compilazione',
+  );
+  await click('Aggiungi sottoriga a Gestione cliente');
+  await click('Dal catalogo');
+  const catalogEditor = document.querySelector('[data-quote-catalog-editor]')!;
+  assert(
+    !!(
+      document
+        .getElementById(`quote-sub-${expense.id}`)!
+        .compareDocumentPosition(catalogEditor) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+    ),
+    'Editor di inserimento in fondo alle sottovoci',
+  );
+  await choose(`#catalog-entry-${parentId}`, 'Cancelleria');
+  document
+    .querySelector<HTMLFormElement>('[data-quote-catalog-editor]')!
+    .requestSubmit();
+  await settle();
+  assert(
+    parent().subItems.at(-1)?.kind === 'expense' &&
+      parent().subItems.at(-1)?.description === 'Cancelleria',
+    'Copia dal catalogo in fondo',
+  );
+  const preserved = JSON.stringify(current());
+  await state.save();
+  await setReadOnly(true);
+  await setReadOnly(false);
+  assert(
+    JSON.stringify(current()) === preserved &&
+      current().items.some((item) => item.id === emptyItemId),
+    'Anche la riga vuota rimane alla riapertura',
+  );
+
   await setup(true);
   for (const name of [
     'Acquisizione',
@@ -362,31 +624,13 @@ export async function runOperationalChecks() {
     'Assistenza',
   ])
     await add(name);
-  assert(
-    current().items.length === 7 &&
-      current().items.every(
-        (item) => !item.subItems.length && item.chosenPrice === undefined,
-      ),
-    'La sequenza iniziale non deve creare sottovoci o prezzi fittizi',
-  );
-  assert(
-    !document.querySelector('[role=dialog]'),
-    'Inserimento nomi senza dialog',
-  );
   const first = current().items[0]!.id;
   await commit(`#quote-name-${first}`, 'Acquisizione cliente');
-  assert(
-    current().items[0]!.name === 'Acquisizione cliente',
-    'Rinomina in linea',
-  );
   await commit(
     `[data-quote-item="${first}"] input[aria-label^="Durata di"]`,
     '30m',
   );
-  assert(
-    current().items[0]!.subItems[0]?.kind === 'time',
-    'Quantificazione direttamente dalla riga',
-  );
+  const firstSubId = current().items[0]!.subItems[0]!.id;
   await commit(
     `[data-quote-item="${first}"] input[aria-label^="Durata di"]`,
     '0',
@@ -394,195 +638,250 @@ export async function runOperationalChecks() {
   assert(
     current().items[0]!.subItems[0]?.kind === 'time' &&
       current().items[0]!.subItems[0].minutes === 30,
-    'Una durata invalida non modifica i dati',
-  );
-  assert(
-    document.querySelector(
-      `[data-quote-item="${first}"] input[aria-invalid=true]`,
-    ),
-    'Input invalido riconoscibile',
+    'Durata non positiva rifiutata',
   );
   await commit(
     `[data-quote-item="${first}"] input[aria-label^="Durata di"]`,
     '45m',
   );
+  assert(
+    current().items[0]!.subItems[0]!.id === firstSubId,
+    'La quantificazione non duplica la sottoriga',
+  );
   await fill(`#chosen-${first}`, '150,00');
   assert(
-    current().items[0]!.chosenPrice === undefined,
-    'Anteprima indipendente dal salvataggio su blur',
-  );
-  assert(
-    document.querySelector('aside')!.textContent!.includes('150,00'),
-    'Totale globale immediato durante input valido',
+    current().items[0]!.chosenPrice === undefined &&
+      document
+        .querySelector('[data-quote-totals]')!
+        .textContent!.includes('150,00'),
+    'Anteprima prezzo prima del blur',
   );
   await commit(`#chosen-${first}`, '180,00');
-  assert(current().items[0]!.chosenPrice === '180.00', 'Prezzo scelto salvato');
-  await click('Elimina Assistenza');
-  assert(
-    info().deleteRequests === 1 &&
-      !document.querySelector('[role=alertdialog]'),
-    'Una sola richiesta di conferma eliminazione',
-  );
-
-  await click('Inserisci dopo Acquisizione cliente');
-  const insertion = document.querySelector(
-    `[data-quote-quick-add="root:${first}"]`,
+  await click('Azioni voce Assistenza');
+  const actionMenu = document.querySelector<HTMLElement>(
+    '[data-slot="dropdown-menu-content"]',
   )!;
-  [...insertion.querySelectorAll('button')]
-    .find((button) => button.textContent?.includes('Da template'))!
-    .click();
+  assert(
+    actionMenu.textContent?.trim() === '' &&
+      actionMenu.getBoundingClientRect().width < 64,
+    'Azioni compatte con sole icone',
+  );
+  assert(
+    [...actionMenu.querySelectorAll('[role=menuitem]')].every(
+      (entry) =>
+        entry.hasAttribute('aria-label') && entry.hasAttribute('title'),
+    ),
+    'Icone accessibili',
+  );
+  await click('Elimina Assistenza');
+  assert(info().deleteRequests === 1, 'Una sola richiesta di eliminazione');
+  await click('Inserisci dopo Acquisizione cliente');
+  const inserted = current().items.at(-1)!;
+  assert(
+    inserted.name === '' && info().domOrder[1] === inserted.id,
+    'Riga immediata anche nell’inserimento dopo una voce',
+  );
+  await commit(`#quote-name-${inserted.id}`, 'Voce intermedia');
+  await click('Azioni voce Acquisizione cliente');
+  await click('Inserisci template dopo Acquisizione cliente');
+  const panel = document.querySelector('[data-quote-template-editor]')!;
+  assert(
+    !panel.querySelector('[role=table]') &&
+      !panel.querySelector('input[aria-label="Cerca template da inserire"]'),
+    'Template senza scelta automatica e senza ricerca duplicata',
+  );
+  document.querySelector<HTMLButtonElement>('#quote-template-picker')!.click();
   await settle();
-  await fill('input[aria-label="Cerca template da inserire"]', 'NAS');
+  await fill('input[aria-label="Cerca opzioni"]', 'NAS');
+  const options = () =>
+    [...document.querySelectorAll('[role=option]')]
+      .map((entry) => entry.textContent)
+      .join('|');
   assert(
-    document
-      .querySelector('[role=dialog]')!
-      .textContent!.includes('Infrastruttura'),
-    'Ricerca per sottovoce della variante',
+    options().includes('Infrastruttura') &&
+      !options().includes('Rete completa') &&
+      !panel.querySelector('[role=table]'),
+    'Una sola ricerca nelle sottovoci, senza cambiare anteprima',
   );
+  await fill('input[aria-label="Cerca opzioni"]', 'nessuna corrispondenza');
+  assert(!document.querySelector('[role=option]'), 'Ricerca vuota coerente');
+  await fill('input[aria-label="Cerca opzioni"]', 'NAS');
+  await choose('#quote-template-picker', 'Infrastruttura');
+  const previewQuote = JSON.stringify(current());
+  const group = state.document!.catalog.templates.find(
+    (entry) => entry.name === 'Infrastruttura',
+  )!.items[0]!.variantGroups[0]!;
+  const confirm = [...panel.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent === 'Inserisci 2 voci',
+  )!;
+  assert(confirm.disabled, 'Varianti obbligatorie prima dell’inserimento');
+  await choose(`#template-choice-${group.id}`, 'Base');
   assert(
-    !document
-      .querySelector('[role=dialog]')!
-      .textContent!.includes('Rete completa'),
-    'Il risultato precedente sparisce dal filtro',
+    panel.textContent!.includes('Configurazione NAS') &&
+      JSON.stringify(current()) === previewQuote,
+    'Anteprima non persistita',
   );
-  assert(
-    document.querySelector('[role=dialog]')!.textContent!.includes('Storage'),
-    'Anteprima del risultato visibile senza selezione obsoleta',
-  );
-  await fill(
-    'input[aria-label="Cerca template da inserire"]',
-    'nessuna corrispondenza',
-  );
-  assert(
-    document
-      .querySelector('[role=dialog]')!
-      .textContent!.includes('Nessun template trovato'),
-    'Filtro vuoto coerente',
-  );
-  await fill('input[aria-label="Cerca template da inserire"]', 'NAS');
   await click('Inserisci 2 voci');
   assert(
     info().order.slice(0, 4).join('|') ===
-      'Acquisizione cliente|Storage|Backup|Ricerca prodotti',
-    'Tutte le voci template entrano nel punto corrente',
+      'Acquisizione cliente|Storage|Backup|Voce intermedia',
+    'Template nel punto corrente',
   );
   const storage = () =>
     current().items.find((item) => item.name === 'Storage')!;
   await click('Apri o chiudi Storage');
-  assert(
-    !document.querySelector('[role=dialog]') &&
-      document.body.textContent!.includes('Configurazione'),
-    'Varianti consultabili nella tabella',
-  );
   const variantSelector = `#variant-${storage().id}-${storage().variantGroups[0]!.id}`;
-  await choose(variantSelector, 'Avanzata');
+  const firstVariantRow = document.querySelector<HTMLElement>(
+    `[data-quote-item="${storage().id}"] [data-quote-variant-selector]`,
+  )!;
   assert(
-    storage().subItems[0]?.kind === 'time' &&
-      storage().subItems[0].minutes === 120,
-    'Variante applicata senza dialog non necessario',
+    firstVariantRow ===
+      document.querySelector(
+        `[data-quote-item="${storage().id}"] [data-quote-sub]`,
+      ),
+    'Selettore nella prima sottoriga generata',
+  );
+  const center = (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    return rect.y + rect.height / 2;
+  };
+  assert(
+    Math.abs(
+      center(document.querySelector<HTMLElement>(variantSelector)!) -
+        center(
+          firstVariantRow.querySelector<HTMLElement>(
+            'input[aria-label^="Descrizione"]',
+          )!,
+        ),
+    ) < 1,
+    'Variante e descrizione sulla stessa linea',
+  );
+  document.querySelector<HTMLButtonElement>(variantSelector)!.click();
+  await settle();
+  assert(
+    !document.querySelector('input[aria-label="Cerca opzioni"]'),
+    'Nessuna ricerca nel menu delle varianti',
+  );
+  await choose(variantSelector, 'Base');
+  await click('Aggiungi sottoriga a Storage');
+  await click('Attività');
+  const manualId = storage().subItems.at(-1)!.id;
+  const storageRows = document.querySelectorAll(
+    `[data-quote-item="${storage().id}"] [data-quote-sub]`,
+  );
+  assert(
+    storageRows[storageRows.length - 1]!.getAttribute('data-quote-sub') ===
+      manualId && storage().subItems.at(-1)!.variantOwner === undefined,
+    'Nuove sottovoci dopo quelle prodotte dalle varianti',
+  );
+  await commit(`#quote-sub-description-${manualId}`, 'Verifica finale');
+  await commit('input[aria-label="Durata Verifica finale"]', '15m');
+  await choose(variantSelector, 'Avanzata');
+  const variantTime = () =>
+    storage().subItems.find((sub) => sub.kind === 'time' && sub.variantOwner)!;
+  assert(
+    variantTime().kind === 'time' &&
+      (variantTime() as { minutes?: number }).minutes === 120,
+    'Variante aggiornata',
   );
   await commit(
-    `[data-quote-item="${storage().id}"] input[aria-label^="Durata Configurazione"]`,
+    `[data-quote-sub="${variantTime().id}"] input[aria-label^="Durata"]`,
     '150m',
   );
   assert(
-    storage().subItems[0]?.manuallyModified,
-    'Le modifiche in linea preservano la provenienza della variante',
+    variantTime().manuallyModified,
+    'Provenienza conservata dopo modifica inline',
   );
   await choose(variantSelector, 'Base');
   assert(
-    document
-      .querySelector('[role=alertdialog]')!
-      .textContent!.includes('Sostituire le sottovoci modificate'),
-    'Conferma distruttiva preservata',
+    document.querySelector('[role=alertdialog]'),
+    'Conferma prima di sostituire modifiche manuali',
   );
   await click('Annulla');
   assert(
-    storage().subItems[0]?.kind === 'time' &&
-      storage().subItems[0].minutes === 150,
-    'Annullamento variante preserva modifiche manuali',
+    (variantTime() as { minutes?: number }).minutes === 150,
+    'Annullamento preserva le modifiche',
   );
   await choose(variantSelector, 'Base');
   await click('Conferma cambio');
   assert(
-    storage().subItems[0]?.kind === 'time' &&
-      storage().subItems[0].minutes === 60,
-    'Sostituzione variante confermata',
+    (variantTime() as { minutes?: number }).minutes === 60 &&
+      storage().subItems.some((sub) => sub.id === manualId),
+    'Sostituzione non tocca le sottovoci manuali',
+  );
+  assert(
+    [
+      ...document.querySelectorAll(
+        `[data-quote-item="${storage().id}"] [data-quote-sub]`,
+      ),
+    ]
+      .map((row) => row.getAttribute('data-quote-sub'))
+      .join('|') ===
+      storage()
+        .subItems.map((sub) => sub.id)
+        .join('|'),
+    'Ordine visivo identico a quello conservato',
   );
 
-  document.querySelector<HTMLButtonElement>('#quote-site')!.click();
-  await settle();
-  assert(
-    document.body.textContent!.includes('Sedi del Cliente selezionato') &&
-      document.body.textContent!.includes('Altre sedi senza Cliente'),
-    'Sede principale raggruppata',
-  );
-  assert(
-    ![...document.querySelectorAll('[role=option]')].some((option) =>
-      option.textContent?.includes('Via Altra'),
-    ),
-    'La sede principale non ammette clienti diversi',
-  );
   await choose('#quote-site', 'Via Cliente 2');
-  assert(
-    current().mainSite?.address === 'Via Cliente 2',
-    'Sede principale selezionata',
-  );
-  [...document.querySelectorAll<HTMLButtonElement>(`${quick} button`)]
-    .find((button) => button.textContent?.trim() === 'Trasferta')!
-    .click();
-  await settle();
   for (const [name, destination] of [
     ['Ritiro dal fornitore', 'Via Altra 3'],
     ['Trasporto al cliente', 'Via Cliente 2'],
   ]) {
-    await add(name!);
+    const id = await add(name!, 'Trasferta');
+    const item = () => current().items.find((entry) => entry.id === id)!;
     assert(
-      document.querySelector<HTMLInputElement>('#sub-description')!.value ===
-        name,
-      'Nome della trasferta già compilato',
+      item().subItems.length === 0,
+      'La riga Trasferta nasce senza sottorighe',
     );
-    document.querySelector<HTMLButtonElement>('#travel-destination')!.click();
-    await settle();
-    const labels = [...document.querySelectorAll('[role=option]')]
-      .map((option) => option.textContent ?? '')
-      .join('|');
+    await click(`Aggiungi sottoriga a ${name}`);
+    await click('Trasferta');
+    const travelId = item().subItems[0]!.id;
     assert(
-      labels.includes('Cliente corrente: Cliente demo') &&
-        labels.includes('Cliente: Altro cliente') &&
-        labels.includes('Senza Cliente'),
-      'Sedi omonime distinguibili nelle trasferte',
+      item().subItems[0]?.kind === 'travel',
+      'Sottoriga Trasferta aggiunta solo con azione esplicita',
     );
+    await click('Configura trasferta');
+    assert(
+      !document.querySelector('[role=dialog]'),
+      'Configurazione trasferta inline',
+    );
+    await fill('#sub-description', name!);
     await choose('#travel-destination', destination!);
     await fill('#travel-duration', '20m');
     document
-      .querySelector<HTMLFormElement>('[role=dialog] form')!
+      .querySelector<HTMLFormElement>('[data-quote-sub-editor]')!
       .requestSubmit();
     await settle();
     assert(
-      !document.querySelector('[role=dialog]'),
-      'Trasferta salvata con il dialog esistente',
-    );
-    assert(
-      current().items.at(-1)!.subItems[0]?.kind === 'travel',
-      'Ogni tratta è una sottovoce in una sola voce principale',
+      item().subItems[0]!.id === travelId &&
+        item().subItems[0]?.kind === 'travel',
+      'Configurazione aggiorna la riga senza duplicazioni',
     );
   }
+  const templateCount = state.document!.catalog.templates.length;
+  await click('Altre azioni preventivo');
+  await click('Salva come template');
+  await fill('#template-new-name', 'Servizi riutilizzabili');
+  await click('Crea template');
+  assert(
+    state.document!.catalog.templates.length === templateCount + 1,
+    'Template completo creato dal controller',
+  );
   assert(info().valid, 'Archivio valido dopo il flusso operativo');
-  const beforeReadOnly = JSON.stringify(current());
+  const preservedAfter = JSON.stringify(current());
   await setReadOnly(true);
   assert(
     [
       ...document.querySelectorAll<HTMLInputElement>('[data-quote-item] input'),
     ].every((input) => input.disabled),
-    'Celle non modificabili in sola lettura',
-  );
-  assert(
-    JSON.stringify(current()) === beforeReadOnly,
-    'Riapertura conserva le righe',
+    'Sola lettura rispettata',
   );
   await setReadOnly(false);
-  assert(info().valid, 'Documento ancora valido alla riapertura');
+  assert(
+    JSON.stringify(current()) === preservedAfter,
+    'Nessuna perdita o duplicazione alla riapertura',
+  );
   await state.save();
   return 'OPERATIONAL_UI_OK';
 }

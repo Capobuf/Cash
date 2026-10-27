@@ -109,7 +109,7 @@ describe('periodi mensili', () => {
 });
 
 describe('schema archivio corrente', () => {
-  it('accetta nomi voce e descrizioni trasferta vuoti, ma non descrizioni di attività o spese', () => {
+  it('accetta righe vuote nel preventivo mantenendo completi i requisiti del catalogo', () => {
     const document = createEmptyDocument();
     const item = {
       ...meta(),
@@ -183,7 +183,27 @@ describe('schema archivio corrente', () => {
           ? { ...meta(), kind, description: '', minutes: 30 }
           : { ...meta(), kind, description: '', amount: '10.00' },
       ];
-      expect(cashDocumentSchema.safeParse(invalid).success).toBe(false);
+      expect(cashDocumentSchema.safeParse(invalid).success).toBe(true);
+      invalid.quotes[0]!.items[0]!.subItems = [
+        { ...meta(), kind, description: '' },
+      ];
+      expect(cashDocumentSchema.safeParse(invalid).success).toBe(true);
+      const invalidValue = structuredClone(invalid);
+      invalidValue.quotes[0]!.items[0]!.subItems = [
+        kind === 'time'
+          ? { ...meta(), kind, description: '', minutes: 0 }
+          : { ...meta(), kind, description: '', amount: '-1.00' },
+      ];
+      expect(cashDocumentSchema.safeParse(invalidValue).success).toBe(false);
+      const incompleteCatalog = structuredClone(document);
+      incompleteCatalog.catalog.subItems = [
+        kind === 'time'
+          ? { ...meta(), kind, description: '', minutes: 30 }
+          : { ...meta(), kind, description: '', amount: '10.00' },
+      ];
+      expect(cashDocumentSchema.safeParse(incompleteCatalog).success).toBe(
+        false,
+      );
     }
   });
 

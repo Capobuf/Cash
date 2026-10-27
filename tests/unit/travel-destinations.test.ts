@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, meta, type Quote } from '../../src/domain/model';
 import { SubItemDialog } from '../../src/renderer/components/quotes/SubItemDialog';
 import {
-  InsertTemplateDialog,
+  InsertTemplateEditor,
   VariantChangeDialog,
 } from '../../src/renderer/components/quotes/CatalogInsertDialogs';
 import { AppState } from '../../src/renderer/state';
@@ -117,15 +117,6 @@ describe('destinazioni delle trasferte', () => {
           'travel-destination',
         ],
         [
-          createElement(InsertTemplateDialog, {
-            doc,
-            quote,
-            onClose: close,
-            onInsert: async () => true,
-          }),
-          'template-site',
-        ],
-        [
           createElement(VariantChangeDialog, {
             doc,
             quote,
@@ -150,4 +141,33 @@ describe('destinazioni delle trasferte', () => {
       }
     },
   );
+  it('non apre un’anteprima o una configurazione trasferte prima di scegliere un template', () => {
+    const doc = createEmptyDocument();
+    const quote: Quote = {
+      ...meta(),
+      number: 1,
+      date: '2026-10-27',
+      items: [],
+      snapshotRevision: 0,
+      exportAttempts: [],
+    };
+    doc.catalog.templates.push({
+      ...meta(),
+      name: 'Template',
+      items: [{ ...meta(), name: 'Lavoro', subItems: [], variantGroups: [] }],
+    });
+    const markup = renderToStaticMarkup(
+      createElement(InsertTemplateEditor, {
+        doc,
+        quote,
+        disabled: false,
+        onClose: vi.fn(),
+        onInsert: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('Scegli template');
+    expect(markup).not.toContain('Anteprima ·');
+    expect(markup).not.toContain('id="template-site"');
+    expect(markup).not.toContain('Cerca template da inserire');
+  });
 });

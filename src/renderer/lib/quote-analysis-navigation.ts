@@ -50,7 +50,25 @@ export function missingAnalysisTargets(
       continue;
     }
     for (const sub of item.subItems) {
-      if (sub.kind !== 'travel') continue;
+      if (sub.kind !== 'travel') {
+        const missingTime =
+          sub.kind === 'time' &&
+          sub.minutes === undefined &&
+          metric !== 'expenses';
+        const missingExpense =
+          sub.kind === 'expense' &&
+          sub.amount === undefined &&
+          metric !== 'minutes';
+        if (missingTime || missingExpense)
+          targets.push({
+            id: `quote-sub-${sub.id}`,
+            itemId: item.id,
+            message: missingTime
+              ? 'Durata dell’attività non inserita.'
+              : 'Importo della spesa non inserito.',
+          });
+        continue;
+      }
       const missing: string[] = [];
       if (metric === 'theoretical') {
         if (!sub.departure) missing.push('partenza');

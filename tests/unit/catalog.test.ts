@@ -13,6 +13,21 @@ import {
 } from '../../src/domain/model';
 
 describe('copie indipendenti', () => {
+  it('non trasforma sottorighe tecniche incomplete in template apparentemente completi', () => {
+    const item = {
+      ...meta(),
+      name: 'Lavoro',
+      variantGroups: [],
+      variantSelections: [],
+      subItems: [{ ...meta(), kind: 'time' as const, description: '' }],
+    };
+    expect(templateFromQuote('Template', [item])).toMatchObject({
+      ok: false,
+      error: { code: 'MISSING_DATA' },
+    });
+    expect(item.subItems[0]).not.toHaveProperty('minutes');
+  });
+
   it('rinnova tutte le identità senza propagare modifiche', () => {
     const sub: ReusableSubItem = {
       ...meta(),

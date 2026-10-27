@@ -7,6 +7,7 @@ import {
 } from '../../domain/calculations';
 import {
   cloneTemplate,
+  canReuseQuoteSubItem,
   reusableFromQuoteSubItem,
   templateFromQuote,
 } from '../../domain/catalog';
@@ -51,8 +52,8 @@ export interface TravelInput {
 }
 
 export type SimpleSubInput =
-  | { kind: 'time'; description: string; minutes: number }
-  | { kind: 'expense'; description: string; amount: string };
+  | { kind: 'time'; description: string; minutes?: number }
+  | { kind: 'expense'; description: string; amount?: string };
 
 interface TravelContext {
   siteId?: string;
@@ -539,9 +540,9 @@ export function useQuoteController({
   };
 
   const prepareSimpleSub = (input: SimpleSubInput) => {
-    if (!input.description.trim()) return undefined;
     if (
       input.kind === 'time' &&
+      input.minutes !== undefined &&
       (!Number.isFinite(input.minutes) || input.minutes <= 0)
     ) {
       appState.setError({
@@ -552,7 +553,7 @@ export function useQuoteController({
       return undefined;
     }
     let amount: string | undefined;
-    if (input.kind === 'expense') {
+    if (input.kind === 'expense' && input.amount?.trim()) {
       const parsed = parseDecimalInput(decimalInputValue(input.amount), 2);
       if (!parsed.ok) {
         appState.setError({ ...parsed.error, field: 'amount' });
@@ -565,14 +566,51 @@ export function useQuoteController({
           ...meta(),
           kind: 'time' as const,
           description: input.description.trim(),
-          minutes: input.minutes,
+          ...(input.minutes !== undefined ? { minutes: input.minutes } : {}),
         }
       : {
           ...meta(),
           kind: 'expense' as const,
           description: input.description.trim(),
-          amount: amount!,
+          ...(amount !== undefined ? { amount } : {}),
         };
+  };
+
+  const addSubItem = async (
+    itemId: string,
+    kind: 'time' | 'expense' | 'travel',
+  ) => {
+    if (!quote) return false;
+    const isCurrent = guardQuoteContext(quote, false);
+    if (!isCurrent()) return false;
+    const current = appState.document!.quotes.find(
+      (entry) => entry.id === quote.id,
+    )!;
+    if (!current.items.some((item) => item.id === itemId)) return false;
+    const sub: QuoteSubItem | undefined =
+      kind === 'travel'
+        ? await materializeTravel(
+            { description: '', roundTrip: true, occurrences: 1 },
+            current,
+          )
+        : { ...meta(), kind, description: '' };
+    if (
+      !sub ||
+      !isCurrent() ||
+      !appState
+        .document!.quotes.find((entry) => entry.id === quote.id)
+        ?.items.some((item) => item.id === itemId)
+    )
+      return false;
+    const saved = appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      touch(target.items.find((entry) => entry.id === itemId)!).subItems.push(
+        sub,
+      );
+    });
+    return saved ? sub.id : false;
   };
 
   const saveSimpleSub = (
@@ -688,7 +726,15 @@ export function useQuoteController({
     const sub = quote?.items
       .find((item) => item.id === itemId)
       ?.subItems.find((entry) => entry.id === subId);
-    return sub
+    if (sub && !canReuseQuoteSubItem(sub)) {
+      appState.setError({
+        code: 'MISSING_DATA',
+        message:
+          'Completa descrizione e valori della sottoriga prima di salvarla nel catalogo.',
+      });
+      return false;
+    }
+    return sub && canReuseQuoteSubItem(sub)
       ? appState.mutate((document) =>
           document.catalog.subItems.push(reusableFromQuoteSubItem(sub)),
         )
@@ -1123,6 +1169,7 @@ export function useQuoteController({
     updateChosenPrice,
     updateReferencePrice,
     saveSimpleSub,
+    addSubItem,
     saveTravel,
     addReusable,
     saveSubToCatalog,

@@ -251,10 +251,16 @@ const quoteTravelSchema = z
 export const quoteSubItemSchema = z.discriminatedUnion('kind', [
   z.object({
     ...baseSub,
+    description: z.string(),
     kind: z.literal('time'),
-    minutes: z.number().int().positive(),
+    minutes: z.number().int().positive().optional(),
   }),
-  z.object({ ...baseSub, kind: z.literal('expense'), amount: moneyInput }),
+  z.object({
+    ...baseSub,
+    description: z.string(),
+    kind: z.literal('expense'),
+    amount: moneyInput.optional(),
+  }),
   quoteTravelSchema,
 ]);
 
