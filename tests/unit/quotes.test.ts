@@ -80,6 +80,40 @@ describe('creazione condivisa del preventivo', () => {
     expect(quote.number).toBe(12);
   });
 
+  it('mostra esattamente il titolo personalizzato e mantiene il numero al cambio cliente', () => {
+    const document = createEmptyDocument();
+    document.nextQuoteNumber = 12;
+    const quote = addQuote(document);
+    quote.customTitle = 'Configurazione rete sede nord';
+    expect(quoteTitle(quote)).toBe('Configurazione rete sede nord');
+    quote.client = {
+      source: 'fatture_in_cloud',
+      companyId: '1',
+      clientId: '2',
+      displayName: 'Altro cliente',
+    };
+    expect(quoteTitle(quote)).toBe('Configurazione rete sede nord');
+    delete quote.customTitle;
+    expect(quoteTitle(quote)).toBe('Altro cliente - Preventivo #12');
+    expect(quote.number).toBe(12);
+    expect(document.nextQuoteNumber).toBe(13);
+  });
+
+  it('valida e normalizza il titolo opzionale senza modificare gli archivi preesistenti', () => {
+    const document = createEmptyDocument();
+    const quote = addQuote(document);
+    expect(cashDocumentSchema.parse(document)).toEqual(document);
+    quote.customTitle = '  Rete  sede nord — € & <test>  ';
+    expect(cashDocumentSchema.parse(document).quotes[0]!.customTitle).toBe(
+      'Rete  sede nord — € & <test>',
+    );
+    for (const customTitle of ['', '   ', 12, null]) {
+      const invalid = structuredClone(document);
+      Object.assign(invalid.quotes[0]!, { customTitle });
+      expect(cashDocumentSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
   it.each([
     ['2026-07-14T22:30:00Z', '2026-07-15', -120],
     ['2025-12-31T23:30:00Z', '2026-01-01', -60],

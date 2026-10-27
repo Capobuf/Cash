@@ -5,6 +5,7 @@ import {
   CloudUpload,
   FilePlus2,
   MoreHorizontal,
+  Pencil,
   Plus,
   RefreshCw,
   UserRound,
@@ -25,6 +26,7 @@ import {
 import { CustomerDialog } from '@/components/quotes/CustomerDialog';
 import { ExportDialog } from '@/components/quotes/ExportDialog';
 import { ItemNameDialog } from '@/components/quotes/ItemNameDialog';
+import { QuoteTitleDialog } from '@/components/quotes/QuoteTitleDialog';
 import { QuoteLayoutEditor } from '@/components/quotes/QuoteLayoutEditor';
 import {
   SaveSubDialog,
@@ -94,6 +96,7 @@ import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 
 type Overlay =
+  | { kind: 'title' }
   | { kind: 'customer' }
   | { kind: 'site'; context: string }
   | { kind: 'item'; item?: QuoteItem; containerId?: string }
@@ -295,7 +298,7 @@ export function QuotesView({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -305,8 +308,22 @@ export function QuotesView({
             Preventivi
           </Button>
           <div className="h-5 w-px bg-border" />
-          <div>
-            <h2 className="font-semibold">{quoteTitle(quote)}</h2>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1">
+              <h2 className="min-w-0 font-semibold [overflow-wrap:anywhere]">
+                {quoteTitle(quote)}
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Rinomina preventivo"
+                title="Rinomina preventivo"
+                disabled={readOnly}
+                onClick={() => setOverlay({ kind: 'title' })}
+              >
+                <Pencil />
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               {dateIt(quote.date)} · {quote.items.length}{' '}
               {quote.items.length === 1 ? 'voce' : 'voci'}
@@ -656,6 +673,14 @@ export function QuotesView({
           onOpenChange={(open) => {
             if (!open) setOverlay(undefined);
           }}
+        />
+      ) : null}
+      {overlay?.kind === 'title' ? (
+        <QuoteTitleDialog
+          quote={quote}
+          readOnly={readOnly}
+          onClose={() => setOverlay(undefined)}
+          onSave={controller.renameQuote}
         />
       ) : null}
       {overlay?.kind === 'customer' ? (

@@ -40,6 +40,14 @@ const quote: Quote = {
   ],
 };
 describe('esportazione deliberata', () => {
+  it('conserva le righe commerciali esportate con un titolo personalizzato', () => {
+    expect(
+      buildExportLines({
+        ...quote,
+        customTitle: 'Configurazione rete sede nord',
+      }),
+    ).toEqual(buildExportLines(quote));
+  });
   it('mantiene le descrizioni commerciali esportate senza richiedere tempo', () => {
     expect(buildExportLines(quote)).toMatchObject({
       ok: true,

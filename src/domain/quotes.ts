@@ -24,6 +24,7 @@ export function createQuote(document: CashDocument): Quote {
 }
 
 export function quoteTitle(quote: Quote): string {
+  if (quote.customTitle?.trim()) return quote.customTitle;
   const title = `Preventivo #${quote.number}`;
   return quote.client ? `${quote.client.displayName} - ${title}` : title;
 }

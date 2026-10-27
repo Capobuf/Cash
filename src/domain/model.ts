@@ -325,6 +325,7 @@ export type QuoteLayoutEntry =
 
 export interface Quote extends EntityMeta {
   number: number;
+  customTitle?: string;
   date: string;
   profileId?: string;
   profileSnapshot?: ProfileSnapshot;

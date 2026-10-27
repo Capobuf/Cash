@@ -34,6 +34,7 @@ const pathLabels: Record<string, string> = {
   catalog: 'Catalogo',
   settings: 'Impostazioni',
   name: 'nome',
+  customTitle: 'titolo personalizzato',
   displayName: 'denominazione',
   category: 'categoria',
   description: 'descrizione',
@@ -774,6 +775,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
       z.object({
         ...entity,
         number: z.number().int().positive(),
+        customTitle: nonBlank.transform((title) => title.trim()).optional(),
         date: z.string().date(),
         profileId: uuid.optional(),
         profileSnapshot: profileSnapshotSchema.optional(),

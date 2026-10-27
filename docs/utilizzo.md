@@ -37,6 +37,12 @@ L'analisi distingue tra:
 
 Non è obbligatorio completare tutte le sottovoci per assegnare un prezzo scelto; il riferimento teorico dipende invece dai dati effettivamente disponibili. I preventivi sono uno spazio di lavoro interno, senza un flusso commerciale obbligatorio.
 
+### Rinominare un preventivo
+
+Il titolo predefinito è **Cliente - Preventivo #N**, oppure **Preventivo #N** se manca il cliente. Usa il pulsante con la matita **Rinomina preventivo** accanto al titolo per inserire un nome personalizzato: lo stesso nome compare nell'elenco, nel dettaglio e nella Panoramica e rimane anche cambiando cliente.
+
+Nel dialogo, **Ripristina titolo automatico** torna al nome basato su cliente e numero correnti. Anche salvare il campo vuoto ripristina il titolo automatico. La rinomina non cambia il numero progressivo, le voci, i prezzi o le descrizioni esportate in Fatture in Cloud.
+
 ### Organizzare le voci in contenitori
 
 **Nuovo contenitore** crea subito un gruppo vuoto: puoi rinominarlo, aggiungere una **Sezione vuota** oppure inserire tutte le voci di un template con **Aggiungi → Da template**. I contenitori servono solo a organizzare il lavoro e non cambiano prezzi o totali.
