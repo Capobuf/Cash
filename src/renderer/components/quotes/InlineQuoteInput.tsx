@@ -19,6 +19,7 @@ export function InlineQuoteInput({
   describedBy,
   placeholder,
   decimal = false,
+  alignRight = false,
 }: {
   value: string;
   label: string;
@@ -29,6 +30,7 @@ export function InlineQuoteInput({
   describedBy?: string;
   placeholder?: string;
   decimal?: boolean;
+  alignRight?: boolean;
 }) {
   const [draft, setDraft] = useState<string>();
   const [invalid, setInvalid] = useState(false);
@@ -59,7 +61,7 @@ export function InlineQuoteInput({
           : label
       }
       disabled={disabled}
-      className={`h-8 min-w-0 border-transparent bg-transparent shadow-none hover:border-input focus:border-input ${decimal ? 'text-right tabular-nums' : ''}`}
+      className={`h-8 min-w-0 border-transparent bg-transparent text-foreground shadow-none hover:border-input focus-visible:border-primary focus-visible:ring-2 ${decimal || alignRight ? 'text-right tabular-nums' : ''}`}
       inputMode={decimal ? 'decimal' : undefined}
       placeholder={placeholder}
       value={draft ?? value}

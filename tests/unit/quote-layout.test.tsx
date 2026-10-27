@@ -93,6 +93,94 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('disposizione dei preventivi', () => {
+  it('crea e completa righe tecniche vuote conservando identità, ordine e prezzo indipendente', async () => {
+    const { controller, current, state } = setup();
+    const baseline = calculateQuote(current().items, '50.00');
+    expect(
+      controller().addItem('', undefined, undefined, {
+        kind: 'time',
+        description: '',
+      }),
+    ).toBe(true);
+    const row = current().items.at(-1)!;
+    const activityId = row.subItems[0]!.id;
+    expect(row.subItems[0]).toMatchObject({ kind: 'time', description: '' });
+    expect(row.subItems[0]).not.toHaveProperty('minutes');
+    const expenseId = await controller().addSubItem(row.id, 'expense');
+    expect(expenseId).toBeTypeOf('string');
+    expect(current().items.at(-1)!.subItems.at(-1)).toMatchObject({
+      id: expenseId,
+      kind: 'expense',
+      description: '',
+    });
+    expect(current().items.at(-1)!.subItems.at(-1)).not.toHaveProperty(
+      'amount',
+    );
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+    expect(calculateQuote(current().items, '50.00')).toMatchObject({
+      minutes: baseline.minutes,
+      chosenTotal: baseline.chosenTotal,
+      minutesPartial: true,
+      expensesPartial: true,
+    });
+    expect(controller().updateChosenPrice(row.id, '0')).toBe(true);
+    expect(controller().renameItem(row.id, 'Gestione cliente')).toBe(true);
+    expect(buildExportLines(current()).ok).toBe(true);
+    expect(controller().saveSubToCatalog(row.id, activityId)).toBe(false);
+    expect(
+      controller().saveSimpleSub(
+        row.id,
+        { kind: 'time', description: 'WhatsApp', minutes: 30 },
+        activityId,
+      ),
+    ).toBe(true);
+    expect(
+      controller().saveSimpleSub(
+        row.id,
+        { kind: 'expense', description: 'Telefonia', amount: '8.00' },
+        String(expenseId),
+      ),
+    ).toBe(true);
+    expect(
+      current()
+        .items.at(-1)!
+        .subItems.map((sub) => sub.id),
+    ).toEqual([activityId, expenseId]);
+    expect(controller().saveSubToCatalog(row.id, activityId)).toBe(true);
+    expect(
+      controller().saveSimpleSub(
+        row.id,
+        { kind: 'time', description: 'WhatsApp' },
+        activityId,
+      ),
+    ).toBe(true);
+    expect(current().items.at(-1)!.subItems[0]).toMatchObject({
+      id: activityId,
+      minutes: undefined,
+    });
+    const count = current().items.at(-1)!.subItems.length;
+    expect(
+      controller().saveSimpleSub(
+        row.id,
+        { kind: 'time', description: '', minutes: 0 },
+        activityId,
+      ),
+    ).toBe(false);
+    expect(
+      controller().saveSimpleSub(
+        row.id,
+        { kind: 'expense', description: '', amount: '-1' },
+        String(expenseId),
+      ),
+    ).toBe(false);
+    expect(current().items.at(-1)!.subItems).toHaveLength(count);
+    expect(await controller().addSubItem('missing-item', 'time')).toBe(false);
+    state.session!.readOnly = true;
+    expect(await controller().addSubItem(row.id, 'expense')).toBe(false);
+    state.session!.readOnly = false;
+    await state.save();
+  });
+
   it('inserisce attività valide o righe da stimare fra voci senza duplicare dati economici', async () => {
     const { controller, current, quote, state } = setup();
     const first = quote.items[0]!.id;

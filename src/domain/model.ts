@@ -195,11 +195,11 @@ export interface BaseSubItem extends EntityMeta {
 }
 export interface TimeSubItem extends BaseSubItem {
   kind: 'time';
-  minutes: number;
+  minutes?: number;
 }
 export interface ExpenseSubItem extends BaseSubItem {
   kind: 'expense';
-  amount: DecimalString;
+  amount?: DecimalString;
 }
 export interface TravelSubItem extends BaseSubItem {
   kind: 'travel';

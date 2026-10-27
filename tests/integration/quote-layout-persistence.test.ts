@@ -28,6 +28,11 @@ it('riapre archivi senza layout e conserva disposizione, contenitori vuoti e dat
     const document = structuredClone(session.document!);
     const quote = document.quotes[0]!;
     const original = structuredClone(quote.items);
+    quote.items[0]!.subItems.push(
+      { ...meta(), kind: 'time', description: '' },
+      { ...meta(), kind: 'expense', description: '' },
+    );
+    const expected = structuredClone(quote.items);
     quote.layout = [
       {
         kind: 'container',
@@ -41,7 +46,19 @@ it('riapre archivi senza layout e conserva disposizione, contenitori vuoti e dat
     closeArchive(path);
     const reopened = unwrap(await openArchive(path));
     expect(reopened.document!.quotes[0]!.layout).toEqual(quote.layout);
-    expect(reopened.document!.quotes[0]!.items).toEqual(original);
+    expect(reopened.document!.quotes[0]!.items).toEqual(expected);
+    expect(
+      reopened.document!.quotes[0]!.items[0]!.subItems.slice(
+        0,
+        original[0]!.subItems.length,
+      ),
+    ).toEqual(original[0]!.subItems);
+    expect(
+      reopened.document!.quotes[0]!.items[0]!.subItems.at(-2),
+    ).not.toHaveProperty('minutes');
+    expect(
+      reopened.document!.quotes[0]!.items[0]!.subItems.at(-1),
+    ).not.toHaveProperty('amount');
     expect(
       orderedQuoteItems(reopened.document!.quotes[0]!).map((item) => item.id),
     ).toEqual(original.map((item) => item.id).reverse());

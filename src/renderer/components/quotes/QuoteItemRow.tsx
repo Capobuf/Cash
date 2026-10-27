@@ -1,19 +1,22 @@
-import { SearchableSelect } from '@/components/ui/selection-field';
+import { SelectField } from '@/components/ui/selection-field';
 import {
-  BriefcaseBusiness,
+  BookOpen,
+  Pencil,
   ChevronDown,
-  Clock3,
-  MapPin,
+  ListChecks,
+  Route,
   MoreHorizontal,
   Plus,
-  ReceiptText,
+  ReceiptEuro,
   Trash2,
-  Layers3,
-  Minus,
+  ListTree,
+  GitBranch,
+  Text,
   AlertCircle,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { calculateItem } from '../../../domain/calculations';
+import { canReuseQuoteSubItem } from '../../../domain/catalog';
 import { parseDecimalInput } from '../../../domain/decimal';
 import { parseDuration } from '../../../domain/duration';
 import type {
@@ -23,7 +26,6 @@ import type {
   VariantGroup,
 } from '../../../domain/model';
 import type { SimpleSubInput } from '@/hooks/use-quote-controller';
-import { WorkItemRow } from '@/components/WorkItemRow';
 import { PartialBadge } from '@/components/PartialBadge';
 import type {
   MissingAnalysisTarget,
@@ -42,13 +44,112 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Separator } from '@/components/ui/separator';
 import { decimalInputValue, eur, hours, moneyInputValue } from '@/lib/format';
 import type { DeleteTarget } from '../../types';
 import { InlineQuoteInput } from './InlineQuoteInput';
+import type { QuickKind } from './QuoteQuickAdd';
 
 export const quoteColumns =
-  'grid grid-cols-[76px_minmax(180px,1fr)_90px_110px_120px_120px_72px] items-center gap-1 px-2';
+  'grid grid-cols-[88px_minmax(260px,1fr)_90px_100px_120px_120px_72px] items-center gap-1 px-2';
+
+export function QuoteTableHeader() {
+  return (
+    <div
+      role="row"
+      className={`${quoteColumns} min-h-10 border-b bg-muted/50 text-xs font-medium text-muted-foreground`}
+    >
+      {[
+        'Controlli e tipo',
+        'Descrizione',
+        'Tempo',
+        'Spese (€)',
+        'Valore teorico',
+        'Prezzo scelto (€)',
+        'Azioni',
+      ].map((label, index) => (
+        <div
+          key={label}
+          role="columnheader"
+          className={index > 1 && index < 6 ? 'text-right' : undefined}
+        >
+          <span className={index === 0 || index === 6 ? 'sr-only' : undefined}>
+            {label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface VariantControlProps {
+  group: VariantGroup;
+  id: string;
+  value: string;
+  disabled: boolean;
+  onValueChange: (value: string) => void;
+}
+
+export function QuoteVariantSelect({
+  group,
+  id,
+  value,
+  disabled,
+  onValueChange,
+}: VariantControlProps) {
+  return (
+    <div
+      className="w-[45%] max-w-48 min-w-0 shrink-0"
+      title={`Variante · ${group.name}`}
+    >
+      <label id={`${id}-label`} htmlFor={id} className="sr-only">
+        Variante · {group.name}
+      </label>
+      <SelectField
+        id={id}
+        className="h-8 w-full min-w-0"
+        disabled={disabled}
+        value={value}
+        onValueChange={onValueChange}
+        options={[
+          { value: '', label: 'Scegli variante', disabled: true },
+          ...group.options.map((option) => ({
+            value: option.id,
+            label: option.name,
+          })),
+        ]}
+      />
+    </div>
+  );
+}
+
+// An empty option still has a selectable row; generated values never live here.
+export function QuoteVariantRow(props: VariantControlProps) {
+  return (
+    <div
+      role="row"
+      data-quote-variant-selector={props.group.id}
+      className={`${quoteColumns} min-h-10 border-b bg-primary/5 py-1`}
+    >
+      <div
+        role="cell"
+        className="flex h-full items-center justify-end border-r-2 border-primary/40 pr-3"
+      >
+        <GitBranch className="size-3.5 text-muted-foreground" />
+      </div>
+      <div role="cell" className="flex min-w-0 items-center gap-2 pl-2">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {props.value ? 'Nessuna sottoriga' : 'Scegli una variante'}
+        </span>
+        <QuoteVariantSelect {...props} />
+      </div>
+      <div role="cell" className="text-right text-sm text-muted-foreground" />
+      <div role="cell" className="text-right text-sm text-muted-foreground" />
+      <div role="cell" className="text-right text-sm text-muted-foreground" />
+      <div role="cell" className="text-right text-sm text-muted-foreground" />
+      <div role="cell" />
+    </div>
+  );
+}
 
 export interface QuoteItemActions {
   showMissing?: (metric: PartialMetric, itemId?: string) => void;
@@ -75,6 +176,7 @@ export interface QuoteItemActions {
 
 export function QuoteItemRow({
   item,
+  emptyKind,
   hourly,
   doc,
   actions,
@@ -82,8 +184,13 @@ export function QuoteItemRow({
   dragHandle,
   disabled = false,
   onInsertAfter,
+  onInsertTemplateAfter,
+  editor,
+  expanded: controlledExpanded,
+  onExpandedChange,
 }: {
   item: QuoteItem;
+  emptyKind?: QuickKind;
   hourly?: string;
   doc: CashDocument;
   actions: QuoteItemActions;
@@ -91,10 +198,19 @@ export function QuoteItemRow({
   dragHandle?: ReactNode;
   disabled?: boolean;
   onInsertAfter?: () => void;
+  onInsertTemplateAfter?: () => void;
+  editor?: ReactNode;
+  expanded?: boolean;
+  onExpandedChange?: (open: boolean) => void;
 }) {
   const analysis = calculateItem(item, hourly);
   const displayName = item.name.trim() || 'Voce senza nome';
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? localExpanded;
+  const setExpanded = (open: boolean) => {
+    setLocalExpanded(open);
+    onExpandedChange?.(open);
+  };
   const missingPrice = missingTargets.find(
     (target) => target.id === `chosen-${item.id}`,
   );
@@ -106,44 +222,54 @@ export function QuoteItemRow({
   );
   const simple = item.variantGroups.length === 0 && item.subItems.length <= 1;
   const sub = simple ? item.subItems[0] : undefined;
+  const kind =
+    sub?.kind ??
+    (!item.subItems.length && !item.variantGroups.length
+      ? emptyKind
+      : undefined);
   const Icon =
-    sub?.kind === 'time'
-      ? Clock3
-      : sub?.kind === 'expense'
-        ? ReceiptText
-        : sub?.kind === 'travel'
-          ? MapPin
+    kind === 'time'
+      ? ListChecks
+      : kind === 'expense'
+        ? ReceiptEuro
+        : kind === 'travel'
+          ? Route
           : item.subItems.length || item.variantGroups.length
-            ? Layers3
-            : Minus;
+            ? ListTree
+            : Text;
   const typeLabel =
-    sub?.kind === 'time'
+    kind === 'time'
       ? 'Attività'
-      : sub?.kind === 'expense'
+      : kind === 'expense'
         ? 'Spesa'
-        : sub?.kind === 'travel'
+        : kind === 'travel'
           ? 'Trasferta'
           : item.subItems.length || item.variantGroups.length
             ? 'Voce complessa'
-            : 'Voce da configurare';
+            : 'Riga generica';
   const saveDuration = (value: string) => {
-    const parsed = parseDuration(value);
+    const parsed = value.trim() ? parseDuration(value) : undefined;
     return (
-      parsed.ok &&
+      (!parsed || parsed.ok) &&
       actions.saveSimpleSub(
         item.id,
         {
           kind: 'time',
-          description: sub?.description || item.name || 'Attività',
-          minutes: parsed.value,
+          description: sub?.description || item.name,
+          minutes: parsed?.ok ? parsed.value : undefined,
         },
         sub?.id,
       )
     );
   };
+  const hasChildren = item.subItems.length > 0 || item.variantGroups.length > 0;
+  const emptyGroups = item.variantGroups.filter(
+    (group) =>
+      !item.subItems.some((entry) => entry.variantOwner?.groupId === group.id),
+  );
   return (
     <Collapsible
-      open={expanded || revealTechnical}
+      open={expanded || revealTechnical || Boolean(editor)}
       onOpenChange={(open) => {
         setExpanded(open);
         if (!open) actions.clearMissing?.();
@@ -151,7 +277,8 @@ export function QuoteItemRow({
     >
       <div
         role="row"
-        className={`${quoteColumns} min-h-12 border-b hover:bg-muted/30`}
+        data-quote-parent={hasChildren || undefined}
+        className={`${quoteColumns} min-h-12 border-b ${hasChildren ? 'bg-primary/8 ring-1 ring-inset ring-primary/20 hover:bg-primary/12' : 'hover:bg-muted/30'}`}
       >
         <div role="cell" className="flex items-center gap-1">
           {dragHandle}
@@ -171,7 +298,10 @@ export function QuoteItemRow({
             <ChevronDown className="size-3 transition-transform group-data-panel-open:rotate-180" />
           </CollapsibleTrigger>
         </div>
-        <div role="cell" className="flex min-w-0 items-center">
+        <div
+          role="cell"
+          className={`flex min-w-0 items-center ${hasChildren ? '[&_input]:font-medium' : ''}`}
+        >
           <InlineQuoteInput
             id={`quote-name-${item.id}`}
             label={`Nome voce ${displayName}`}
@@ -196,12 +326,18 @@ export function QuoteItemRow({
         <div role="cell" className="text-right text-sm tabular-nums">
           {simple && (!sub || sub.kind === 'time') ? (
             <InlineQuoteInput
+              alignRight
               label={`Durata di ${displayName}`}
-              value={sub?.kind === 'time' ? hours(sub.minutes) : ''}
-              placeholder="—"
+              value={
+                sub?.kind === 'time' && sub.minutes !== undefined
+                  ? hours(sub.minutes)
+                  : ''
+              }
               disabled={disabled}
               onCommit={saveDuration}
             />
+          ) : analysis.minutes === undefined ? (
+            ''
           ) : (
             hours(analysis.minutes)
           )}
@@ -211,7 +347,6 @@ export function QuoteItemRow({
             <InlineQuoteInput
               label={`Spese di ${displayName}`}
               value={sub?.kind === 'expense' ? moneyInputValue(sub.amount) : ''}
-              placeholder="—"
               decimal
               disabled={disabled}
               onCommit={(amount) =>
@@ -219,13 +354,15 @@ export function QuoteItemRow({
                   item.id,
                   {
                     kind: 'expense',
-                    description: sub?.description || item.name || 'Spesa',
+                    description: sub?.description || item.name,
                     amount,
                   },
                   sub?.id,
                 )
               }
             />
+          ) : analysis.expenses === undefined ? (
+            ''
           ) : (
             eur(analysis.expenses)
           )}
@@ -233,9 +370,11 @@ export function QuoteItemRow({
         <div
           role="cell"
           aria-label="Valore teorico"
-          className="text-right text-sm tabular-nums"
+          className="flex flex-wrap items-center justify-end gap-x-1 text-right text-sm tabular-nums"
         >
-          {eur(analysis.theoreticalValue)}
+          {analysis.theoreticalValue === undefined
+            ? ''
+            : eur(analysis.theoreticalValue)}
           {analysis.theoreticalPartial ? (
             <PartialBadge
               label={`Valore teorico di ${displayName}`}
@@ -251,7 +390,6 @@ export function QuoteItemRow({
             id={`chosen-${item.id}`}
             label={`Prezzo scelto di ${displayName}`}
             value={moneyInputValue(item.chosenPrice ?? '')}
-            placeholder="—"
             decimal
             disabled={disabled}
             describedBy={missingPrice ? `chosen-missing-${item.id}` : undefined}
@@ -274,284 +412,411 @@ export function QuoteItemRow({
           ) : null}
         </div>
         <div role="cell" className="flex items-center justify-end">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            disabled={disabled}
-            aria-label={`Inserisci dopo ${displayName}`}
-            onClick={onInsertAfter}
-          >
-            <Plus />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            disabled={disabled}
-            aria-label={`Elimina ${displayName}`}
-            onClick={() =>
-              actions.requestDelete({
-                kind: 'item',
-                id: item.id,
-                label: displayName,
-              })
-            }
-          >
-            <Trash2 />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={disabled}
+                  aria-label={`Aggiungi sottoriga a ${displayName}`}
+                  title="Aggiungi sottoriga"
+                />
+              }
+            >
+              <Plus />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {(
+                [
+                  ['time', 'Attività', ListChecks],
+                  ['expense', 'Spesa', ReceiptEuro],
+                  ['travel', 'Trasferta', Route],
+                ] as const
+              ).map(([kind, label, SubIcon]) => (
+                <DropdownMenuItem
+                  key={kind}
+                  onClick={() => {
+                    setExpanded(true);
+                    actions.addSub(item.id, kind);
+                  }}
+                >
+                  <SubIcon />
+                  {label}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!doc.catalog.subItems.length}
+                onClick={() => {
+                  setExpanded(true);
+                  actions.addCatalog(item.id);
+                }}
+              >
+                <BookOpen />
+                Dal catalogo
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={disabled}
+                  aria-label={`Azioni voce ${displayName}`}
+                  title="Azioni della riga"
+                />
+              }
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto min-w-0">
+              <DropdownMenuItem
+                className="size-8 justify-center p-0"
+                aria-label={`Inserisci dopo ${displayName}`}
+                title="Inserisci nuova riga"
+                onClick={onInsertAfter}
+              >
+                <Plus />
+              </DropdownMenuItem>
+              {onInsertTemplateAfter ? (
+                <DropdownMenuItem
+                  className="size-8 justify-center p-0"
+                  aria-label={`Inserisci template dopo ${displayName}`}
+                  title="Inserisci template dopo"
+                  disabled={!doc.catalog.templates.length}
+                  onClick={onInsertTemplateAfter}
+                >
+                  <BookOpen />
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                className="size-8 justify-center p-0"
+                aria-label={`Elimina ${displayName}`}
+                title="Elimina riga"
+                onClick={() =>
+                  actions.requestDelete({
+                    kind: 'item',
+                    id: item.id,
+                    label: displayName,
+                  })
+                }
+              >
+                <Trash2 />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
-      <CollapsibleContent role="row">
-        <div role="cell" aria-colspan={7}>
-          <Separator />
-          <div className="space-y-4 bg-muted/20 px-4 py-3">
-            {item.variantGroups.length ? (
-              <section aria-label="Varianti" className="space-y-3">
-                <h4 className="text-sm font-medium">Varianti</h4>
-                <div className="grid grid-cols-1 items-start gap-3 @xl:grid-cols-2 @5xl:grid-cols-3">
-                  {item.variantGroups.map((group) => {
-                    const selected =
+      <CollapsibleContent
+        role="rowgroup"
+        id={`quote-technical-${item.id}`}
+        tabIndex={-1}
+        className={
+          missingTechnical
+            ? 'outline-none ring-2 ring-inset ring-primary'
+            : 'outline-none'
+        }
+      >
+        {missingTechnical ? (
+          <div role="row">
+            <div
+              role="cell"
+              aria-colspan={7}
+              className="px-3 py-2 text-xs text-primary"
+            >
+              {missingTechnical.message}
+            </div>
+          </div>
+        ) : null}
+        {emptyGroups.map((group) => (
+          <QuoteVariantRow
+            key={group.id}
+            group={group}
+            id={`variant-${item.id}-${group.id}`}
+            disabled={disabled}
+            value={
+              item.variantSelections.find((entry) => entry.groupId === group.id)
+                ?.optionId ?? ''
+            }
+            onValueChange={(value) =>
+              actions.changeVariant(item.id, group, value)
+            }
+          />
+        ))}
+        {item.subItems.map((sub) => {
+          const subName =
+            sub.description.trim() ||
+            (sub.kind === 'time'
+              ? 'Attività senza descrizione'
+              : sub.kind === 'expense'
+                ? 'Spesa senza descrizione'
+                : 'Trasferta');
+          const group = item.variantGroups.find(
+            (entry) => entry.id === sub.variantOwner?.groupId,
+          );
+          const firstFromGroup =
+            group &&
+            item.subItems.find(
+              (entry) => entry.variantOwner?.groupId === group.id,
+            )?.id === sub.id;
+          const missing = missingTargets.find(
+            (target) => target.id === `quote-sub-${sub.id}`,
+          );
+          return (
+            <QuoteSubRow
+              key={sub.id}
+              item={item}
+              sub={sub}
+              hourly={hourly}
+              disabled={disabled}
+              missing={missing?.message}
+              note={variantNote(item, sub)}
+              variantControl={
+                group && firstFromGroup ? (
+                  <QuoteVariantSelect
+                    group={group}
+                    id={`variant-${item.id}-${group.id}`}
+                    disabled={disabled}
+                    value={
                       item.variantSelections.find(
                         (entry) => entry.groupId === group.id,
-                      )?.optionId ?? '';
-                    return (
-                      <div
-                        key={group.id}
-                        className="min-w-0 space-y-2 rounded-lg bg-muted/40 p-3"
-                      >
-                        <label
-                          htmlFor={`variant-${item.id}-${group.id}`}
-                          className="block break-words text-xs leading-relaxed font-medium"
-                        >
-                          {group.name}
-                        </label>
-                        <SearchableSelect
-                          disabled={disabled}
-                          id={`variant-${item.id}-${group.id}`}
-                          className="w-full min-w-0"
-                          value={selected}
-                          onValueChange={(value) =>
-                            actions.changeVariant(item.id, group, value)
-                          }
-                          options={[
-                            { value: '', label: 'Scegli', disabled: true },
-                            ...group.options.map((option) => ({
-                              value: option.id,
-                              label: option.name,
-                            })),
-                          ]}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ) : null}
-            <section
-              id={`quote-technical-${item.id}`}
-              tabIndex={-1}
-              className={`space-y-3 rounded-lg outline-none ${missingTechnical ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+                      )?.optionId ?? ''
+                    }
+                    onValueChange={(value) =>
+                      actions.changeVariant(item.id, group, value)
+                    }
+                  />
+                ) : undefined
+              }
+              onSave={(input) => actions.saveSimpleSub(item.id, input, sub.id)}
+              onClick={() => actions.editSub(item.id, sub.id)}
+              action={
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        disabled={disabled}
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Azioni per ${subName}`}
+                      />
+                    }
+                  >
+                    <MoreHorizontal />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-auto min-w-0">
+                    <DropdownMenuItem
+                      className="size-8 justify-center p-0"
+                      aria-label={`Modifica ${subName}`}
+                      title="Modifica sottoriga"
+                      onClick={() => actions.editSub(item.id, sub.id)}
+                    >
+                      <Pencil />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="size-8 justify-center p-0"
+                      aria-label={`Salva nel catalogo ${subName}`}
+                      title="Salva nel catalogo"
+                      disabled={!canReuseQuoteSubItem(sub)}
+                      onClick={() => actions.saveSub(item.id, sub.id)}
+                    >
+                      <BookOpen />
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      className="size-8 justify-center p-0"
+                      aria-label={`Elimina sottoriga ${subName}`}
+                      title="Elimina sottoriga"
+                      onClick={() =>
+                        actions.requestDelete({
+                          kind: 'sub',
+                          id: `${item.id}:${sub.id}`,
+                          label: subName,
+                        })
+                      }
+                    >
+                      <Trash2 />
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
+            />
+          );
+        })}
+        {editor}
+        {!item.subItems.length && !editor ? (
+          <div role="row">
+            <div
+              role="cell"
+              aria-colspan={7}
+              className="px-6 py-2 text-xs text-muted-foreground"
             >
-              {missingTechnical ? (
-                <p className="text-xs text-primary">
-                  {missingTechnical.message}
-                </p>
-              ) : null}
-              <h4 className="text-sm font-medium">Attività e costi</h4>
-
-              {item.subItems.length ? (
-                <div className="space-y-2">
-                  {item.subItems.map((sub) => {
-                    const missing = missingTargets.find(
-                      (target) => target.id === `quote-sub-${sub.id}`,
-                    );
-                    return (
-                      <div
-                        key={sub.id}
-                        id={`quote-sub-${sub.id}`}
-                        tabIndex={-1}
-                        className={
-                          missing
-                            ? 'rounded-lg ring-2 ring-primary ring-offset-2 outline-none'
-                            : 'outline-none'
-                        }
-                      >
-                        {missing ? (
-                          <p className="px-3 py-2 text-xs text-primary">
-                            {missing.message}
-                          </p>
-                        ) : null}
-                        <QuoteSubRow
-                          sub={sub}
-                          disabled={disabled}
-                          onSave={(input) =>
-                            actions.saveSimpleSub(item.id, input, sub.id)
-                          }
-                          note={variantNote(item, sub)}
-                          onClick={() => actions.editSub(item.id, sub.id)}
-                          action={
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Button
-                                    disabled={disabled}
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label={`Azioni per ${sub.description.trim() || 'Trasferta'}`}
-                                  />
-                                }
-                              >
-                                <MoreHorizontal />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    actions.editSub(item.id, sub.id)
-                                  }
-                                >
-                                  Modifica
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    actions.saveSub(item.id, sub.id)
-                                  }
-                                >
-                                  Salva nel catalogo
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={() =>
-                                    actions.requestDelete({
-                                      kind: 'sub',
-                                      id: `${item.id}:${sub.id}`,
-                                      label:
-                                        sub.description.trim() || 'Trasferta',
-                                    })
-                                  }
-                                >
-                                  Elimina
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          }
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={<Button size="sm" disabled={disabled} />}
-                >
-                  <Plus />
-                  Aggiungi <ChevronDown />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem
-                    onClick={() => actions.addSub(item.id, 'time')}
-                  >
-                    <Clock3 />
-                    Attività
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => actions.addSub(item.id, 'expense')}
-                  >
-                    <ReceiptText />
-                    Spesa
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => actions.addSub(item.id, 'travel')}
-                  >
-                    <MapPin />
-                    Trasferta
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={!doc.catalog.subItems.length}
-                    onClick={() => actions.addCatalog(item.id)}
-                  >
-                    <BriefcaseBusiness />
-                    Dal catalogo
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </section>
+              Nessuna sottoriga. Usa + per aggiungere attività e costi.
+            </div>
           </div>
-        </div>
+        ) : null}
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
 function QuoteSubRow({
+  item,
   sub,
+  hourly,
   note,
+  missing,
   disabled,
   onSave,
   onClick,
   action,
+  variantControl,
 }: {
+  item: QuoteItem;
   sub: QuoteSubItem;
+  hourly?: string;
   note?: string;
+  missing?: string;
   disabled: boolean;
   onSave: (input: SimpleSubInput) => boolean;
   onClick: () => void;
   action: ReactNode;
+  variantControl?: ReactNode;
 }) {
-  if (sub.kind === 'travel')
-    return (
-      <WorkItemRow
-        kind={sub.kind}
-        description={sub.description}
-        detail={quoteSubDetail(sub)}
-        note={note}
-        onClick={disabled ? undefined : onClick}
-        action={action}
-      />
-    );
-  const Icon = sub.kind === 'time' ? Clock3 : ReceiptText;
+  const analysis = calculateItem(
+    { ...item, subItems: [sub], chosenPrice: undefined },
+    hourly,
+  );
+  const Icon =
+    sub.kind === 'time'
+      ? ListChecks
+      : sub.kind === 'expense'
+        ? ReceiptEuro
+        : Route;
   return (
-    <div className="flex min-w-0 items-center gap-2 border-b py-1">
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <InlineQuoteInput
-          label={`Descrizione ${sub.description}`}
-          value={sub.description}
-          disabled={disabled}
-          onCommit={(description) => onSave({ ...sub, description })}
-        />
-        {note ? (
-          <p className="px-3 text-xs text-muted-foreground">{note}</p>
+    <div
+      role="row"
+      id={`quote-sub-${sub.id}`}
+      tabIndex={-1}
+      data-quote-sub={sub.id}
+      data-quote-variant={sub.variantOwner?.groupId}
+      data-quote-variant-selector={
+        variantControl ? sub.variantOwner?.groupId : undefined
+      }
+      aria-describedby={
+        sub.variantOwner
+          ? `variant-${item.id}-${sub.variantOwner.groupId}-label`
+          : undefined
+      }
+      className={`${quoteColumns} min-h-10 border-b bg-muted/15 outline-none hover:bg-muted/30 ${missing ? 'ring-2 ring-inset ring-primary' : ''}`}
+    >
+      <div
+        role="cell"
+        className={`flex h-full items-center justify-end pr-3 ${sub.variantOwner ? 'border-r-2 border-primary/40' : 'border-r border-border/60'}`}
+      >
+        {sub.variantOwner ? (
+          <GitBranch className="mr-2 size-3.5 text-muted-foreground" />
+        ) : null}
+        <Icon className="size-3.5 text-muted-foreground" />
+      </div>
+      <div role="cell" className="min-w-0 pl-2" title={note}>
+        <div className="flex min-w-0 items-center gap-2">
+          {sub.kind === 'travel' ? (
+            <Button
+              disabled={disabled}
+              variant="ghost"
+              size="sm"
+              className="h-auto w-full justify-start whitespace-normal text-left"
+              onClick={onClick}
+            >
+              {sub.description || 'Configura trasferta'}
+            </Button>
+          ) : (
+            <InlineQuoteInput
+              id={`quote-sub-description-${sub.id}`}
+              label={`Descrizione ${sub.description}`}
+              placeholder="Descrizione sottoriga"
+              value={sub.description}
+              disabled={disabled}
+              onCommit={(description) => onSave({ ...sub, description })}
+            />
+          )}
+          {variantControl}
+          {sub.manuallyModified ? (
+            <span className="sr-only">Modificata manualmente</span>
+          ) : null}
+        </div>
+        {missing ? (
+          <p className="px-3 pb-1 text-xs text-primary">{missing}</p>
         ) : null}
       </div>
-      <div className="w-32">
-        <InlineQuoteInput
-          label={`${sub.kind === 'time' ? 'Durata' : 'Importo'} ${sub.description}`}
-          value={
-            sub.kind === 'time'
-              ? hours(sub.minutes)
-              : moneyInputValue(sub.amount)
-          }
-          decimal={sub.kind === 'expense'}
-          disabled={disabled}
-          onCommit={(value) => {
-            if (sub.kind === 'expense')
-              return onSave({ ...sub, amount: value });
-            const duration = parseDuration(value);
-            return duration.ok && onSave({ ...sub, minutes: duration.value });
-          }}
-        />
+      <div role="cell" className="text-right text-sm tabular-nums">
+        {sub.kind === 'time' ? (
+          <InlineQuoteInput
+            label={`Durata ${sub.description}`}
+            value={sub.minutes === undefined ? '' : hours(sub.minutes)}
+            alignRight
+            disabled={disabled}
+            onCommit={(value) => {
+              const duration = value.trim() ? parseDuration(value) : undefined;
+              return (
+                (!duration || duration.ok) &&
+                onSave({
+                  ...sub,
+                  minutes: duration?.ok ? duration.value : undefined,
+                })
+              );
+            }}
+          />
+        ) : analysis.minutes === undefined ? (
+          ''
+        ) : (
+          hours(analysis.minutes)
+        )}
       </div>
-      {action}
+      <div role="cell" className="text-right text-sm tabular-nums">
+        {sub.kind === 'expense' ? (
+          <InlineQuoteInput
+            label={`Importo ${sub.description}`}
+            value={moneyInputValue(sub.amount)}
+            decimal
+            disabled={disabled}
+            onCommit={(amount) => onSave({ ...sub, amount })}
+          />
+        ) : analysis.expenses === undefined ? (
+          ''
+        ) : (
+          eur(analysis.expenses)
+        )}
+      </div>
+      <div
+        role="cell"
+        className="flex flex-wrap items-center justify-end gap-x-1 text-right text-sm tabular-nums"
+      >
+        {analysis.theoreticalValue === undefined
+          ? ''
+          : eur(analysis.theoreticalValue)}
+        {analysis.theoreticalPartial ? (
+          <span
+            className="ml-1 text-xs text-muted-foreground"
+            title={analysis.blockers.join(' ')}
+          >
+            parziale
+          </span>
+        ) : null}
+      </div>
+      <div role="cell" className="text-right text-sm text-muted-foreground" />
+      <div role="cell" className="flex justify-end">
+        {action}
+      </div>
     </div>
   );
-}
-
-function quoteSubDetail(sub: QuoteSubItem): string {
-  if (sub.kind === 'time') return hours(sub.minutes);
-  if (sub.kind === 'expense') return eur(sub.amount);
-  return `${sub.totalDistanceKm ?? sub.distanceKmPerOccurrence ?? '—'} km · ${hours(sub.totalMinutes ?? sub.travelMinutesPerOccurrence)} · ${eur(sub.totalCost)}`;
 }
 
 function variantNote(item: QuoteItem, sub: QuoteSubItem): string | undefined {

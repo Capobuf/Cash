@@ -1,6 +1,7 @@
 import { siteOptions } from '@/lib/site-options';
 import { SearchableSelect } from '@/components/ui/selection-field';
-import { MapPin, Plus } from 'lucide-react';
+import { Route, Plus, ListChecks, ReceiptEuro, Check, X } from 'lucide-react';
+import { quoteColumns } from './QuoteItemRow';
 import { useState, type FormEvent } from 'react';
 import {
   routeValuesRequireOverwriteConfirmation,
@@ -63,7 +64,11 @@ export function SubItemDialog({
   onClose,
   onSaveSimple,
   onSaveTravel,
+  inline = false,
+  disabled = false,
 }: {
+  inline?: boolean;
+  disabled?: boolean;
   sub?: QuoteSubItem;
   initialKind?: 'time' | 'expense' | 'travel';
   doc: CashDocument;
@@ -151,6 +156,7 @@ export function SubItemDialog({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || busy) return;
     const { get, money } = formReader(event.currentTarget);
     if (kind === 'time') {
       const duration = parseDuration(get('minutes'));
@@ -238,268 +244,414 @@ export function SubItemDialog({
   const dialogTitle = sub
     ? `Modifica ${kind === 'time' ? 'attività' : kind === 'expense' ? 'spesa' : 'trasferta'}`
     : `Aggiungi ${kind === 'time' ? 'attività' : kind === 'expense' ? 'spesa' : 'trasferta'}`;
-  return (
-    <>
-      <Dialog
-        open
-        onOpenChange={(open) => {
-          if (!open) onClose();
-        }}
+  if (inline && kind !== 'travel') {
+    const Icon = kind === 'time' ? ListChecks : ReceiptEuro;
+    return (
+      <form
+        role="row"
+        data-quote-sub-editor={kind}
+        aria-label={dialogTitle}
+        className={`${quoteColumns} min-h-12 border-b bg-muted/20 py-1`}
+        onSubmit={(event) => void submit(event)}
       >
-        <DialogContent
-          className={kind === 'travel' ? 'sm:max-w-2xl' : undefined}
-        >
-          <form onSubmit={(event) => void submit(event)} className="contents">
-            <DialogHeader>
-              <DialogTitle>{dialogTitle}</DialogTitle>
-              {kind === 'travel' ? (
-                <DialogDescription>
-                  Il percorso viene calcolato solo su richiesta e i valori
-                  manuali restano indipendenti.
-                </DialogDescription>
-              ) : null}
-            </DialogHeader>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="sub-description">
-                  Descrizione{kind === 'travel' ? ' (opzionale)' : ''}
-                </FieldLabel>
-                <Input
-                  id="sub-description"
-                  name="description"
-                  defaultValue={sub?.description ?? initialDescription}
-                  autoFocus
-                  required={kind !== 'travel'}
-                />
-              </Field>
-              {kind === 'time' ? (
+        <fieldset disabled={disabled || busy} className="contents">
+          <div
+            role="cell"
+            className="flex h-full items-center justify-end border-r pr-3"
+          >
+            <Icon className="size-3.5 text-muted-foreground" />
+          </div>
+          <div role="cell" className="min-w-0 pl-2">
+            <Input
+              id="sub-description"
+              name="description"
+              aria-label="Descrizione sottoriga"
+              placeholder="Descrizione sottoriga…"
+              defaultValue={sub?.description ?? initialDescription}
+              autoFocus
+              required
+              className="text-foreground"
+            />
+            {durationError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {durationError}
+              </p>
+            ) : null}
+          </div>
+          <div role="cell">
+            {kind === 'time' ? (
+              <Input
+                id="sub-minutes"
+                name="minutes"
+                aria-label="Durata sottoriga"
+                placeholder="Durata"
+                defaultValue={
+                  sub?.kind === 'time' && sub.minutes !== undefined
+                    ? hours(sub.minutes)
+                    : ''
+                }
+                onChange={() => setDurationError(undefined)}
+                required
+                className="text-right text-foreground"
+              />
+            ) : null}
+          </div>
+          <div role="cell">
+            {kind === 'expense' ? (
+              <Input
+                id="sub-amount"
+                name="amount"
+                aria-label="Importo sottoriga"
+                placeholder="Importo"
+                defaultValue={
+                  sub?.kind === 'expense' ? moneyInputValue(sub.amount) : ''
+                }
+                inputMode="decimal"
+                required
+                className="text-right text-foreground"
+              />
+            ) : null}
+          </div>
+          <div
+            role="cell"
+            className="text-right text-sm text-muted-foreground"
+          />
+          <div
+            role="cell"
+            className="text-right text-sm text-muted-foreground"
+          />
+          <div role="cell" className="flex justify-end">
+            <Button
+              type="submit"
+              size="icon-sm"
+              aria-label="Conferma sottoriga"
+              title="Conferma sottoriga"
+            >
+              <Check />
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Annulla sottoriga"
+              title="Annulla sottoriga"
+              onClick={onClose}
+            >
+              <X />
+            </Button>
+          </div>
+        </fieldset>
+      </form>
+    );
+  }
+  const Header = inline ? 'div' : DialogHeader;
+  const Title = inline ? 'h4' : DialogTitle;
+  const Description = inline ? 'p' : DialogDescription;
+  const Footer = inline ? 'div' : DialogFooter;
+  const form = (
+    <form
+      onSubmit={(event) => void submit(event)}
+      className={inline ? 'space-y-3 p-3' : 'contents'}
+      data-quote-sub-editor={kind}
+    >
+      <Header className={inline ? 'space-y-1' : undefined}>
+        <Title className={inline ? 'text-sm font-medium' : undefined}>
+          {dialogTitle}
+        </Title>
+        {kind === 'travel' ? (
+          <Description
+            className={inline ? 'text-xs text-muted-foreground' : undefined}
+          >
+            Il percorso viene calcolato solo su richiesta e i valori manuali
+            restano indipendenti.
+          </Description>
+        ) : null}
+      </Header>
+      <fieldset disabled={disabled || busy} className="contents">
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="sub-description">
+              Descrizione{kind === 'travel' ? ' (opzionale)' : ''}
+            </FieldLabel>
+            <Input
+              id="sub-description"
+              name="description"
+              defaultValue={sub?.description ?? initialDescription}
+              autoFocus
+              required={kind !== 'travel'}
+            />
+          </Field>
+          {kind === 'time' ? (
+            <Field>
+              <FieldLabel htmlFor="sub-minutes">Durata</FieldLabel>
+              <Input
+                id="sub-minutes"
+                name="minutes"
+                defaultValue={
+                  sub?.kind === 'time' && sub.minutes !== undefined
+                    ? hours(sub.minutes)
+                    : ''
+                }
+                placeholder="es. 2h 30m"
+                onChange={() => setDurationError(undefined)}
+                required
+              />
+              {durationError ? (
+                <FieldDescription className="text-destructive">
+                  {durationError}
+                </FieldDescription>
+              ) : (
+                <FieldDescription>
+                  Puoi usare minuti oppure ore e minuti.
+                </FieldDescription>
+              )}
+            </Field>
+          ) : null}
+          {kind === 'expense' ? (
+            <Field>
+              <FieldLabel htmlFor="sub-amount">Importo</FieldLabel>
+              <Input
+                id="sub-amount"
+                name="amount"
+                defaultValue={
+                  sub?.kind === 'expense' ? moneyInputValue(sub.amount) : ''
+                }
+                inputMode="decimal"
+                required
+              />
+            </Field>
+          ) : null}
+          {kind === 'travel' ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel htmlFor="sub-minutes">Durata</FieldLabel>
+                  <FieldLabel htmlFor="travel-departure">Partenza</FieldLabel>
+                  <SearchableSelect
+                    id="travel-departure"
+                    value={departureSiteId}
+                    onValueChange={(value) => setDepartureSiteId(value)}
+                    options={[
+                      { value: '', label: 'Scegli sede' },
+                      ...siteOptions(doc.sites, client),
+                    ]}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="travel-destination">
+                    Destinazione
+                  </FieldLabel>
+                  <SearchableSelect
+                    id="travel-destination"
+                    value={destinationSiteId}
+                    onValueChange={(value) => setDestinationSiteId(value)}
+                    options={[
+                      { value: '', label: 'Scegli sede' },
+                      ...siteOptions(doc.sites, client),
+                    ]}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                <Field>
+                  <FieldLabel htmlFor="travel-vehicle">Veicolo</FieldLabel>
+                  <SearchableSelect
+                    id="travel-vehicle"
+                    value={vehicleId}
+                    onValueChange={(value) => setVehicleId(value)}
+                    options={[
+                      { value: '', label: 'Scegli veicolo' },
+                      ...doc.vehicles.map((vehicle) => ({
+                        value: vehicle.id,
+                        label: [vehicle.name, '·', vehicle.fuel].join(''),
+                      })),
+                    ]}
+                  />
+                </Field>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setVehicleOpen(true)}
+                >
+                  <Plus />
+                  Nuovo veicolo
+                </Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="travel-occurrences">
+                    Occorrenze
+                  </FieldLabel>
                   <Input
-                    id="sub-minutes"
-                    name="minutes"
-                    defaultValue={
-                      sub?.kind === 'time' ? hours(sub.minutes) : ''
-                    }
-                    placeholder="es. 2h 30m"
-                    onChange={() => setDurationError(undefined)}
+                    id="travel-occurrences"
+                    name="occurrences"
+                    type="number"
+                    defaultValue={travel?.occurrences ?? 1}
+                    min={1}
+                    step={1}
                     required
+                  />
+                </Field>
+                <Field orientation="horizontal">
+                  <Checkbox
+                    id="travel-roundtrip"
+                    checked={roundTrip}
+                    onCheckedChange={(checked) => {
+                      setRoundTrip(Boolean(checked));
+                      setDistance('');
+                      setMinutes('');
+                      setDistanceSource(undefined);
+                      setDurationSource(undefined);
+                      setDurationError(undefined);
+                    }}
+                  />
+                  <FieldLabel htmlFor="travel-roundtrip">
+                    Andata e ritorno
+                  </FieldLabel>
+                </Field>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void calculateRoute()}
+                disabled={busy}
+              >
+                <Route />
+                {distanceSource === 'route' || durationSource === 'route'
+                  ? 'Ricalcola percorso'
+                  : 'Calcola percorso'}
+              </Button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="travel-distance">
+                    {roundTrip ? 'Distanza A/R' : 'Distanza andata'}
+                  </FieldLabel>
+                  <InputGroup>
+                    <InputGroupInput
+                      id="travel-distance"
+                      value={distance}
+                      onChange={(event) => {
+                        setDistance(event.target.value);
+                        setDistanceSource('manual');
+                      }}
+                      inputMode="decimal"
+                      placeholder="0"
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupText>km</InputGroupText>
+                    </InputGroupAddon>
+                  </InputGroup>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="travel-duration">
+                    {roundTrip
+                      ? 'Tempo di viaggio A/R'
+                      : 'Tempo di viaggio andata'}
+                  </FieldLabel>
+                  <Input
+                    id="travel-duration"
+                    value={minutes}
+                    onChange={(event) => {
+                      setMinutes(event.target.value);
+                      setDurationSource('manual');
+                      setDurationError(undefined);
+                    }}
+                    placeholder="es. 45m"
                   />
                   {durationError ? (
                     <FieldDescription className="text-destructive">
                       {durationError}
                     </FieldDescription>
-                  ) : (
-                    <FieldDescription>
-                      Puoi usare minuti oppure ore e minuti.
-                    </FieldDescription>
-                  )}
+                  ) : null}
                 </Field>
-              ) : null}
-              {kind === 'expense' ? (
-                <Field>
-                  <FieldLabel htmlFor="sub-amount">Importo</FieldLabel>
-                  <Input
-                    id="sub-amount"
-                    name="amount"
-                    defaultValue={
-                      sub?.kind === 'expense' ? moneyInputValue(sub.amount) : ''
-                    }
-                    inputMode="decimal"
-                    required
-                  />
-                </Field>
-              ) : null}
-              {kind === 'travel' ? (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel htmlFor="travel-departure">
-                        Partenza
-                      </FieldLabel>
-                      <SearchableSelect
-                        id="travel-departure"
-                        value={departureSiteId}
-                        onValueChange={(value) => setDepartureSiteId(value)}
-                        options={[
-                          { value: '', label: 'Scegli sede' },
-                          ...siteOptions(doc.sites, client),
-                        ]}
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="travel-destination">
-                        Destinazione
-                      </FieldLabel>
-                      <SearchableSelect
-                        id="travel-destination"
-                        value={destinationSiteId}
-                        onValueChange={(value) => setDestinationSiteId(value)}
-                        options={[
-                          { value: '', label: 'Scegli sede' },
-                          ...siteOptions(doc.sites, client),
-                        ]}
-                      />
-                    </Field>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <Field>
-                      <FieldLabel htmlFor="travel-vehicle">Veicolo</FieldLabel>
-                      <SearchableSelect
-                        id="travel-vehicle"
-                        value={vehicleId}
-                        onValueChange={(value) => setVehicleId(value)}
-                        options={[
-                          { value: '', label: 'Scegli veicolo' },
-                          ...doc.vehicles.map((vehicle) => ({
-                            value: vehicle.id,
-                            label: [vehicle.name, '·', vehicle.fuel].join(''),
-                          })),
-                        ]}
-                      />
-                    </Field>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setVehicleOpen(true)}
-                    >
-                      <Plus />
-                      Nuovo veicolo
-                    </Button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel htmlFor="travel-occurrences">
-                        Occorrenze
-                      </FieldLabel>
-                      <Input
-                        id="travel-occurrences"
-                        name="occurrences"
-                        type="number"
-                        defaultValue={travel?.occurrences ?? 1}
-                        min={1}
-                        step={1}
-                        required
-                      />
-                    </Field>
-                    <Field orientation="horizontal">
-                      <Checkbox
-                        id="travel-roundtrip"
-                        checked={roundTrip}
-                        onCheckedChange={(checked) => {
-                          setRoundTrip(Boolean(checked));
-                          setDistance('');
-                          setMinutes('');
-                          setDistanceSource(undefined);
-                          setDurationSource(undefined);
-                          setDurationError(undefined);
-                        }}
-                      />
-                      <FieldLabel htmlFor="travel-roundtrip">
-                        Andata e ritorno
-                      </FieldLabel>
-                    </Field>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => void calculateRoute()}
-                    disabled={busy}
-                  >
-                    <MapPin />
-                    {distanceSource === 'route' || durationSource === 'route'
-                      ? 'Ricalcola percorso'
-                      : 'Calcola percorso'}
-                  </Button>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel htmlFor="travel-distance">
-                        {roundTrip ? 'Distanza A/R' : 'Distanza andata'}
-                      </FieldLabel>
-                      <InputGroup>
-                        <InputGroupInput
-                          id="travel-distance"
-                          value={distance}
-                          onChange={(event) => {
-                            setDistance(event.target.value);
-                            setDistanceSource('manual');
-                          }}
-                          inputMode="decimal"
-                          placeholder="0"
-                        />
-                        <InputGroupAddon align="inline-end">
-                          <InputGroupText>km</InputGroupText>
-                        </InputGroupAddon>
-                      </InputGroup>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="travel-duration">
-                        {roundTrip
-                          ? 'Tempo di viaggio A/R'
-                          : 'Tempo di viaggio andata'}
-                      </FieldLabel>
-                      <Input
-                        id="travel-duration"
-                        value={minutes}
-                        onChange={(event) => {
-                          setMinutes(event.target.value);
-                          setDurationSource('manual');
-                          setDurationError(undefined);
-                        }}
-                        placeholder="es. 45m"
-                      />
-                      {durationError ? (
-                        <FieldDescription className="text-destructive">
-                          {durationError}
-                        </FieldDescription>
-                      ) : null}
-                    </Field>
-                  </div>
-                  <FieldDescription>
-                    Valori per singola occorrenza, modificabili
-                    indipendentemente. Le modifiche manuali non vengono
-                    sovrascritte senza conferma.
-                  </FieldDescription>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSiteOpen(true)}
-                  >
-                    <Plus />
-                    Nuova sede
-                  </Button>
-                </>
-              ) : null}
-            </FieldGroup>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Annulla
+              </div>
+              <FieldDescription>
+                Valori per singola occorrenza, modificabili indipendentemente.
+                Le modifiche manuali non vengono sovrascritte senza conferma.
+              </FieldDescription>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSiteOpen(true)}
+              >
+                <Plus />
+                Nuova sede
               </Button>
-              <Button type="submit" disabled={busy}>
-                {busy
-                  ? 'Elaborazione…'
-                  : sub
-                    ? 'Aggiorna'
-                    : kind === 'time'
-                      ? 'Aggiungi attività'
-                      : 'Aggiungi'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <SiteDialog
-        open={siteOpen}
-        onOpenChange={setSiteOpen}
-        appState={appState}
-        doc={doc}
-      />
-      <VehicleDialog
-        open={vehicleOpen}
-        onOpenChange={setVehicleOpen}
-        appState={appState}
-        onSaved={setVehicleId}
-      />
+            </>
+          ) : null}
+        </FieldGroup>
+        <Footer className={inline ? 'flex justify-end gap-2' : undefined}>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Annulla
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy
+              ? 'Elaborazione…'
+              : sub
+                ? 'Aggiorna'
+                : kind === 'time'
+                  ? 'Aggiungi attività'
+                  : 'Aggiungi'}
+          </Button>
+        </Footer>
+      </fieldset>
+    </form>
+  );
+  return (
+    <>
+      {inline ? (
+        <div role="row">
+          <div role="cell" aria-colspan={7} className="border-b bg-muted/15">
+            {form}
+          </div>
+        </div>
+      ) : (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) onClose();
+          }}
+        >
+          <DialogContent
+            className={kind === 'travel' ? 'sm:max-w-2xl' : undefined}
+          >
+            {form}
+          </DialogContent>
+        </Dialog>
+      )}
+      {siteOpen ? (
+        <div role={inline ? 'row' : undefined}>
+          <div
+            role={inline ? 'cell' : undefined}
+            aria-colspan={inline ? 7 : undefined}
+            className={inline ? 'px-3' : undefined}
+          >
+            <SiteDialog
+              inline={inline}
+              open
+              onOpenChange={setSiteOpen}
+              appState={appState}
+              doc={doc}
+            />
+          </div>
+        </div>
+      ) : null}
+      {vehicleOpen ? (
+        <div role={inline ? 'row' : undefined}>
+          <div
+            role={inline ? 'cell' : undefined}
+            aria-colspan={inline ? 7 : undefined}
+            className={inline ? 'px-3' : undefined}
+          >
+            <VehicleDialog
+              inline={inline}
+              open
+              onOpenChange={setVehicleOpen}
+              appState={appState}
+              onSaved={setVehicleId}
+            />
+          </div>
+        </div>
+      ) : null}
       <AlertDialog
         open={confirmRecalculation}
         onOpenChange={setConfirmRecalculation}

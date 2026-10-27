@@ -558,9 +558,21 @@ export function calculateItem(
   let minutesPartial = false;
   let expensesPartial = false;
   for (const sub of item.subItems) {
-    if (sub.kind === 'time') minutes = (minutes ?? 0) + sub.minutes;
-    else if (sub.kind === 'expense') expenses.push(money(sub.amount));
-    else {
+    if (sub.kind === 'time') {
+      if (sub.minutes === undefined) {
+        minutesPartial = true;
+        blockers.push(
+          `Attività${sub.description.trim() ? ` “${sub.description}”` : ''}: tempo non disponibile.`,
+        );
+      } else minutes = (minutes ?? 0) + sub.minutes;
+    } else if (sub.kind === 'expense') {
+      if (sub.amount === undefined) {
+        expensesPartial = true;
+        blockers.push(
+          `Spesa${sub.description.trim() ? ` “${sub.description}”` : ''}: importo non disponibile.`,
+        );
+      } else expenses.push(money(sub.amount));
+    } else {
       const travelLabel = sub.description.trim()
         ? `Trasferta “${sub.description}”`
         : 'Trasferta';
@@ -672,9 +684,11 @@ export function calculateQuote(
     chosenTotal,
     chosenPartial,
     minutesPartial: analyses.some(
-      (analysis) =>
+      (analysis, index) =>
         analysis.minutesPartial ||
-        (analysis.minutes === undefined && analysis.expenses === undefined),
+        (!items[index]!.subItems.length &&
+          analysis.minutes === undefined &&
+          analysis.expenses === undefined),
     ),
     expensesPartial: analyses.some(
       (analysis) => analysis.expensesPartial || analysis.expenses === undefined,

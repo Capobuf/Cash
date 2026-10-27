@@ -14,22 +14,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 
-export function SaveTemplateDialog({
+export function SaveTemplateEditor({
   quote,
   onClose,
   onSave,
+  disabled,
 }: {
+  disabled: boolean;
   quote: Quote;
   onClose: () => void;
   onSave: (name: string, itemIds: string[]) => boolean;
@@ -44,83 +38,79 @@ export function SaveTemplateDialog({
       .map((sub) => `${item.name} / ${sub.description}`),
   );
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <section
+      aria-label="Salva come nuovo template"
+      className="space-y-3 border-y py-3"
     >
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Salva come nuovo template</DialogTitle>
-          <DialogDescription>
-            Viene sempre creata una nuova copia nel Catalogo; il preventivo e
-            gli eventuali template di origine restano indipendenti.
-          </DialogDescription>
-        </DialogHeader>
-        <Field>
-          <FieldLabel htmlFor="template-new-name">Nome template</FieldLabel>
-          <Input
-            id="template-new-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            autoFocus
-          />
-        </Field>
-        <div className="rounded-lg border">
-          <div className="border-b px-4 py-3 text-sm font-medium">
-            Voci da includere
-          </div>
-          {orderedQuoteItems(quote).map((item) => (
-            <label
-              key={item.id}
-              className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-0"
-            >
-              <Checkbox
-                checked={selected.has(item.id)}
-                onCheckedChange={(checked) =>
-                  setSelected((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(item.id);
-                    else next.delete(item.id);
-                    return next;
-                  })
-                }
-              />
-              <span>
-                <span className="block text-sm font-medium">{item.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {item.subItems.filter((sub) => !sub.variantOwner).length}{' '}
-                  sempre inclusi · {item.variantGroups.length} varianti
-                </span>
-              </span>
-            </label>
-          ))}
+      <div className="space-y-1">
+        <h4 className="text-sm font-medium">Salva come nuovo template</h4>
+        <p className="text-xs text-muted-foreground">
+          Viene sempre creata una nuova copia nel Catalogo; il preventivo e gli
+          eventuali template di origine restano indipendenti.
+        </p>
+      </div>
+      <Field>
+        <FieldLabel htmlFor="template-new-name">Nome template</FieldLabel>
+        <Input
+          id="template-new-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          autoFocus
+        />
+      </Field>
+      <div className="rounded-lg border">
+        <div className="border-b px-4 py-3 text-sm font-medium">
+          Voci da includere
         </div>
-        {changed.length ? (
-          <Alert>
-            <AlertTitle>Modifiche alle varianti incluse</AlertTitle>
-            <AlertDescription>
-              Le modifiche manuali seguenti saranno applicate alla rispettiva
-              opzione nella nuova copia: {changed.join(', ')}.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Annulla
-          </Button>
-          <Button
-            disabled={!name.trim() || selected.size === 0}
-            onClick={() => {
-              if (onSave(name, [...selected])) onClose();
-            }}
+        {orderedQuoteItems(quote).map((item) => (
+          <label
+            key={item.id}
+            className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-0"
           >
-            Crea template
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <Checkbox
+              checked={selected.has(item.id)}
+              onCheckedChange={(checked) =>
+                setSelected((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(item.id);
+                  else next.delete(item.id);
+                  return next;
+                })
+              }
+            />
+            <span>
+              <span className="block text-sm font-medium">{item.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {item.subItems.filter((sub) => !sub.variantOwner).length} sempre
+                inclusi · {item.variantGroups.length} varianti
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {changed.length ? (
+        <Alert>
+          <AlertTitle>Modifiche alle varianti incluse</AlertTitle>
+          <AlertDescription>
+            Le modifiche manuali seguenti saranno applicate alla rispettiva
+            opzione nella nuova copia: {changed.join(', ')}.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>
+          Annulla
+        </Button>
+        <Button
+          disabled={disabled || !name.trim() || selected.size === 0}
+          onClick={() => {
+            if (!disabled && onSave(name, [...selected])) onClose();
+          }}
+        >
+          Crea template
+        </Button>
+      </div>
+    </section>
   );
 }
 

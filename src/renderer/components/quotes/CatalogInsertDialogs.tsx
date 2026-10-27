@@ -1,15 +1,34 @@
-import { normalizeSearch, templateSearchText } from '@/lib/template-search';
+import { templateSearchText } from '@/lib/template-search';
 import { siteOptions } from '@/lib/site-options';
 import { Spinner } from '@/components/ui/spinner';
 import { SearchableSelect } from '@/components/ui/selection-field';
-import { Search } from 'lucide-react';
-import { useState } from 'react';
+import {
+  ListTree,
+  GitBranch,
+  ListChecks,
+  ReceiptEuro,
+  Route,
+  BookOpen,
+  Check,
+  X,
+} from 'lucide-react';
+import { calculateItem, calculateTravel } from '../../../domain/calculations';
+import {
+  quoteColumns,
+  QuoteTableHeader,
+  QuoteVariantRow,
+  QuoteVariantSelect,
+} from './QuoteItemRow';
+import { Fragment, useState } from 'react';
 import { templateRequiresTravel } from '../../../domain/catalog';
 import {
   type CashDocument,
   type Quote,
   type ReusableSubItem,
   type VariantGroup,
+  type TemplateItem,
+  type SubItemDefinition,
+  type QuoteSubItem,
 } from '../../../domain/model';
 import {
   AlertDialog,
@@ -22,34 +41,21 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from '@/components/ui/input-group';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { eur, hours } from '@/lib/format';
-import { ChoiceButton } from './ChoiceButton';
 
-export function CatalogPickerDialog({
+export function CatalogPickerEditor({
   itemId,
   doc,
   quote,
+  disabled,
   onClose,
   onAdd,
 }: {
   itemId: string;
   doc: CashDocument;
   quote: Quote;
+  disabled: boolean;
   onClose: () => void;
   onAdd: (
     item: ReusableSubItem,
@@ -65,118 +71,135 @@ export function CatalogPickerDialog({
   const selected = doc.catalog.subItems.find(
     (entry) => entry.id === selectedId,
   );
+  const complete =
+    selected && (selected.kind !== 'travel' || Boolean(siteId && vehicleId));
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
+    <form
+      role="rowgroup"
+      data-quote-catalog-editor
+      aria-label="Aggiungi dal catalogo"
+      aria-busy={busy}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (disabled || busy || !selected || !complete) return;
+        setBusy(true);
+        try {
+          if (await onAdd(selected, { siteId, vehicleId })) onClose();
+        } finally {
+          setBusy(false);
+        }
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Aggiungi dal catalogo</DialogTitle>
-          <DialogDescription>
-            Verrà inserita una copia indipendente nella voce corrente.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-[1fr_240px]">
-          <ScrollArea className="h-80 rounded-lg border">
-            <div className="p-2">
-              {doc.catalog.subItems.map((item) => (
-                <ChoiceButton
-                  key={item.id}
-                  selected={selectedId === item.id}
-                  title={item.description}
-                  detail={
-                    item.kind === 'time'
-                      ? `Tempo · ${hours(item.minutes)}`
-                      : item.kind === 'expense'
-                        ? `Spesa · ${eur(item.amount)}`
-                        : `Trasferta · ${item.occurrences} occorrenze`
-                  }
-                  onClick={() => setSelectedId(item.id)}
-                />
-              ))}
-            </div>
-          </ScrollArea>
-          <div className="space-y-3">
-            {selected?.kind === 'travel' ? (
-              <>
-                <Field>
-                  <FieldLabel htmlFor={`catalog-site-${itemId}`}>
-                    Sede
-                  </FieldLabel>
-                  <SearchableSelect
-                    id={`catalog-site-${itemId}`}
-                    value={siteId}
-                    onValueChange={(value) => setSiteId(value)}
-                    options={[
-                      { value: '', label: 'Scegli' },
-                      ...siteOptions(doc.sites, quote.client),
-                    ]}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`catalog-vehicle-${itemId}`}>
-                    Veicolo
-                  </FieldLabel>
-                  <SearchableSelect
-                    id={`catalog-vehicle-${itemId}`}
-                    value={vehicleId}
-                    onValueChange={(value) => setVehicleId(value)}
-                    options={[
-                      { value: '', label: 'Scegli' },
-                      ...doc.vehicles.map((vehicle) => ({
-                        value: vehicle.id,
-                        label: vehicle.name,
-                      })),
-                    ]}
-                  />
-                </Field>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Seleziona una sottovoce per vedere i dettagli.
-              </p>
-            )}
-          </div>
+      <div
+        role="row"
+        className={`${quoteColumns} min-h-12 border-b bg-muted/20 py-1`}
+      >
+        <div role="cell" className="flex justify-end border-r pr-3">
+          <BookOpen className="size-3.5 text-muted-foreground" />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Annulla
+        <div role="cell" className="min-w-0 pl-2">
+          <SearchableSelect
+            id={`catalog-entry-${itemId}`}
+            aria-label="Sottoriga dal catalogo"
+            className="w-full"
+            disabled={disabled || busy}
+            value={selectedId}
+            onValueChange={setSelectedId}
+            options={[
+              { value: '', label: 'Scegli dal catalogo', disabled: true },
+              ...doc.catalog.subItems.map((item) => ({
+                value: item.id,
+                label: item.description,
+              })),
+            ]}
+          />
+        </div>
+        <div role="cell" className="text-right text-sm tabular-nums">
+          {selected?.kind === 'time' ? hours(selected.minutes) : ''}
+        </div>
+        <div role="cell" className="text-right text-sm tabular-nums">
+          {selected?.kind === 'expense' ? eur(selected.amount) : ''}
+        </div>
+        <div role="cell" className="text-right text-sm text-muted-foreground" />
+        <div role="cell" className="text-right text-sm text-muted-foreground" />
+        <div role="cell" className="flex justify-end">
+          <Button
+            type="submit"
+            size="icon-sm"
+            disabled={disabled || busy || !complete}
+            aria-label="Aggiungi dal catalogo"
+            title="Aggiungi dal catalogo"
+          >
+            {busy ? <Spinner /> : <Check />}
           </Button>
           <Button
-            disabled={
-              !selected ||
-              busy ||
-              (selected.kind === 'travel' && (!siteId || !vehicleId))
-            }
-            onClick={() => {
-              if (!selected) return;
-              setBusy(true);
-              void onAdd(selected, { siteId, vehicleId }).then((ok) => {
-                setBusy(false);
-                if (ok) onClose();
-              });
-            }}
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            disabled={busy}
+            aria-label="Annulla inserimento dal catalogo"
+            title="Annulla"
+            onClick={onClose}
           >
-            {busy ? <Spinner aria-hidden="true" /> : null}
-            {busy ? 'Inserimento…' : 'Aggiungi copia'}
+            <X />
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+      {selected?.kind === 'travel' ? (
+        <div role="row">
+          <div
+            role="cell"
+            aria-colspan={7}
+            className="grid grid-cols-2 gap-3 border-b bg-muted/15 px-6 py-3"
+          >
+            <Field>
+              <FieldLabel htmlFor={`catalog-site-${itemId}`}>Sede</FieldLabel>
+              <SearchableSelect
+                id={`catalog-site-${itemId}`}
+                value={siteId}
+                disabled={disabled || busy}
+                onValueChange={setSiteId}
+                options={[
+                  { value: '', label: 'Scegli sede' },
+                  ...siteOptions(doc.sites, quote.client),
+                ]}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`catalog-vehicle-${itemId}`}>
+                Veicolo
+              </FieldLabel>
+              <SearchableSelect
+                id={`catalog-vehicle-${itemId}`}
+                value={vehicleId}
+                disabled={disabled || busy}
+                onValueChange={setVehicleId}
+                options={[
+                  { value: '', label: 'Scegli veicolo' },
+                  ...doc.vehicles.map((vehicle) => ({
+                    value: vehicle.id,
+                    label: vehicle.name,
+                  })),
+                ]}
+              />
+            </Field>
+          </div>
+        </div>
+      ) : null}
+    </form>
   );
 }
 
-export function InsertTemplateDialog({
+export function InsertTemplateEditor({
   doc,
   quote,
+  disabled,
   onClose,
   onInsert,
 }: {
   doc: CashDocument;
   quote: Quote;
+  disabled: boolean;
   onClose: () => void;
   onInsert: (
     templateId: string,
@@ -184,15 +207,10 @@ export function InsertTemplateDialog({
     context: { siteId?: string; vehicleId?: string },
   ) => Promise<boolean>;
 }) {
-  const [query, setQuery] = useState('');
-  const [templateId, setTemplateId] = useState(
-    doc.catalog.templates[0]?.id ?? '',
+  const [templateId, setTemplateId] = useState('');
+  const template = doc.catalog.templates.find(
+    (entry) => entry.id === templateId,
   );
-  const templates = doc.catalog.templates.filter((entry) =>
-    templateSearchText(entry).includes(normalizeSearch(query)),
-  );
-  const template =
-    templates.find((entry) => entry.id === templateId) ?? templates[0];
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [siteId, setSiteId] = useState(quote.mainSite?.sourceId ?? '');
   const [vehicleId, setVehicleId] = useState(
@@ -205,209 +223,290 @@ export function InsertTemplateDialog({
     : false;
   const complete =
     groups.every((group) => {
-      const optionId = choices[group.id] ?? group.defaultOptionId;
-      return Boolean(
-        optionId && group.options.some((option) => option.id === optionId),
-      );
+      const id = choices[group.id] ?? group.defaultOptionId;
+      return Boolean(id && group.options.some((option) => option.id === id));
     }) &&
     (!hasTravel || Boolean(siteId && vehicleId));
-
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <section
+      data-quote-template-editor
+      aria-label="Inserisci template"
+      aria-busy={busy}
+      className="space-y-3 border-b bg-muted/10 py-3"
     >
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Inserisci template</DialogTitle>
-          <DialogDescription>
-            Le voci inserite saranno copie indipendenti e resteranno
-            completamente modificabili.
-          </DialogDescription>
-        </DialogHeader>
-        <InputGroup>
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Cerca template da inserire"
-            placeholder="Cerca template"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </InputGroup>
-        <div className="grid gap-5 md:grid-cols-[240px_minmax(0,1fr)]">
-          <ScrollArea className="h-[420px] rounded-lg border">
-            <div className="p-2">
-              {templates.map((entry) => (
-                <ChoiceButton
-                  key={entry.id}
-                  selected={entry.id === template?.id}
-                  title={entry.name}
-                  detail={`${entry.items.length} ${entry.items.length === 1 ? 'voce' : 'voci'}`}
-                  onClick={() => {
-                    setTemplateId(entry.id);
-                    setChoices({});
-                  }}
+      <div className="flex items-center gap-3 px-3">
+        <h4 className="shrink-0 text-sm font-medium">Inserisci template</h4>
+        {template ? (
+          <span className="text-xs text-muted-foreground">
+            Anteprima · da confermare
+          </span>
+        ) : null}
+      </div>
+      <div className="px-3">
+        <SearchableSelect
+          className="max-w-md"
+          id="quote-template-picker"
+          aria-label="Template da inserire"
+          value={templateId}
+          disabled={disabled || busy}
+          onValueChange={(id) => {
+            setTemplateId(id);
+            setChoices({});
+          }}
+          options={[
+            { value: '', label: 'Scegli template', disabled: true },
+            ...doc.catalog.templates.map((entry) => ({
+              value: entry.id,
+              label: entry.name,
+              searchText: templateSearchText(entry),
+            })),
+          ]}
+        />
+      </div>
+      {template ? (
+        <>
+          <div role="table" aria-label={`Anteprima ${template.name}`}>
+            <QuoteTableHeader />
+            <div role="rowgroup">
+              {template.items.map((item) => (
+                <TemplatePreviewItem
+                  key={item.id}
+                  item={item}
+                  hourly={quote.profileSnapshot?.hourlyTarget}
+                  choices={choices}
+                  disabled={disabled || busy}
+                  onChoice={(groupId, optionId) =>
+                    setChoices((current) => ({
+                      ...current,
+                      [groupId]: optionId,
+                    }))
+                  }
                 />
               ))}
-              {!templates.length ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">
-                  Nessun template trovato.
-                </p>
-              ) : null}
             </div>
-          </ScrollArea>
-          <ScrollArea className="h-[420px]">
-            <div className="space-y-4 pr-3">
-              {template ? (
-                <>
-                  <div className="rounded-lg border">
-                    <div className="border-b px-4 py-3">
-                      <h3 className="font-medium">{template.name}</h3>
-                    </div>
-                    <div className="divide-y">
-                      {template.items.map((item) => (
-                        <div key={item.id} className="space-y-3 px-4 py-3">
-                          <p className="font-medium">{item.name}</p>
-                          <div className="flex items-center justify-between gap-3 text-sm">
-                            <span className="text-muted-foreground">
-                              Sempre incluso
-                            </span>
-                            <span>
-                              {item.subItems.length}{' '}
-                              {item.subItems.length === 1
-                                ? 'elemento'
-                                : 'elementi'}
-                            </span>
-                          </div>
-                          {item.variantGroups.length ? (
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                Varianti
-                              </p>
-                              {item.variantGroups.map((group) => {
-                                const optionId =
-                                  choices[group.id] ??
-                                  group.defaultOptionId ??
-                                  '';
-                                const option = group.options.find(
-                                  (candidate) => candidate.id === optionId,
-                                );
-                                return group.defaultOptionId ? (
-                                  <div
-                                    key={group.id}
-                                    className="flex items-center justify-between gap-3 text-sm"
-                                  >
-                                    <span>{group.name}</span>
-                                    <span className="font-medium">
-                                      {option?.name}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <Field key={group.id}>
-                                    <FieldLabel
-                                      htmlFor={`template-choice-${group.id}`}
-                                    >
-                                      {group.name}
-                                    </FieldLabel>
-                                    <SearchableSelect
-                                      id={`template-choice-${group.id}`}
-                                      value={choices[group.id] ?? ''}
-                                      onValueChange={(value) =>
-                                        setChoices((current) => ({
-                                          ...current,
-                                          [group.id]: value,
-                                        }))
-                                      }
-                                      options={[
-                                        { value: '', label: 'Scegli opzione' },
-                                        ...group.options.map((candidate) => ({
-                                          value: candidate.id,
-                                          label: candidate.name,
-                                        })),
-                                      ]}
-                                    />
-                                  </Field>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {hasTravel ? (
-                    <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
-                      <Field>
-                        <FieldLabel htmlFor="template-site">
-                          Sede per le trasferte
-                        </FieldLabel>
-                        <SearchableSelect
-                          id="template-site"
-                          value={siteId}
-                          onValueChange={(value) => setSiteId(value)}
-                          options={[
-                            { value: '', label: 'Scegli sede' },
-                            ...siteOptions(doc.sites, quote.client),
-                          ]}
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="template-vehicle">
-                          Veicolo
-                        </FieldLabel>
-                        <SearchableSelect
-                          id="template-vehicle"
-                          value={vehicleId}
-                          onValueChange={(value) => setVehicleId(value)}
-                          options={[
-                            { value: '', label: 'Scegli veicolo' },
-                            ...doc.vehicles.map((vehicle) => ({
-                              value: vehicle.id,
-                              label: vehicle.name,
-                            })),
-                          ]}
-                        />
-                      </Field>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Seleziona un template.
-                </p>
-              )}
+          </div>
+          {hasTravel ? (
+            <div className="grid gap-3 px-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="template-site">
+                  Sede per le trasferte
+                </FieldLabel>
+                <SearchableSelect
+                  id="template-site"
+                  disabled={disabled || busy}
+                  value={siteId}
+                  onValueChange={(value) => setSiteId(value)}
+                  options={[
+                    { value: '', label: 'Scegli sede' },
+                    ...siteOptions(doc.sites, quote.client),
+                  ]}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="template-vehicle">Veicolo</FieldLabel>
+                <SearchableSelect
+                  id="template-vehicle"
+                  disabled={disabled || busy}
+                  value={vehicleId}
+                  onValueChange={(value) => setVehicleId(value)}
+                  options={[
+                    { value: '', label: 'Scegli veicolo' },
+                    ...doc.vehicles.map((vehicle) => ({
+                      value: vehicle.id,
+                      label: vehicle.name,
+                    })),
+                  ]}
+                />
+              </Field>
             </div>
-          </ScrollArea>
+          ) : null}
+        </>
+      ) : null}
+      <div className="flex justify-end gap-2 px-3">
+        <Button variant="outline" disabled={busy} onClick={onClose}>
+          Annulla
+        </Button>
+        <Button
+          disabled={disabled || !template || !complete || busy}
+          onClick={async () => {
+            if (!template || !complete || disabled || busy) return;
+            setBusy(true);
+            try {
+              if (await onInsert(template.id, choices, { siteId, vehicleId }))
+                onClose();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? <Spinner aria-hidden="true" /> : null}
+          {busy
+            ? 'Inserimento…'
+            : template
+              ? `Inserisci ${template.items.length} ${template.items.length === 1 ? 'voce' : 'voci'}`
+              : 'Inserisci template'}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function TemplatePreviewItem({
+  item,
+  hourly,
+  choices,
+  disabled,
+  onChoice,
+}: {
+  item: TemplateItem;
+  hourly?: string;
+  choices: Record<string, string>;
+  disabled: boolean;
+  onChoice: (groupId: string, optionId: string) => void;
+}) {
+  const sections: { group?: VariantGroup; subItems: SubItemDefinition[] }[] = [
+    { subItems: item.subItems },
+    ...item.variantGroups.map((group) => ({
+      group,
+      subItems:
+        group.options.find(
+          (option) =>
+            option.id === (choices[group.id] ?? group.defaultOptionId),
+        )?.subItems ?? [],
+    })),
+  ];
+  const projectSub = (sub: SubItemDefinition): QuoteSubItem => {
+    if (sub.kind !== 'travel') return { ...item, ...sub };
+    const totals = calculateTravel(sub);
+    return { ...item, ...sub, ...(totals.ok ? totals.value : {}) };
+  };
+  // UI-only projections for the existing calculators. No identifiers or rows are saved.
+  const subItems = sections
+    .flatMap((section) => section.subItems)
+    .map(projectSub);
+  const preview = { ...item, variantSelections: [], subItems };
+  const analysis = calculateItem(preview, hourly);
+  return (
+    <>
+      <div
+        role="row"
+        className={`${quoteColumns} min-h-10 border-b text-sm ${subItems.length || item.variantGroups.length ? 'bg-primary/8 ring-1 ring-inset ring-primary/20' : 'bg-muted/30'}`}
+      >
+        <div role="cell" className="flex justify-center">
+          <ListTree className="size-4 text-muted-foreground" />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Annulla
-          </Button>
-          <Button
-            disabled={!template || !complete || busy}
-            onClick={() => {
-              if (!template) return;
-              setBusy(true);
-              void onInsert(template.id, choices, { siteId, vehicleId }).then(
-                (ok) => {
-                  setBusy(false);
-                  if (ok) onClose();
-                },
-              );
-            }}
-          >
-            {busy ? <Spinner aria-hidden="true" /> : null}
-            {busy
-              ? 'Inserimento…'
-              : `Inserisci ${template?.items.length ?? 0} ${template?.items.length === 1 ? 'voce' : 'voci'}`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div role="cell" className="font-medium">
+          {item.name}
+        </div>
+        <div role="cell" className="text-right tabular-nums">
+          {analysis.minutes === undefined ? '' : hours(analysis.minutes)}
+        </div>
+        <div role="cell" className="text-right tabular-nums">
+          {analysis.expenses === undefined ? '' : eur(analysis.expenses)}
+        </div>
+        <div role="cell" className="text-right tabular-nums">
+          {analysis.theoreticalValue === undefined
+            ? ''
+            : eur(analysis.theoreticalValue)}
+          {analysis.theoreticalPartial ? (
+            <span className="ml-1 text-xs text-muted-foreground">parziale</span>
+          ) : null}
+        </div>
+        <div role="cell" className="text-right text-muted-foreground" />
+        <div role="cell" />
+      </div>
+      {sections.map(({ group, subItems: definitions }) => (
+        <Fragment key={group?.id ?? 'manual'}>
+          {group && !definitions.length ? (
+            <QuoteVariantRow
+              group={group}
+              id={`template-choice-${group.id}`}
+              disabled={disabled}
+              value={choices[group.id] ?? group.defaultOptionId ?? ''}
+              onValueChange={(id) => onChoice(group.id, id)}
+            />
+          ) : null}
+          {definitions.map((definition, index) => {
+            const sub = projectSub(definition);
+            const subAnalysis = calculateItem(
+              { ...preview, subItems: [sub] },
+              hourly,
+            );
+            const Icon =
+              sub.kind === 'time'
+                ? ListChecks
+                : sub.kind === 'expense'
+                  ? ReceiptEuro
+                  : Route;
+            return (
+              <div
+                role="row"
+                key={index}
+                aria-describedby={
+                  group ? `template-choice-${group.id}-label` : undefined
+                }
+                data-quote-variant-selector={
+                  group && index === 0 ? group.id : undefined
+                }
+                className={`${quoteColumns} min-h-9 border-b text-sm`}
+              >
+                <div
+                  role="cell"
+                  className={`flex h-full items-center justify-end pr-3 ${group ? 'border-r-2 border-primary/40' : 'border-r'}`}
+                >
+                  {group ? (
+                    <GitBranch className="mr-2 size-3.5 text-muted-foreground" />
+                  ) : null}
+                  <Icon className="size-3.5 text-muted-foreground" />
+                </div>
+                <div
+                  role="cell"
+                  className="flex min-w-0 items-center gap-2 pl-2"
+                >
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    title={sub.description}
+                  >
+                    {sub.description}
+                  </span>
+                  {group && index === 0 ? (
+                    <QuoteVariantSelect
+                      group={group}
+                      id={`template-choice-${group.id}`}
+                      disabled={disabled}
+                      value={choices[group.id] ?? group.defaultOptionId ?? ''}
+                      onValueChange={(id) => onChoice(group.id, id)}
+                    />
+                  ) : null}
+                </div>
+                <div role="cell" className="text-right tabular-nums">
+                  {subAnalysis.minutes === undefined
+                    ? ''
+                    : hours(subAnalysis.minutes)}
+                </div>
+                <div role="cell" className="text-right tabular-nums">
+                  {subAnalysis.expenses === undefined
+                    ? ''
+                    : eur(subAnalysis.expenses)}
+                </div>
+                <div role="cell" className="text-right tabular-nums">
+                  {subAnalysis.theoreticalValue === undefined
+                    ? ''
+                    : eur(subAnalysis.theoreticalValue)}
+                  {subAnalysis.theoreticalPartial ? (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      parziale
+                    </span>
+                  ) : null}
+                </div>
+                <div role="cell" className="text-right text-muted-foreground" />
+                <div role="cell" />
+              </div>
+            );
+          })}
+        </Fragment>
+      ))}
+    </>
   );
 }
 

@@ -81,8 +81,25 @@ export function cloneTemplateItem(source: TemplateItem): TemplateItem {
   };
 }
 
-export function reusableFromQuoteSubItem(
+type CompleteQuoteSubItem =
+  | (Extract<QuoteSubItem, { kind: 'time' }> & { minutes: number })
+  | (Extract<QuoteSubItem, { kind: 'expense' }> & { amount: string })
+  | Extract<QuoteSubItem, { kind: 'travel' }>;
+
+export function canReuseQuoteSubItem(
   source: QuoteSubItem,
+): source is CompleteQuoteSubItem {
+  return (
+    source.kind === 'travel' ||
+    (Boolean(source.description.trim()) &&
+      (source.kind === 'time'
+        ? source.minutes !== undefined && source.minutes > 0
+        : source.amount !== undefined))
+  );
+}
+
+export function reusableFromQuoteSubItem(
+  source: CompleteQuoteSubItem,
 ): ReusableSubItem {
   if (source.kind === 'time')
     return {
@@ -132,6 +149,18 @@ export function templateFromQuote(
       field: 'template.items',
       message: 'Selezionare almeno una voce.',
     });
+  const reusableSubs = new Map<string, ReusableSubItem>();
+  for (const item of items)
+    for (const sub of item.subItems) {
+      if (!canReuseQuoteSubItem(sub))
+        return err({
+          code: 'MISSING_DATA',
+          field: `quote-sub-${sub.id}`,
+          message:
+            'Completa descrizione e valori delle sottorighe prima di salvarle in un template.',
+        });
+      reusableSubs.set(sub.id, reusableFromQuoteSubItem(sub));
+    }
   return ok({
     ...meta(),
     name: cleanName,
@@ -149,7 +178,7 @@ export function templateFromQuote(
           owner.definitionIndex !== undefined &&
           option.subItems[owner.definitionIndex]
         ) {
-          const reusable = reusableFromQuoteSubItem(sub);
+          const reusable = reusableSubs.get(sub.id)!;
           const {
             id: _id,
             createdAt: _createdAt,
@@ -172,7 +201,7 @@ export function templateFromQuote(
           : {}),
         subItems: item.subItems
           .filter((sub) => !sub.variantOwner)
-          .map(reusableFromQuoteSubItem),
+          .map((sub) => reusableSubs.get(sub.id)!),
         variantGroups: groups.map(copyGroup),
       };
     }),

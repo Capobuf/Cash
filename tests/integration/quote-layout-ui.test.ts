@@ -48,6 +48,9 @@ const { app, BrowserWindow } = require('electron');
 const { readFileSync, writeFileSync, mkdirSync } = require('node:fs');
 const { join } = require('node:path');
 const assert = require('node:assert/strict');
+const profile = join(__dirname, 'electron-profile');
+mkdirSync(profile, { recursive: true });
+app.setPath('userData', profile);
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
@@ -133,11 +136,10 @@ app.whenReady().then(async () => {
     assert.equal(await js('Array.from(document.querySelectorAll("button")).find(e => e.getAttribute("aria-label") === "Rinomina preventivo").disabled'), true);
     await js('Checks.setReadOnly(false)');
     await click('Nuovo contenitore');
-    await js('Checks.fill("#new-container-name", "Sede Nord")');
-    await click('Crea contenitore');
+    assert.equal(await js('!!document.querySelector("[role=dialog]")'), false, 'new container without modal');
+    await js('Checks.renameLastContainer("Sede Nord")');
     await click('Nuovo contenitore');
-    await js('Checks.fill("#new-container-name", "Sede Sud")');
-    await click('Crea contenitore');
+    await js('Checks.renameLastContainer("Sede Sud")');
     let snapshot = await info();
     const [north, south] = snapshot.quote.layout.filter(e => e.kind === 'container').map(e => e.id);
     await drag(handle(ids[0]), drop(north));
@@ -191,10 +193,11 @@ app.whenReady().then(async () => {
     await drag('[data-quote-container="' + south + '"] [data-quote-drag-handle]', '[data-quote-container="' + north + '"] [data-quote-drag-handle]');
     snapshot = await info();
     assert(snapshot.quote.layout.findIndex(e => e.id === south) < snapshot.quote.layout.findIndex(e => e.id === north), 'container reorder');
-    // Container actions reuse the normal template dialog.
+    // Container actions open the inline picker without choosing a template.
     await js('document.querySelector(' + JSON.stringify('[data-quote-container="' + north + '"] button[data-slot=dropdown-menu-trigger]') + ').click(); Checks.settle()');
     await click('Da template');
-    await js('document.querySelector("[data-slot=dialog-content] button.w-full").click(); Checks.settle()');
+    await js('document.querySelector("[data-quote-template-editor]").scrollIntoView(); Checks.settle()');
+    await js('Checks.choose("#quote-template-picker", "Rete completa")');
     await click('Inserisci 2 voci');
     snapshot = await info();
     assert.deepEqual(snapshot.quote.layout.find(e => e.id === north).itemIds.map(id => snapshot.quote.items.find(e => e.id === id).name), ['Switch', 'LAN', 'Wi-Fi']);
@@ -249,6 +252,7 @@ app.whenReady().then(async () => {
     assert.deepEqual(await js('Checks.showExport()'), visibleOrder, 'export follows visible order');
     assert.equal(await js('Checks.runOperationalChecks()'), 'OPERATIONAL_UI_OK');
     if (process.env.CASH_UI_SCREENSHOTS) {
+      if (await js('Array.from(document.querySelectorAll("button")).find(e => e.getAttribute("aria-label") === "Apri o chiudi Storage")?.getAttribute("aria-expanded") === "false"')) await click('Apri o chiudi Storage');
       writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-operational-table.png'), (await win.webContents.capturePage()).toPNG());
     }
     process.stdout.write('LAYOUT_UI_OK\n', () => app.exit(0));

@@ -25,6 +25,7 @@ import {
 export type SelectionOption = {
   value: string;
   label: string | number;
+  searchText?: string;
   disabled?: boolean;
   group?: string;
 };
@@ -96,7 +97,7 @@ export function SelectField({
 export function matchesSelection(option: SelectionOption, query: string) {
   const normalize = (text: string) =>
     text.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('it');
-  const label = normalize(String(option.label));
+  const label = normalize(`${option.label} ${option.searchText ?? ''}`);
   return normalize(query)
     .trim()
     .split(/\s+/)
