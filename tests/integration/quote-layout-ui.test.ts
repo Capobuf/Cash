@@ -92,13 +92,16 @@ app.whenReady().then(async () => {
     if (target.startsWith('[data-quote-drop=')) {
       const deadline = Date.now() + 5000;
       let stable = 0;
+      let adjustment = 0;
       while (stable < 2) {
         end = await point(target);
+        // Emit actual movement even if the preview moved under a stationary pointer.
+        end.x += ++adjustment % 2;
         win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', ...end });
         await js('Checks.settle()');
         const current = await point(target);
         const active = await js('document.querySelector(' + JSON.stringify(target) + ').classList.contains("ring-2")');
-        stable = active && current.x === end.x && current.y === end.y ? stable + 1 : 0;
+        stable = active && Math.abs(current.x - end.x) <= 1 && current.y === end.y ? stable + 1 : 0;
         if (Date.now() > deadline) throw new Error('Timed out following drop zone ' + target);
       }
     }
