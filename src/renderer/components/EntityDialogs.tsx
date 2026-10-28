@@ -210,7 +210,10 @@ export function SiteDialog({
     setSearching(true);
     setSearchError('');
     setResults([]);
-    if (mode === 'address') {
+    const parsed = parseCoordinates(
+      mode === 'coordinates' ? coordinateText : address,
+    );
+    if (mode === 'address' && !parsed.ok) {
       const response = await window.cash.ors.searchAddress(address);
       setSearching(false);
       if (!response.ok) {
@@ -224,11 +227,15 @@ export function SiteDialog({
       setResults(response.value);
       return;
     }
-    const parsed = parseCoordinates(coordinateText);
     if (!parsed.ok) {
       setSearching(false);
       setSearchError(parsed.error.message);
       return;
+    }
+    if (mode === 'address') {
+      setMode('coordinates');
+      setCoordinateText(coordinatesInput(parsed.value));
+      setAddress('');
     }
     const response = await window.cash.ors.reverseCoordinates(parsed.value);
     setSearching(false);
@@ -260,8 +267,10 @@ export function SiteDialog({
       return;
     }
     let location = resolved;
-    if (mode === 'coordinates') {
-      const parsed = parseCoordinates(coordinateText);
+    const parsed = parseCoordinates(
+      mode === 'coordinates' ? coordinateText : address,
+    );
+    if (mode === 'coordinates' || parsed.ok) {
       if (!parsed.ok) {
         appState.setError(parsed.error);
         return;
@@ -279,6 +288,7 @@ export function SiteDialog({
       location = undefined;
     if (
       mode !== 'coordinates' &&
+      !parsed.ok &&
       location?.inputKind === 'coordinates' &&
       location.inputValue !== coordinateText.trim()
     )
@@ -287,7 +297,10 @@ export function SiteDialog({
       !appState.mutate((document) => {
         const values = {
           name,
-          address: address.trim() || undefined,
+          address:
+            mode === 'address' && parsed.ok
+              ? undefined
+              : address.trim() || undefined,
           location,
           client: fixedClient
             ? {
@@ -358,14 +371,16 @@ export function SiteDialog({
               value={mode}
               onValueChange={(value) => setMode(value as typeof mode)}
               options={[
-                { value: 'address', label: 'Indirizzo' },
+                { value: 'address', label: 'Indirizzo o coordinate' },
                 { value: 'coordinates', label: 'Coordinate' },
               ]}
             />
           </Field>
           {mode === 'address' ? (
             <Field>
-              <FieldLabel htmlFor="site-address">Indirizzo</FieldLabel>
+              <FieldLabel htmlFor="site-address">
+                Indirizzo o coordinate
+              </FieldLabel>
               <Input
                 id="site-address"
                 value={address}
@@ -373,10 +388,12 @@ export function SiteDialog({
                   setAddress(event.target.value);
                   setResolved(undefined);
                 }}
-                placeholder="Via, città"
+                placeholder="Via, città oppure 41.9028, 12.4964"
               />
               <FieldDescription>
-                Dopo una modifica usa di nuovo Cerca prima del routing.
+                Le coordinate nel formato latitudine, longitudine vengono
+                riconosciute automaticamente. Per un indirizzo, premi Cerca e
+                scegli un risultato.
               </FieldDescription>
             </Field>
           ) : (

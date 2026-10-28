@@ -27,10 +27,14 @@ import {
 } from '../../src/native/integrations/openrouteservice';
 
 describe('fonti ufficiali', () => {
-  it('blocca endpoint non allowlistati prima della rete', async () => {
+  it.each([
+    'https://example.com/dati',
+    'https://api.openrouteservice.org/geocode/search',
+    'http://api.heigit.org/pelias/v1/search',
+  ])('blocca endpoint non autorizzato %s prima della rete', async (url) => {
     const fetcher = vi.fn();
     const result = await officialFetch(
-      'https://example.com/dati',
+      url,
       {},
       fetcher as unknown as typeof fetch,
     );
@@ -530,10 +534,13 @@ describe('fonti ufficiali', () => {
           { status: 200 },
         ),
     ) as unknown as typeof fetch;
-    const result = await searchAddress('Roma', 'segreta', fetcher);
+    const result = await searchAddress(' Roma ', 'segreta', fetcher);
     expect(result.ok && result.value).toHaveLength(2);
     const [url, init] = vi.mocked(fetcher).mock.calls[0]!;
-    expect(String(url)).toContain('/geocode/search');
+    expect(String(url)).toBe(
+      'https://api.heigit.org/pelias/v1/search?text=Roma&size=10',
+    );
+    expect(init?.method ?? 'GET').toBe('GET');
     expect((init?.headers as Record<string, string>).Authorization).toBe(
       'segreta',
     );
@@ -569,7 +576,11 @@ describe('fonti ufficiali', () => {
       string,
       RequestInit,
     ];
-    expect(url).toContain('/v2/directions/driving-car/json');
+    expect(url).toBe(
+      'https://api.heigit.org/openrouteservice/v2/directions/driving-car/json',
+    );
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).Authorization).toBe('key');
     expect(JSON.parse(String(init.body)).coordinates).toEqual([
       [12.4964, 41.9028],
       [9.19, 45.4642],
@@ -627,19 +638,47 @@ describe('fonti ufficiali', () => {
   it('esegue reverse geocoding e classifica autenticazione, rate limit e payload malformati', async () => {
     const reverseFetch = vi.fn(
       async () =>
-        new Response(JSON.stringify({ features: [] }), { status: 200 }),
+        new Response(
+          JSON.stringify({
+            features: [
+              {
+                id: 'milano',
+                properties: { label: 'Milano' },
+                geometry: { coordinates: [9.19, 45.46] },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
     ) as unknown as typeof fetch;
     expect(
-      (
-        await reverseCoordinates(
-          { longitude: '9.19', latitude: '45.46' },
-          'key',
-          reverseFetch,
-        )
-      ).ok,
-    ).toBe(true);
+      await reverseCoordinates(
+        { longitude: '9.19', latitude: '45.46' },
+        'key',
+        reverseFetch,
+      ),
+    ).toEqual({
+      ok: true,
+      value: [
+        {
+          id: 'milano',
+          label: 'Milano',
+          coordinates: { longitude: '9.19', latitude: '45.46' },
+        },
+      ],
+    });
     const url = new URL(String(vi.mocked(reverseFetch).mock.calls[0]?.[0]));
+    expect(`${url.origin}${url.pathname}`).toBe(
+      'https://api.heigit.org/pelias/v1/reverse',
+    );
     expect(url.searchParams.get('point.lon')).toBe('9.19');
+    expect(url.searchParams.get('point.lat')).toBe('45.46');
+    expect(url.searchParams.get('size')).toBe('1');
+    const reverseInit = vi.mocked(reverseFetch).mock.calls[0]?.[1];
+    expect(reverseInit?.method ?? 'GET').toBe('GET');
+    expect((reverseInit?.headers as Record<string, string>).Authorization).toBe(
+      'key',
+    );
     expect(
       await searchAddress(
         'Roma',
@@ -670,6 +709,35 @@ describe('fonti ufficiali', () => {
       ),
     ).toMatchObject({ ok: false, error: { code: 'SOURCE_INVALID' } });
   });
+  it.each([
+    [403, '{"error":"Quota exceeded"}', 'RATE_LIMIT'],
+    [403, '{"error":{"message":"Quota exceeded"}}', 'RATE_LIMIT'],
+    [
+      403,
+      '{"error":"Access to this API has been disallowed"}',
+      'AUTHENTICATION',
+    ],
+    [403, '', 'AUTHENTICATION'],
+    [403, '<html>Forbidden</html>', 'AUTHENTICATION'],
+    [401, '{"error":"Quota exceeded"}', 'AUTHENTICATION'],
+    [429, '', 'RATE_LIMIT'],
+  ] as const)(
+    'classifica ORS HTTP %s con body %s come %s',
+    async (status, body, code) => {
+      const result = await searchAddress(
+        'Roma',
+        'key',
+        vi.fn(async () => new Response(body, { status })),
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code, source: 'OpenRouteService' },
+      });
+      if (!result.ok && code === 'RATE_LIMIT') {
+        expect(result.error.action).toContain('Attendi il ripristino');
+      }
+    },
+  );
   it('verifica con un solo risultato e conserva una diagnosi utile per timeout/rete', async () => {
     const success = vi.fn(
       async () =>
@@ -686,11 +754,12 @@ describe('fonti ufficiali', () => {
         ),
     ) as unknown as typeof fetch;
     expect((await verifyConnection('key', success)).ok).toBe(true);
-    expect(
-      new URL(String(vi.mocked(success).mock.calls[0]?.[0])).searchParams.get(
-        'size',
-      ),
-    ).toBe('1');
+    const [url, init] = vi.mocked(success).mock.calls[0]!;
+    expect(String(url)).toBe(
+      'https://api.heigit.org/pelias/v1/search?text=Roma%2C+Italia&size=1',
+    );
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect((init?.headers as Record<string, string>).Authorization).toBe('key');
     const timeout = vi.fn(async () => {
       throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     }) as unknown as typeof fetch;

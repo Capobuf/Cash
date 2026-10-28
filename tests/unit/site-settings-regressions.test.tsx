@@ -73,6 +73,7 @@ function setup() {
         ),
       },
       ors: {
+        searchAddress: vi.fn(async () => ok([])),
         reverseCoordinates: vi.fn(async () =>
           ok([
             {
@@ -105,9 +106,14 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('site coordinate submission', () => {
-  it.each([false, true])(
-    'preserves entered coordinates with reverse geocoding %s',
-    async (search) => {
+  it.each([
+    ['coordinates', false],
+    ['coordinates', true],
+    ['address', false],
+    ['address', true],
+  ] as const)(
+    'preserves coordinates entered in %s with reverse geocoding %s',
+    async (mode, search) => {
       const { state, document } = setup();
       const render = () => {
         hooks.cursor = 0;
@@ -119,12 +125,18 @@ describe('site coordinate submission', () => {
         });
       };
       let tree = render();
-      find(tree, (e) => e.props.id === 'site-mode')!.props.onValueChange(
-        'coordinates',
-      );
+      if (mode === 'coordinates')
+        find(tree, (e) => e.props.id === 'site-mode')!.props.onValueChange(
+          mode,
+        );
       tree = render();
-      find(tree, (e) => e.props.id === 'site-coordinates')!.props.onChange({
-        target: { value: '41.9028, 12.4964' },
+      find(
+        tree,
+        (e) =>
+          e.props.id ===
+          (mode === 'coordinates' ? 'site-coordinates' : 'site-address'),
+      )!.props.onChange({
+        target: { value: ' 41.9028, 12.4964 ' },
       });
       tree = render();
       if (search) {
@@ -149,8 +161,28 @@ describe('site coordinate submission', () => {
       expect(window.cash.ors.reverseCoordinates).toHaveBeenCalledTimes(
         search ? 1 : 0,
       );
+      expect(window.cash.ors.searchAddress).not.toHaveBeenCalled();
     },
   );
+  it('keeps textual addresses on the address search endpoint', async () => {
+    const { state, document } = setup();
+    const render = () => {
+      hooks.cursor = 0;
+      return SiteDialog({
+        open: true,
+        onOpenChange: vi.fn(),
+        appState: state,
+        doc: document,
+      });
+    };
+    find(render(), (e) => e.props.id === 'site-address')!.props.onChange({
+      target: { value: 'Via Roma, 12' },
+    });
+    find(render(), (e) => e.props.children === 'Cerca')!.props.onClick();
+    await Promise.resolve();
+    expect(window.cash.ors.searchAddress).toHaveBeenCalledWith('Via Roma, 12');
+    expect(window.cash.ors.reverseCoordinates).not.toHaveBeenCalled();
+  });
   it('rejects invalid coordinates without adding a partial site', () => {
     const { state, document } = setup();
     hooks.values = ['coordinates', '', '91, 12'];

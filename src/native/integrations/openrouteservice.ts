@@ -9,7 +9,8 @@ import {
 } from '../../domain/model';
 import { officialFetch } from './http';
 
-const BASE = 'https://api.openrouteservice.org';
+const BASE = 'https://api.heigit.org';
+const GEOCODING_BASE = `${BASE}/pelias/v1`;
 const headers = (apiKey: string): HeadersInit => ({
   Authorization: apiKey,
   Accept: 'application/json',
@@ -37,11 +38,25 @@ function providerDiagnostic(payload: unknown): {
     message:
       typeof record.message === 'string' && record.message.trim()
         ? record.message.trim()
-        : nested.message,
+        : typeof record.error === 'string' && record.error.trim()
+          ? record.error.trim()
+          : nested.message,
   };
 }
 
 function providerError(status: number, payload?: unknown): Result<never> {
+  const diagnostic = providerDiagnostic(payload);
+  // ORS also returns HTTP 403 when the daily quota is exhausted.
+  if (
+    status === 429 ||
+    (status === 403 && diagnostic.message?.toLowerCase() === 'quota exceeded')
+  )
+    return err({
+      code: 'RATE_LIMIT',
+      source: 'OpenRouteService',
+      message: 'Limite OpenRouteService raggiunto.',
+      action: 'Attendi il ripristino del limite prima di riprovare.',
+    });
   if (status === 401 || status === 403)
     return err({
       code: 'AUTHENTICATION',
@@ -49,14 +64,6 @@ function providerError(status: number, payload?: unknown): Result<never> {
       message: 'API key OpenRouteService non valida.',
       action: 'Controlla la chiave nelle Impostazioni.',
     });
-  if (status === 429)
-    return err({
-      code: 'RATE_LIMIT',
-      source: 'OpenRouteService',
-      message: 'Limite OpenRouteService raggiunto.',
-      action: 'Attendi il ripristino del limite prima di riprovare.',
-    });
-  const diagnostic = providerDiagnostic(payload);
   const details = diagnostic.message
     ? [
         `ORS${diagnostic.code ? ` ${diagnostic.code}` : ''}: ${diagnostic.message}`,
@@ -183,7 +190,7 @@ export async function searchAddress(
       field: 'address',
       message: 'Inserisci un indirizzo da cercare.',
     });
-  const url = new URL(`${BASE}/geocode/search`);
+  const url = new URL(`${GEOCODING_BASE}/search`);
   url.searchParams.set('text', text.trim());
   url.searchParams.set('size', '10');
   const response = await requestJson(url.toString(), apiKey, {}, fetcher);
@@ -195,7 +202,7 @@ export async function reverseCoordinates(
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Result<GeocodingResult[]>> {
-  const url = new URL(`${BASE}/geocode/reverse`);
+  const url = new URL(`${GEOCODING_BASE}/reverse`);
   url.searchParams.set('point.lon', coordinates.longitude);
   url.searchParams.set('point.lat', coordinates.latitude);
   url.searchParams.set('size', '1');
@@ -231,7 +238,7 @@ export async function calculateRoute(
       action: 'Localizza nuovamente entrambe le Sedi.',
     });
   const response = await requestJson(
-    `${BASE}/v2/directions/driving-car/json`,
+    `${BASE}/openrouteservice/v2/directions/driving-car/json`,
     apiKey,
     {
       method: 'POST',
@@ -276,7 +283,7 @@ export async function verifyConnection(
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Result<void>> {
-  const url = new URL(`${BASE}/geocode/search`);
+  const url = new URL(`${GEOCODING_BASE}/search`);
   url.searchParams.set('text', 'Roma, Italia');
   url.searchParams.set('size', '1');
   const response = await requestJson(url.toString(), apiKey, {}, fetcher);

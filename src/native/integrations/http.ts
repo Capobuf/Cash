@@ -4,7 +4,7 @@ export const ALLOWED_HOSTS = new Set([
   'www.mimit.gov.it',
   'esploradati.istat.it',
   'api-v2.fattureincloud.it',
-  'api.openrouteservice.org',
+  'api.heigit.org',
 ]);
 
 export async function officialFetch(

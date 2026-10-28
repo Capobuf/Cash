@@ -22,6 +22,8 @@ export function parseCoordinates(input: string): Result<Coordinates> {
     const latitude = new Decimal(parts[0]!);
     const longitude = new Decimal(parts[1]!);
     if (
+      !latitude.isFinite() ||
+      !longitude.isFinite() ||
       longitude.lt(-180) ||
       longitude.gt(180) ||
       latitude.lt(-90) ||

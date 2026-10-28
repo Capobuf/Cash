@@ -23,6 +23,9 @@ describe('Sedi e valori predefiniti globali', () => {
     });
     expect(parseCoordinates('91, 45').ok).toBe(false);
     expect(parseCoordinates('45').ok).toBe(false);
+    expect(parseCoordinates('NaN, 12').ok).toBe(false);
+    expect(parseCoordinates('41, Infinity').ok).toBe(false);
+    expect(parseCoordinates('Via Roma, 12').ok).toBe(false);
   });
   it('invalida una localizzazione quando cambia l’input originario e accetta il formato storico', () => {
     const site: Site = {

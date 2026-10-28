@@ -579,7 +579,7 @@ export function SubItemDialog({
             </>
           ) : null}
         </FieldGroup>
-        <Footer className={inline ? 'flex justify-end gap-2' : undefined}>
+        <Footer className={inline ? 'flex justify-end gap-2 pt-3' : undefined}>
           <Button type="button" variant="outline" onClick={onClose}>
             Annulla
           </Button>
@@ -666,7 +666,12 @@ export function SubItemDialog({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void calculateRoute(true)}>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmRecalculation(false);
+                void calculateRoute(true);
+              }}
+            >
               Ricalcola e sostituisci
             </AlertDialogAction>
           </AlertDialogFooter>
