@@ -19,7 +19,7 @@ import {
 import { useState } from 'react';
 import { calculateQuote } from '../../domain/calculations';
 import { quoteTitle } from '../../domain/quotes';
-import { type CashDocument } from '../../domain/model';
+import { type CashDocument, type QuoteItem } from '../../domain/model';
 import { Analysis } from '@/components/Analysis';
 import { SiteDialog } from '@/components/EntityDialogs';
 import {
@@ -111,6 +111,8 @@ type Overlay =
       optionId: string;
     }
   | ({ kind: 'insert-template'; slot?: string } & QuoteInsertionPoint)
+  | { kind: 'replace-template'; itemId: string; expected: QuoteItem }
+  | { kind: 'make-generic'; expected: QuoteItem }
   | { kind: 'save-template' }
   | { kind: 'export' };
 
@@ -264,13 +266,63 @@ export function QuotesView({
     const id = await controller.addSubItem(itemId, kind);
     if (!id) return;
     expandItem(itemId);
-    setOverlay(undefined);
+    const item = appState
+      .document!.quotes.find((entry) => entry.id === quote.id)!
+      .items.find((entry) => entry.id === itemId)!;
+    const simple =
+      item.subItems.length === 1 && item.variantGroups.length === 0;
+    setOverlay(
+      simple && kind === 'travel'
+        ? { kind: 'sub', itemId, subId: id }
+        : undefined,
+    );
     requestAnimationFrame(() => {
+      if (simple) {
+        document
+          .getElementById(
+            kind === 'time'
+              ? `quote-duration-${itemId}`
+              : kind === 'expense'
+                ? `quote-expense-${itemId}`
+                : `quote-name-${itemId}`,
+          )
+          ?.focus();
+        return;
+      }
       const row = document.getElementById(`quote-sub-${id}`);
       (row?.querySelector<HTMLElement>('input,button') ?? row)?.focus();
     });
   };
   const itemActions: QuoteItemActions = {
+    makeGeneric: (item) => {
+      if (readOnly) return;
+      if (item.subItems.length || item.variantGroups.length) {
+        setOverlay({ kind: 'make-generic', expected: item });
+      } else {
+        setRowKinds((current) => ({ ...current, [item.id]: 'generic' }));
+        setOverlay(undefined);
+      }
+    },
+    replaceWithTemplate: (item) => {
+      if (readOnly) return;
+      expandItem(item.id);
+      setOverlay({ kind: 'replace-template', itemId: item.id, expected: item });
+    },
+    changeType: async (itemId, kind, expectedSub, subId) => {
+      if (readOnly) return false;
+      const id = await controller.changeItemType(
+        itemId,
+        kind,
+        expectedSub,
+        subId,
+      );
+      if (!id) return false;
+      setOverlay(
+        kind === 'travel' ? { kind: 'sub', itemId, subId: id } : undefined,
+      );
+      if (kind === 'travel' || subId) expandItem(itemId);
+      return true;
+    },
     showMissing,
     clearMissing: () => setAnalysisNavigation(undefined),
     rename: controller.renameItem,
@@ -683,7 +735,7 @@ export function QuotesView({
                     <SubItemDialog
                       inline
                       disabled={readOnly}
-                      key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}`}
+                      key={`${overlay.itemId}-${overlay.subId ?? overlay.initialKind}-${overlaySub?.kind}`}
                       sub={overlaySub}
                       initialKind={overlay.initialKind}
                       doc={doc}
@@ -706,6 +758,33 @@ export function QuotesView({
                           overlay.subId,
                         )
                       }
+                    />
+                  ) : overlay?.kind === 'replace-template' &&
+                    overlay.itemId === id ? (
+                    <InsertTemplateEditor
+                      key={`replace-${item.id}`}
+                      replacing
+                      disabled={readOnly}
+                      doc={doc}
+                      quote={quote}
+                      onClose={() => setOverlay(undefined)}
+                      onInsert={async (templateId, choices, context) => {
+                        const saved = await controller.insertTemplate(
+                          templateId,
+                          choices,
+                          context,
+                          undefined,
+                          undefined,
+                          overlay.expected,
+                        );
+                        if (saved)
+                          setRowKinds((current) => {
+                            const next = { ...current };
+                            delete next[item.id];
+                            return next;
+                          });
+                        return saved;
+                      }}
                     />
                   ) : overlay?.kind === 'catalog' && overlay.itemId === id ? (
                     <CatalogPickerEditor
@@ -813,6 +892,43 @@ export function QuotesView({
           error={appState.error}
         />
       ) : null}
+      <AlertDialog
+        open={overlay?.kind === 'make-generic'}
+        onOpenChange={(open) => {
+          if (!open) setOverlay(undefined);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convertire in riga generica?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tutte le sottorighe, con le loro descrizioni e i dati di attività,
+              spese e trasferte, e tutte le varianti verranno rimosse. Il nome
+              della riga, la posizione e il prezzo scelto resteranno invariati.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={readOnly}
+              onClick={() => {
+                if (
+                  overlay?.kind === 'make-generic' &&
+                  controller.makeItemGeneric(overlay.expected)
+                ) {
+                  setRowKinds((current) => ({
+                    ...current,
+                    [overlay.expected.id]: 'generic',
+                  }));
+                  setOverlay(undefined);
+                }
+              }}
+            >
+              Converti
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(pendingUpdate)}
         onOpenChange={(open) => {

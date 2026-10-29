@@ -47,6 +47,7 @@ import {
 import { decimalInputValue, eur, hours, moneyInputValue } from '@/lib/format';
 import type { DeleteTarget } from '../../types';
 import { InlineQuoteInput } from './InlineQuoteInput';
+import { QuoteTypeMenu } from './QuoteTypeMenu';
 import type { QuickKind } from './QuoteQuickAdd';
 
 export const quoteColumns =
@@ -152,6 +153,14 @@ export function QuoteVariantRow(props: VariantControlProps) {
 }
 
 export interface QuoteItemActions {
+  makeGeneric: (item: QuoteItem) => void;
+  replaceWithTemplate: (item: QuoteItem) => void;
+  changeType: (
+    itemId: string,
+    kind: QuoteSubItem['kind'],
+    expectedSub?: QuoteSubItem,
+    subId?: string,
+  ) => Promise<boolean>;
   showMissing?: (metric: PartialMetric, itemId?: string) => void;
   clearMissing?: () => void;
   rename: (itemId: string, name: string) => boolean;
@@ -222,6 +231,10 @@ export function QuoteItemRow({
   );
   const simple = item.variantGroups.length === 0 && item.subItems.length <= 1;
   const sub = simple ? item.subItems[0] : undefined;
+  const missingInline = simple
+    ? (missingTargets.find((target) => target.id === `quote-sub-${sub?.id}`) ??
+      missingTechnical)
+    : undefined;
   const kind =
     sub?.kind ??
     (!item.subItems.length && !item.variantGroups.length
@@ -262,14 +275,14 @@ export function QuoteItemRow({
       )
     );
   };
-  const hasChildren = item.subItems.length > 0 || item.variantGroups.length > 0;
+  const hasChildren = !simple;
   const emptyGroups = item.variantGroups.filter(
     (group) =>
       !item.subItems.some((entry) => entry.variantOwner?.groupId === group.id),
   );
   return (
     <Collapsible
-      open={expanded || revealTechnical || Boolean(editor)}
+      open={(hasChildren && (expanded || revealTechnical)) || Boolean(editor)}
       onOpenChange={(open) => {
         setExpanded(open);
         if (!open) actions.clearMissing?.();
@@ -277,55 +290,108 @@ export function QuoteItemRow({
     >
       <div
         role="row"
+        id={
+          simple
+            ? sub
+              ? `quote-sub-${sub.id}`
+              : `quote-technical-${item.id}`
+            : undefined
+        }
+        tabIndex={simple ? -1 : undefined}
+        aria-describedby={
+          missingInline ? `quote-missing-${item.id}` : undefined
+        }
         data-quote-parent={hasChildren || undefined}
-        className={`${quoteColumns} min-h-12 border-b ${hasChildren ? 'bg-primary/8 ring-1 ring-inset ring-primary/20 hover:bg-primary/12' : 'hover:bg-muted/30'}`}
+        className={`${quoteColumns} min-h-12 border-b outline-none ${hasChildren ? 'bg-primary/8 ring-1 ring-inset ring-primary/20 hover:bg-primary/12' : 'hover:bg-muted/30'} ${missingInline ? 'ring-2 ring-inset ring-primary' : ''}`}
       >
         <div role="cell" className="flex items-center gap-1">
           {dragHandle}
-          <span title={typeLabel} aria-label={typeLabel}>
-            <Icon className="size-4 text-muted-foreground" />
-          </span>
-          <CollapsibleTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Apri o chiudi ${displayName}`}
-                className="group"
-              />
+          <QuoteTypeMenu
+            label={`riga ${displayName}`}
+            typeLabel={typeLabel}
+            sub={sub}
+            complex={!simple}
+            disabled={disabled}
+            generic={
+              !item.subItems.length &&
+              !item.variantGroups.length &&
+              (!emptyKind || emptyKind === 'generic')
+            }
+            hasTemplates={doc.catalog.templates.length > 0}
+            onGeneric={() => actions.makeGeneric(item)}
+            onTemplate={() => actions.replaceWithTemplate(item)}
+            onChange={(kind, expected) =>
+              actions.changeType(item.id, kind, expected)
             }
           >
-            <ChevronDown className="size-3 transition-transform group-data-panel-open:rotate-180" />
-          </CollapsibleTrigger>
+            <Icon className="size-4 text-muted-foreground" />
+          </QuoteTypeMenu>
+          {hasChildren ? (
+            <CollapsibleTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Apri o chiudi ${displayName}`}
+                  className="group"
+                />
+              }
+            >
+              <ChevronDown className="size-3 transition-transform group-data-panel-open:rotate-180" />
+            </CollapsibleTrigger>
+          ) : null}
         </div>
         <div
           role="cell"
-          className={`flex min-w-0 items-center ${hasChildren ? '[&_input]:font-medium' : ''}`}
+          className={`min-w-0 ${hasChildren ? '[&_input]:font-medium' : ''}`}
         >
-          <InlineQuoteInput
-            id={`quote-name-${item.id}`}
-            label={`Nome voce ${displayName}`}
-            value={item.name}
-            placeholder="Nome del lavoro"
-            disabled={disabled}
-            onCommit={(name) => actions.rename(item.id, name)}
-          />
-          {analysis.blockers.length ? (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="shrink-0 text-muted-foreground"
-              aria-label={`Mostra dati mancanti di ${displayName}`}
-              title={analysis.blockers.join(' ')}
-              onClick={() => actions.showMissing?.('theoretical', item.id)}
+          <div className="flex min-w-0 items-center">
+            <InlineQuoteInput
+              id={`quote-name-${item.id}`}
+              label={`Nome voce ${displayName}`}
+              value={item.name}
+              placeholder="Nome del lavoro"
+              disabled={disabled}
+              onCommit={(name) => actions.rename(item.id, name)}
+            />
+            {sub?.kind === 'travel' ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={disabled}
+                aria-label={`Configura trasferta di ${displayName}`}
+                title="Configura trasferta"
+                onClick={() => actions.editSub(item.id, sub.id)}
+              >
+                <Pencil />
+              </Button>
+            ) : null}
+            {analysis.blockers.length ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground"
+                aria-label={`Mostra dati mancanti di ${displayName}`}
+                title={analysis.blockers.join(' ')}
+                onClick={() => actions.showMissing?.('theoretical', item.id)}
+              >
+                <AlertCircle />
+              </Button>
+            ) : null}
+          </div>
+          {missingInline ? (
+            <p
+              id={`quote-missing-${item.id}`}
+              className="px-3 pb-1 text-xs text-primary"
             >
-              <AlertCircle />
-            </Button>
+              {missingInline.message}
+            </p>
           ) : null}
         </div>
         <div role="cell" className="text-right text-sm tabular-nums">
           {simple && (!sub || sub.kind === 'time') ? (
             <InlineQuoteInput
+              id={`quote-duration-${item.id}`}
               alignRight
               label={`Durata di ${displayName}`}
               value={
@@ -345,6 +411,7 @@ export function QuoteItemRow({
         <div role="cell" className="text-right text-sm tabular-nums">
           {simple && (!sub || sub.kind === 'expense') ? (
             <InlineQuoteInput
+              id={`quote-expense-${item.id}`}
               label={`Spese di ${displayName}`}
               value={sub?.kind === 'expense' ? moneyInputValue(sub.amount) : ''}
               decimal
@@ -473,6 +540,17 @@ export function QuoteItemRow({
               <MoreHorizontal />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-auto min-w-0">
+              {sub ? (
+                <DropdownMenuItem
+                  className="size-8 justify-center p-0"
+                  aria-label={`Salva nel catalogo ${displayName}`}
+                  title="Salva nel catalogo"
+                  disabled={!canReuseQuoteSubItem(sub)}
+                  onClick={() => actions.saveSub(item.id, sub.id)}
+                >
+                  <BookOpen />
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem
                 className="size-8 justify-center p-0"
                 aria-label={`Inserisci dopo ${displayName}`}
@@ -514,7 +592,7 @@ export function QuoteItemRow({
       </div>
       <CollapsibleContent
         role="rowgroup"
-        id={`quote-technical-${item.id}`}
+        id={hasChildren ? `quote-technical-${item.id}` : undefined}
         tabIndex={-1}
         className={
           missingTechnical
@@ -522,7 +600,7 @@ export function QuoteItemRow({
             : 'outline-none'
         }
       >
-        {missingTechnical ? (
+        {hasChildren && missingTechnical ? (
           <div role="row">
             <div
               role="cell"
@@ -548,7 +626,7 @@ export function QuoteItemRow({
             }
           />
         ))}
-        {item.subItems.map((sub) => {
+        {(hasChildren ? item.subItems : []).map((sub) => {
           const subName =
             sub.description.trim() ||
             (sub.kind === 'time'
@@ -594,6 +672,9 @@ export function QuoteItemRow({
                 ) : undefined
               }
               onSave={(input) => actions.saveSimpleSub(item.id, input, sub.id)}
+              onChangeType={(kind, expected) =>
+                actions.changeType(item.id, kind, expected, sub.id)
+              }
               onClick={() => actions.editSub(item.id, sub.id)}
               action={
                 <DropdownMenu>
@@ -650,7 +731,7 @@ export function QuoteItemRow({
           );
         })}
         {editor}
-        {!item.subItems.length && !editor ? (
+        {hasChildren && !item.subItems.length && !editor ? (
           <div role="row">
             <div
               role="cell"
@@ -674,6 +755,7 @@ function QuoteSubRow({
   missing,
   disabled,
   onSave,
+  onChangeType,
   onClick,
   action,
   variantControl,
@@ -685,6 +767,10 @@ function QuoteSubRow({
   missing?: string;
   disabled: boolean;
   onSave: (input: SimpleSubInput) => boolean;
+  onChangeType: (
+    kind: QuoteSubItem['kind'],
+    expected?: QuoteSubItem,
+  ) => Promise<boolean>;
   onClick: () => void;
   action: ReactNode;
   variantControl?: ReactNode;
@@ -723,7 +809,21 @@ function QuoteSubRow({
         {sub.variantOwner ? (
           <GitBranch className="mr-2 size-3.5 text-muted-foreground" />
         ) : null}
-        <Icon className="size-3.5 text-muted-foreground" />
+        <QuoteTypeMenu
+          label={`sottoriga ${sub.description || 'senza descrizione'}`}
+          typeLabel={
+            sub.kind === 'time'
+              ? 'Attività'
+              : sub.kind === 'expense'
+                ? 'Spesa'
+                : 'Trasferta'
+          }
+          sub={sub}
+          disabled={disabled}
+          onChange={onChangeType}
+        >
+          <Icon className="size-3.5 text-muted-foreground" />
+        </QuoteTypeMenu>
       </div>
       <div role="cell" className="min-w-0 pl-2" title={note}>
         <div className="flex min-w-0 items-center gap-2">

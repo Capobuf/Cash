@@ -10,6 +10,7 @@ import {
   type CashDocument,
   type FuelEvidence,
   type Quote,
+  type QuoteSubItem,
   type ReusableSubItem,
 } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
@@ -30,7 +31,7 @@ function session(document: CashDocument, path = 'Cash.json'): ArchiveSession {
   };
 }
 
-function setup(hasToken = true) {
+function setup(hasToken = true, configure?: (document: CashDocument) => void) {
   const document = createEmptyDocument();
   const profile = createFiscalPreset2026();
   profile.confirmed = true;
@@ -171,6 +172,7 @@ function setup(hasToken = true) {
     },
   });
   const state = new AppState();
+  configure?.(document);
   state.acceptNativeSession(session(document));
   const setActiveQuoteId = vi.fn();
   let controller!: ReturnType<typeof useQuoteController>;
@@ -212,6 +214,286 @@ function setup(hasToken = true) {
     item,
   };
 }
+
+describe('conversione del tipo di righe e sottorighe', () => {
+  it('svuota una riga complessa conservando identità, nome, prezzo e posizione', async () => {
+    const { state, controller, item, save } = setup(true, (doc) => {
+      doc.quotes[0]!.layout = [
+        {
+          kind: 'container',
+          id: meta().id,
+          name: 'Sede',
+          itemIds: [doc.quotes[0]!.items[0]!.id],
+        },
+      ];
+    });
+    const before = structuredClone(state.document!.quotes[0]!);
+    expect(controller.makeItemGeneric(item)).toBe(true);
+    const after = state.document!.quotes[0]!;
+    expect(after.items[0]).toMatchObject({
+      id: item.id,
+      createdAt: item.createdAt,
+      name: item.name,
+      chosenPrice: item.chosenPrice,
+      subItems: [],
+      variantGroups: [],
+      variantSelections: [],
+    });
+    expect(after.layout).toEqual(before.layout);
+    await state.save();
+    expect(save.mock.calls.at(-1)![1].quotes[0]!.items[0]!.subItems).toEqual(
+      [],
+    );
+  });
+
+  it('non rende generica una riga modificata dopo la richiesta di conferma o in sola lettura', () => {
+    const { state, controller, item } = setup();
+    const expected = structuredClone(item);
+    controller.renameItem(item.id, 'Aggiornata');
+    const before = structuredClone(state.document);
+    expect(controller.makeItemGeneric(expected)).toBe(false);
+    expect(state.document).toEqual(before);
+    state.session!.readOnly = true;
+    expect(
+      controller.makeItemGeneric(state.document!.quotes[0]!.items[0]!),
+    ).toBe(false);
+    expect(state.document).toEqual(before);
+  });
+
+  it.each(['implicit', 'root', 'container'] as const)(
+    'sostituisce con un template multiriga mantenendo posizione e prezzo (%s)',
+    async (position) => {
+      const { controller, state, document, item, save } = setup(true, (doc) => {
+        const quote = doc.quotes[0]!;
+        const sibling = {
+          ...meta(),
+          name: 'Successiva',
+          subItems: [],
+          variantGroups: [],
+          variantSelections: [],
+        };
+        quote.items.push(sibling);
+        if (position === 'root')
+          quote.layout = quote.items.map((entry) => ({
+            kind: 'item',
+            itemId: entry.id,
+          }));
+        if (position === 'container')
+          quote.layout = [
+            {
+              kind: 'container',
+              id: meta().id,
+              name: 'Sede',
+              itemIds: quote.items.map((entry) => entry.id),
+            },
+          ];
+        doc.catalog.templates[0]!.items = ['Prima', 'Seconda'].map((name) => ({
+          ...meta(),
+          name,
+          subItems: [
+            { ...meta(), kind: 'time', description: name, minutes: 30 },
+          ],
+          variantGroups: [],
+        }));
+      });
+      expect(
+        await controller.insertTemplate(
+          document.catalog.templates[0]!.id,
+          {},
+          {},
+          undefined,
+          undefined,
+          item,
+        ),
+      ).toBe(true);
+      const after = state.document!.quotes[0]!;
+      const first = after.items.find((entry) => entry.id === item.id)!;
+      const second = after.items.find((entry) => entry.name === 'Seconda')!;
+      expect(first).toMatchObject({
+        name: 'Prima',
+        chosenPrice: '100.00',
+        createdAt: item.createdAt,
+        variantGroups: [],
+        subItems: [{ kind: 'time', minutes: 30 }],
+      });
+      expect(second.chosenPrice).toBeUndefined();
+      const order = after.layout!.flatMap((entry) =>
+        entry.kind === 'item' ? [entry.itemId] : entry.itemIds,
+      );
+      expect(order).toEqual([
+        item.id,
+        second.id,
+        document.quotes[0]!.items[1]!.id,
+      ]);
+      if (position === 'container') expect(after.layout).toHaveLength(1);
+      await state.save();
+      expect(save.mock.calls.at(-1)![1].quotes[0]!.layout).toEqual(
+        after.layout,
+      );
+    },
+  );
+
+  it('mantiene la riga originale se cambia durante la preparazione del template', async () => {
+    const { state, controller, item, document, complete } = setup();
+    const pending = controller.insertTemplate(
+      document.catalog.templates[0]!.id,
+      {},
+      {},
+      undefined,
+      undefined,
+      item,
+    );
+    controller.renameItem(item.id, 'Aggiornata');
+    await state.save();
+    const before = structuredClone(state.document);
+    complete();
+    expect(await pending).toBe(false);
+    expect(state.document).toEqual(before);
+  });
+
+  const sources: QuoteSubItem[] = [
+    { ...meta(), kind: 'time', description: 'Intervento', minutes: 90 },
+    { ...meta(), kind: 'expense', description: 'Intervento', amount: '25.00' },
+    {
+      ...meta(),
+      kind: 'travel',
+      description: 'Intervento',
+      roundTrip: false,
+      occurrences: 2,
+      distanceKmPerOccurrence: '30',
+      travelMinutesPerOccurrence: 45,
+      totalDistanceKm: '60',
+      totalMinutes: 90,
+      vehicleCostPerKm: '0.333333',
+      totalCost: '20.00',
+    },
+  ];
+  for (const source of sources) {
+    for (const kind of ['time', 'expense', 'travel'] as const) {
+      if (source.kind === kind) continue;
+      it(`converte ${source.kind} in ${kind}, conserva identità e prezzo e salva senza campi residui`, async () => {
+        const { state, controller, item, save } = setup();
+        expect(
+          state.mutate((doc) => {
+            doc.quotes[0]!.items[0]!.variantGroups = [];
+            doc.quotes[0]!.items[0]!.subItems = [source];
+          }),
+        ).toBe(true);
+        const expected = state.document!.quotes[0]!.items[0]!.subItems[0]!;
+        expect(await controller.changeItemType(item.id, kind, expected)).toBe(
+          source.id,
+        );
+        const changed = state.document!.quotes[0]!.items[0]!;
+        expect(changed.chosenPrice).toBe('100.00');
+        expect(changed.name).toBe(item.name);
+        expect(changed.subItems).toHaveLength(1);
+        expect(changed.subItems[0]).toMatchObject({
+          kind,
+          id: source.id,
+          createdAt: source.createdAt,
+          description: source.description,
+        });
+        for (const key of [
+          'minutes',
+          'amount',
+          'distanceKmPerOccurrence',
+          'travelMinutesPerOccurrence',
+          'totalDistanceKm',
+          'totalMinutes',
+          'totalCost',
+          'fuelEvidence',
+        ]) {
+          expect(changed.subItems[0]).not.toHaveProperty(key);
+        }
+        if (kind === 'travel')
+          expect(changed.subItems[0]).toMatchObject({
+            roundTrip: true,
+            occurrences: 1,
+          });
+        await state.save();
+        expect(
+          save.mock.calls.at(-1)![1].quotes[0]!.items[0]!.subItems[0]!.kind,
+        ).toBe(kind);
+      });
+    }
+  }
+
+  it('crea una sottoriga persistente anche convertendo una riga generica vuota', async () => {
+    const { state, controller, item } = setup();
+    state.mutate((doc) => {
+      Object.assign(doc.quotes[0]!.items[0]!, {
+        subItems: [],
+        variantGroups: [],
+      });
+    });
+    expect(await controller.changeItemType(item.id, 'expense')).toBeTruthy();
+    expect(state.document!.quotes[0]!.items[0]!.subItems).toMatchObject([
+      { kind: 'expense', description: item.name },
+    ]);
+  });
+
+  it('converte una sottoriga variante senza cambiare le altre e segnala la modifica manuale', async () => {
+    const { state, controller, item } = setup();
+    state.mutate((doc) => {
+      const target = doc.quotes[0]!.items[0]!;
+      target.subItems[0]!.variantOwner = {
+        groupId: target.variantGroups[0]!.id,
+        optionId: target.variantGroups[0]!.options[0]!.id,
+        definitionIndex: 0,
+      };
+      target.subItems.push(sources[0]!);
+    });
+    const before = structuredClone(state.document!.quotes[0]!.items[0]!);
+    const source = before.subItems[0]!;
+    expect(
+      await controller.changeItemType(item.id, 'expense', source, source.id),
+    ).toBe(source.id);
+    const after = state.document!.quotes[0]!.items[0]!;
+    expect(after.subItems[0]).toMatchObject({
+      variantOwner: source.variantOwner,
+      manuallyModified: true,
+    });
+    expect(after.subItems[1]).toEqual(before.subItems[1]);
+    expect(after.variantGroups).toEqual(before.variantGroups);
+  });
+
+  it('rifiuta la conversione di un aggregato e le conferme riferite a dati superati', async () => {
+    const { state, controller, item } = setup();
+    const source = structuredClone(
+      state.document!.quotes[0]!.items[0]!.subItems[0]!,
+    );
+    const original = structuredClone(state.document);
+    expect(await controller.changeItemType(item.id, 'expense', source)).toBe(
+      false,
+    );
+    expect(state.document).toEqual(original);
+    state.mutate((doc) => {
+      doc.quotes[0]!.items[0]!.subItems[0]!.description = 'Aggiornata';
+    });
+    const changed = structuredClone(state.document);
+    expect(
+      await controller.changeItemType(item.id, 'expense', source, source.id),
+    ).toBe(false);
+    expect(state.document).toEqual(changed);
+    expect(state.error?.code).toBe('CONFLICT');
+  });
+
+  it('rifiuta la conversione in sola lettura e dopo un cambio di archivio', async () => {
+    const { state, controller, item } = setup();
+    const source = state.document!.quotes[0]!.items[0]!.subItems[0]!;
+    const original = structuredClone(state.document);
+    state.session!.readOnly = true;
+    expect(
+      await controller.changeItemType(item.id, 'expense', source, source.id),
+    ).toBe(false);
+    state.session!.readOnly = false;
+    state.acceptNativeSession(session(state.document!, 'other.json'));
+    expect(
+      await controller.changeItemType(item.id, 'expense', source, source.id),
+    ).toBe(false);
+    expect(state.document).toEqual(original);
+  });
+});
 
 describe('contesto delle operazioni asincrone sui preventivi', () => {
   it('assegna numeri diversi anche a due creazioni consecutive prima di un nuovo render', async () => {

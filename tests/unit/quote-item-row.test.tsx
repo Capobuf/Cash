@@ -4,6 +4,7 @@ import {
   createEmptyDocument,
   meta,
   type QuoteItem,
+  type QuoteSubItem,
 } from '../../src/domain/model';
 import {
   QuoteItemRow,
@@ -31,6 +32,9 @@ function nasItem(): QuoteItem {
 
 function actions(): QuoteItemActions {
   return {
+    changeType: vi.fn(),
+    makeGeneric: vi.fn(),
+    replaceWithTemplate: vi.fn(),
     rename: vi.fn(),
     saveSimpleSub: vi.fn(),
     updateChosenPrice: vi.fn(),
@@ -44,6 +48,118 @@ function actions(): QuoteItemActions {
 }
 
 describe('azioni della voce del preventivo', () => {
+  it.each<QuoteSubItem>([
+    { ...meta(), kind: 'time', description: 'Installazione', minutes: 60 },
+    {
+      ...meta(),
+      kind: 'expense',
+      description: 'Installazione',
+      amount: '20.00',
+    },
+    {
+      ...meta(),
+      kind: 'travel',
+      description: 'Installazione',
+      roundTrip: true,
+      occurrences: 1,
+    },
+  ])(
+    'mostra solo la principale per una singola $kind anche se espansa',
+    (sub) => {
+      const item: QuoteItem = {
+        ...meta(),
+        name: 'Installazione',
+        subItems: [sub],
+        variantGroups: [],
+        variantSelections: [],
+      };
+      const html = renderToStaticMarkup(
+        <QuoteItemRow
+          item={item}
+          doc={createEmptyDocument()}
+          actions={actions()}
+          expanded
+        />,
+      );
+      expect(html.match(/role="row"/g)).toHaveLength(1);
+      expect(html).not.toContain('data-quote-sub=');
+      expect(html).not.toContain('data-quote-parent=');
+      expect(html).not.toContain('Apri o chiudi');
+      expect(html).toContain(`id="quote-sub-${sub.id}"`);
+      if (sub.kind === 'time')
+        expect(html).toContain('Durata di Installazione');
+      if (sub.kind === 'expense')
+        expect(html).toContain('Spese di Installazione');
+      if (sub.kind === 'travel')
+        expect(html).toContain('Configura trasferta di Installazione');
+    },
+  );
+
+  it('evidenzia i dati mancanti sulla riga semplice senza mostrare la sottoriga', () => {
+    const sub: QuoteSubItem = {
+      ...meta(),
+      kind: 'time',
+      description: 'Installazione',
+    };
+    const item: QuoteItem = {
+      ...meta(),
+      name: 'Installazione',
+      subItems: [sub],
+      variantGroups: [],
+      variantSelections: [],
+    };
+    const html = renderToStaticMarkup(
+      <QuoteItemRow
+        item={item}
+        doc={createEmptyDocument()}
+        actions={actions()}
+        missingTargets={[
+          {
+            id: `quote-sub-${sub.id}`,
+            itemId: item.id,
+            message: 'Durata mancante',
+          },
+        ]}
+      />,
+    );
+    expect(html.match(/role="row"/g)).toHaveLength(1);
+    expect(html).toContain('Durata mancante');
+    expect(html).toContain(`aria-describedby="quote-missing-${item.id}"`);
+    expect(html).not.toContain('data-quote-sub=');
+  });
+
+  it('mostra i dettagli con due sottorighe e torna a una riga quando ne rimane una', () => {
+    const item: QuoteItem = {
+      ...meta(),
+      name: 'Installazione',
+      subItems: [
+        { ...meta(), kind: 'time', description: 'Lavoro', minutes: 60 },
+        {
+          ...meta(),
+          kind: 'expense',
+          description: 'Materiali',
+          amount: '20.00',
+        },
+      ],
+      variantGroups: [],
+      variantSelections: [],
+    };
+    const render = () =>
+      renderToStaticMarkup(
+        <QuoteItemRow
+          item={item}
+          doc={createEmptyDocument()}
+          actions={actions()}
+          expanded
+        />,
+      );
+    expect(render().match(/data-quote-sub=/g)).toHaveLength(2);
+    expect(render()).toContain('Apri o chiudi Installazione');
+    item.subItems.pop();
+    expect(render().match(/role="row"/g)).toHaveLength(1);
+    expect(render()).not.toContain('Apri o chiudi');
+  });
+
   it('mostra nome editabile e azioni contestuali nella riga senza dialog', () => {
     const item = {
       ...meta(),
@@ -57,6 +173,9 @@ describe('azioni della voce del preventivo', () => {
         item={item}
         doc={createEmptyDocument()}
         actions={{
+          changeType: vi.fn(),
+          makeGeneric: vi.fn(),
+          replaceWithTemplate: vi.fn(),
           rename: vi.fn(),
           saveSimpleSub: vi.fn(),
           updateChosenPrice: vi.fn(),

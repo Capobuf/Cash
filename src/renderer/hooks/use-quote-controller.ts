@@ -613,6 +613,121 @@ export function useQuoteController({
     return saved ? sub.id : false;
   };
 
+  const makeItemGeneric = (expected: QuoteItem) => {
+    if (
+      !quote ||
+      appState.archiveOperationPending ||
+      !guardQuoteContext(quote, false)()
+    )
+      return false;
+    const current = appState
+      .document!.quotes.find((entry) => entry.id === quote.id)!
+      .items.find((entry) => entry.id === expected.id);
+    if (JSON.stringify(current) !== JSON.stringify(expected)) {
+      appState.setError({
+        code: 'CONFLICT',
+        message:
+          'La riga è cambiata. Riapri il menu del tipo e ripeti la conversione.',
+      });
+      return false;
+    }
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      const item = touch(
+        target.items.find((entry) => entry.id === expected.id)!,
+      );
+      item.subItems = [];
+      item.variantGroups = [];
+      item.variantSelections = [];
+    });
+  };
+
+  const changeItemType = async (
+    itemId: string,
+    kind: QuoteSubItem['kind'],
+    expectedSub?: QuoteSubItem,
+    subId?: string,
+  ) => {
+    if (!quote || appState.archiveOperationPending) return false;
+    const isCurrent = guardQuoteContext(quote, false);
+    if (!isCurrent()) return false;
+    const current = appState.document!.quotes.find(
+      (entry) => entry.id === quote.id,
+    )!;
+    const item = current.items.find((entry) => entry.id === itemId);
+    if (
+      !item ||
+      (!subId && (item.variantGroups.length || item.subItems.length > 1))
+    )
+      return false;
+    const previous = subId
+      ? item.subItems.find((entry) => entry.id === subId)
+      : item.subItems[0];
+    if (
+      (subId && !previous) ||
+      JSON.stringify(previous) !== JSON.stringify(expectedSub)
+    ) {
+      appState.setError({
+        code: 'CONFLICT',
+        message:
+          'La riga è cambiata. Riapri il menu del tipo e ripeti la conversione.',
+      });
+      return false;
+    }
+    if (previous?.kind === kind) return previous.id;
+    // Build from scratch so fields belonging to the old type cannot survive.
+    const built: QuoteSubItem | undefined =
+      kind === 'travel'
+        ? await materializeTravel(
+            {
+              description: previous?.description ?? item.name,
+              roundTrip: true,
+              occurrences: 1,
+            },
+            current,
+          )
+        : { ...meta(), kind, description: previous?.description ?? item.name };
+    if (!built || !isCurrent() || appState.archiveOperationPending)
+      return false;
+    const latestItem = appState
+      .document!.quotes.find((entry) => entry.id === quote.id)
+      ?.items.find((entry) => entry.id === itemId);
+    if (JSON.stringify(latestItem) !== JSON.stringify(item)) {
+      appState.setError({
+        code: 'CONFLICT',
+        message:
+          'La riga è cambiata durante la conversione. Ripeti l’operazione.',
+      });
+      return false;
+    }
+    const converted: QuoteSubItem = previous
+      ? {
+          ...built,
+          id: previous.id,
+          createdAt: previous.createdAt,
+          ...(previous.variantOwner
+            ? { variantOwner: previous.variantOwner, manuallyModified: true }
+            : {}),
+        }
+      : built;
+    const saved = appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      const targetItem = touch(
+        target.items.find((entry) => entry.id === itemId)!,
+      );
+      if (previous)
+        targetItem.subItems[
+          targetItem.subItems.findIndex((entry) => entry.id === previous.id)
+        ] = converted;
+      else targetItem.subItems.push(converted);
+    });
+    return saved ? converted.id : false;
+  };
+
   const saveSimpleSub = (
     itemId: string,
     input: SimpleSubInput,
@@ -799,15 +914,34 @@ export function useQuoteController({
     context: TravelContext,
     containerId?: string,
     afterItemId?: string,
+    replacement?: QuoteItem,
   ) => {
-    if (!quote || !canInsertAt(quote, { containerId, afterItemId }))
+    if (
+      !quote ||
+      appState.archiveOperationPending ||
+      !canInsertAt(quote, { containerId, afterItemId })
+    )
       return false;
     const isCurrent = guardQuoteContext();
     if (!isCurrent()) return false;
+    if (
+      replacement &&
+      JSON.stringify(
+        quote.items.find((entry) => entry.id === replacement.id),
+      ) !== JSON.stringify(replacement)
+    ) {
+      appState.setError({
+        code: 'CONFLICT',
+        message:
+          'La riga è cambiata. Riapri il selettore del template e ripeti la conversione.',
+      });
+      return false;
+    }
     const sourceTemplate = doc.catalog.templates.find(
       (entry) => entry.id === templateId,
     );
-    if (!sourceTemplate) return false;
+    if (!sourceTemplate || (replacement && !sourceTemplate.items.length))
+      return false;
     // The dialog returns IDs from the catalog template. Cloning deliberately
     // regenerates every group/option ID, so preserve the user's choices by
     // position and resolve them against the cloned identities below.
@@ -893,12 +1027,33 @@ export function useQuoteController({
       }
       prepared.push(applied.value);
     }
-    if (!isCurrent()) return false;
+    if (!isCurrent() || appState.archiveOperationPending) return false;
     return appState.mutate((document) => {
       const target = touch(
         document.quotes.find((entry) => entry.id === quote.id)!,
       );
-      insertQuoteItems(target, prepared, { containerId, afterItemId });
+      if (replacement) {
+        const first = prepared[0]!;
+        first.id = replacement.id;
+        first.createdAt = replacement.createdAt;
+        first.chosenPrice = replacement.chosenPrice;
+        // Keep the first identity and its layout reference; append the remaining
+        // template rows directly after it in the same container.
+        const container = quoteLayout(target).find(
+          (entry) =>
+            entry.kind === 'container' &&
+            entry.itemIds.includes(replacement.id),
+        );
+        target.items[
+          target.items.findIndex((entry) => entry.id === replacement.id)
+        ] = first;
+        if (prepared.length > 1)
+          insertQuoteItems(target, prepared.slice(1), {
+            containerId:
+              container?.kind === 'container' ? container.id : undefined,
+            afterItemId: first.id,
+          });
+      } else insertQuoteItems(target, prepared, { containerId, afterItemId });
     });
   };
 
@@ -1169,6 +1324,8 @@ export function useQuoteController({
     updateChosenPrice,
     updateReferencePrice,
     saveSimpleSub,
+    changeItemType,
+    makeItemGeneric,
     addSubItem,
     saveTravel,
     addReusable,

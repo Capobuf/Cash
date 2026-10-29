@@ -196,10 +196,12 @@ export function InsertTemplateEditor({
   disabled,
   onClose,
   onInsert,
+  replacing = false,
 }: {
   doc: CashDocument;
   quote: Quote;
   disabled: boolean;
+  replacing?: boolean;
   onClose: () => void;
   onInsert: (
     templateId: string,
@@ -230,18 +232,29 @@ export function InsertTemplateEditor({
   return (
     <section
       data-quote-template-editor
-      aria-label="Inserisci template"
+      aria-label={
+        replacing ? 'Sostituisci riga con template' : 'Inserisci template'
+      }
       aria-busy={busy}
       className="space-y-3 border-b bg-muted/10 py-3"
     >
       <div className="flex items-center gap-3 px-3">
-        <h4 className="shrink-0 text-sm font-medium">Inserisci template</h4>
+        <h4 className="shrink-0 text-sm font-medium">
+          {replacing ? 'Sostituisci riga con template' : 'Inserisci template'}
+        </h4>
         {template ? (
           <span className="text-xs text-muted-foreground">
             Anteprima · da confermare
           </span>
         ) : null}
       </div>
+      {replacing ? (
+        <p className="px-3 text-sm text-muted-foreground">
+          Alla conferma, nome, sottorighe e varianti attuali saranno sostituiti
+          dalle voci del template. La posizione resterà invariata e il prezzo
+          scelto sarà conservato sulla prima voce.
+        </p>
+      ) : null}
       <div className="px-3">
         <SearchableSelect
           className="max-w-md"
@@ -327,9 +340,12 @@ export function InsertTemplateEditor({
           Annulla
         </Button>
         <Button
-          disabled={disabled || !template || !complete || busy}
+          disabled={
+            disabled || !template || !template.items.length || !complete || busy
+          }
           onClick={async () => {
-            if (!template || !complete || disabled || busy) return;
+            if (!template?.items.length || !complete || disabled || busy)
+              return;
             setBusy(true);
             try {
               if (await onInsert(template.id, choices, { siteId, vehicleId }))
@@ -342,9 +358,11 @@ export function InsertTemplateEditor({
           {busy ? <Spinner aria-hidden="true" /> : null}
           {busy
             ? 'Inserimento…'
-            : template
-              ? `Inserisci ${template.items.length} ${template.items.length === 1 ? 'voce' : 'voci'}`
-              : 'Inserisci template'}
+            : replacing
+              ? 'Sostituisci riga'
+              : template
+                ? `Inserisci ${template.items.length} ${template.items.length === 1 ? 'voce' : 'voci'}`
+                : 'Inserisci template'}
         </Button>
       </div>
     </section>

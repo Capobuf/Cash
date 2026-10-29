@@ -51,6 +51,14 @@ function Harness() {
             deleteRequests++;
             if (target.kind === 'item')
               state.mutate((doc) => removeQuoteItem(doc.quotes[0]!, target.id));
+            if (target.kind === 'sub')
+              state.mutate((doc) => {
+                const [itemId, subId] = target.id.split(':');
+                const item = doc.quotes[0]!.items.find(
+                  (entry) => entry.id === itemId,
+                )!;
+                item.subItems = item.subItems.filter((sub) => sub.id !== subId);
+              });
           }}
         />
       </TooltipProvider>
@@ -365,6 +373,200 @@ export async function showExport() {
   );
 }
 
+export async function runTypeConversionChecks() {
+  await setup();
+  const assert = (condition: unknown, message: string) => {
+    if (!condition) throw new Error(message);
+  };
+  const item = () => state.document!.quotes[0]!.items[0]!;
+  const originalSub = structuredClone(item().subItems[0]!);
+  const visibleRows = () =>
+    document.querySelectorAll(`[data-quote-item="${item().id}"] [role=row]`)
+      .length;
+  assert(visibleRows() === 1, 'Attività singola senza duplicazioni');
+  await fill(`#quote-duration-${item().id}`, '90m');
+  document
+    .getElementById(`quote-duration-${item().id}`)!
+    .dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+  await settle();
+  assert(
+    visibleRows() === 1 &&
+      item().subItems.length === 1 &&
+      item().subItems[0]!.id === originalSub.id,
+    'Compilazione durata non aggiunge righe',
+  );
+  await click('Cambia tipo riga Router');
+  await click('Spesa');
+  assert(
+    document.querySelector('[role=alertdialog]'),
+    'Conferma perdita durata',
+  );
+  await click('Annulla');
+  assert(item().subItems[0]!.kind === 'time', 'Annullamento senza modifiche');
+  await click('Cambia tipo riga Router');
+  await click('Spesa');
+  await click('Converti');
+  assert(item().subItems[0]!.kind === 'expense', 'Conversione riga in spesa');
+  assert(
+    item().subItems[0]!.id === originalSub.id &&
+      item().chosenPrice === '100.00',
+    'Identità e prezzo conservati',
+  );
+  assert(!('minutes' in item().subItems[0]!), 'Durata rimossa');
+  await click('Cambia tipo riga Router');
+  await click('Trasferta');
+  assert(
+    item().subItems[0]!.kind === 'travel',
+    'Conversione spesa vuota senza conferma',
+  );
+  assert(
+    document.querySelector('[data-quote-sub-editor=travel]'),
+    'Editor trasferta aperto',
+  );
+  await click('Annulla');
+  assert(visibleRows() === 1, 'Trasferta singola senza duplicazioni');
+  await click('Configura trasferta di Router');
+  assert(
+    document.querySelector('[data-quote-sub-editor=travel]'),
+    'Editor trasferta riapribile dalla principale',
+  );
+  await click('Annulla');
+  await click('Cambia tipo riga Router');
+  await click('Attività');
+  await click('Converti');
+  assert(
+    item().subItems[0]!.kind === 'time',
+    'Conversione dal simbolo sottoriga',
+  );
+  assert(!('roundTrip' in item().subItems[0]!), 'Dati viaggio rimossi');
+  await click('Mostra dati mancanti di Router');
+  assert(
+    document.activeElement?.id === `quote-sub-${originalSub.id}` &&
+      visibleRows() === 1,
+    'Dati mancanti puntano alla riga principale',
+  );
+  await click('Aggiungi sottoriga a Router');
+  await click('Spesa');
+  assert(
+    visibleRows() === 3 && item().subItems.length === 2,
+    'Seconda sottoriga rende visibili entrambi i dettagli',
+  );
+  await click('Cambia tipo sottoriga Router');
+  await click('Spesa');
+  assert(
+    item().subItems[0]!.kind === 'expense',
+    'Conversione sottoriga nella vista complessa',
+  );
+  await click('Azioni per Spesa senza descrizione');
+  await click('Elimina sottoriga Spesa senza descrizione');
+  assert(
+    visibleRows() === 1 && item().subItems.length === 1,
+    'Eliminando la seconda sottoriga scompare il dettaglio duplicato',
+  );
+  await setReadOnly(true);
+  assert(
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label^="Cambia tipo"]',
+      ),
+    ].every((button) => button.disabled),
+    'Cambio tipo disabilitato in sola lettura',
+  );
+  await setReadOnly(false);
+  state.mutate((doc) => {
+    doc.quotes[0]!.items[0]!.subItems.push({
+      ...meta(),
+      kind: 'expense',
+      description: 'Licenza',
+      amount: '10.00',
+    });
+    doc.quotes[0]!.items.push({
+      ...meta(),
+      name: 'Nota',
+      subItems: [],
+      variantGroups: [],
+      variantSelections: [],
+    });
+  });
+  await settle();
+  await click('Cambia tipo riga Router');
+  assert(
+    document.body.textContent?.includes(
+      'Cambia il tipo delle singole sottorighe',
+    ),
+    'Spiegazione per aggregati',
+  );
+  assert(
+    [...document.querySelectorAll('[role=menuitem]')]
+      .slice(0, 3)
+      .every((entry) => entry.getAttribute('aria-disabled') === 'true'),
+    'Nessuna conversione distruttiva aggregati',
+  );
+  document.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  );
+  await settle();
+  await click('Cambia tipo riga Nota');
+  await click('Attività');
+  assert(
+    state.document!.quotes[0]!.items.at(-1)!.subItems[0]?.kind === 'time',
+    'Tipo persistente per riga generica',
+  );
+  await click('Cambia tipo riga Router');
+  await click('Riga generica');
+  assert(
+    document.querySelector('[role=alertdialog]'),
+    'Conferma rimozione sottorighe',
+  );
+  await click('Annulla');
+  assert(
+    item().subItems.length === 2,
+    'Annullamento riga generica conserva sottorighe',
+  );
+  await click('Cambia tipo riga Router');
+  await click('Riga generica');
+  await click('Converti');
+  assert(
+    item().subItems.length === 0 &&
+      item().variantGroups.length === 0 &&
+      item().chosenPrice === '100.00',
+    'Riga generica conserva prezzo e rimuove struttura',
+  );
+  const beforeTemplate = JSON.stringify(state.document!.quotes[0]!);
+  await click('Cambia tipo riga Router');
+  await click('Da template');
+  await choose('#quote-template-picker', 'Rete completa');
+  assert(
+    JSON.stringify(state.document!.quotes[0]!) === beforeTemplate,
+    'Anteprima non modifica preventivo',
+  );
+  await click('Annulla');
+  assert(
+    JSON.stringify(state.document!.quotes[0]!) === beforeTemplate,
+    'Annullamento template senza modifiche',
+  );
+  await click('Cambia tipo riga Router');
+  await click('Da template');
+  await choose('#quote-template-picker', 'Rete completa');
+  await click('Sostituisci riga');
+  assert(
+    item().name === 'LAN' && item().chosenPrice === '100.00',
+    'Prima voce template conserva prezzo',
+  );
+  assert(
+    orderedQuoteItems(state.document!.quotes[0]!)
+      .map((entry) => entry.name)
+      .join(',') === 'LAN,Wi-Fi,Switch,Firewall,Nota',
+    'Template sostituisce in posizione senza duplicare originale',
+  );
+  await state.save();
+  assert(
+    cashDocumentSchema.safeParse(state.document).success,
+    'Archivio valido dopo conversioni',
+  );
+  return 'TYPE_CONVERSION_UI_OK';
+}
+
 export async function runOperationalChecks() {
   const assert = (condition: unknown, message: string) => {
     if (!condition) throw new Error(message);
@@ -504,16 +706,26 @@ export async function runOperationalChecks() {
       `[data-quote-item="${parentId}"] [data-quote-sub]`,
     );
     assert(
-      rows[rows.length - 1]!.getAttribute('data-quote-sub') === sub.id,
-      'Nuova sottoriga in fondo alle altre',
+      count === 0
+        ? rows.length === 0
+        : rows[rows.length - 1]!.getAttribute('data-quote-sub') === sub.id,
+      'Prima attività sulla principale, ulteriori sottorighe nel dettaglio',
     );
     assert(
       !document.querySelector('[data-quote-sub-editor]') &&
         !document.querySelector('[role=dialog]'),
       'Nessun form o pulsante Salva per le sottorighe semplici',
     );
-    await commit(`#quote-sub-description-${sub.id}`, description!);
-    await commit(`input[aria-label="Durata ${description}"]`, duration!);
+    if (count === 0) {
+      await commit(`#quote-duration-${parentId}`, duration!);
+    } else {
+      await commit(
+        `#quote-sub-description-${parent().subItems[0]!.id}`,
+        'WhatsApp',
+      );
+      await commit(`#quote-sub-description-${sub.id}`, description!);
+      await commit(`input[aria-label="Durata ${description}"]`, duration!);
+    }
     assert(
       parent().subItems.at(-1)!.id === sub.id,
       'Identità stabile durante la compilazione inline',
@@ -841,7 +1053,7 @@ export async function runOperationalChecks() {
       item().subItems[0]?.kind === 'travel',
       'Sottoriga Trasferta aggiunta solo con azione esplicita',
     );
-    await click('Configura trasferta');
+    await click(`Configura trasferta di ${name}`);
     assert(
       !document.querySelector('[role=dialog]'),
       'Configurazione trasferta inline',

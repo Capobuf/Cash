@@ -182,8 +182,8 @@ app.whenReady().then(async () => {
     assert.equal(JSON.stringify((await info()).quote), beforeInvalid, 'invalid drop must not mutate');
     assert.equal((await info()).writes, beforeNoop, 'invalid drop must not save');
     await js('document.querySelector("#invalid-drop").remove()');
-    // Dedicated handle must not intercept price edits or the card collapse button.
-    await click('Apri o chiudi Firewall');
+    // A simple item exposes price edits directly without duplicate detail rows.
+    assert.equal(await js('Array.from(document.querySelectorAll("button")).some(e => e.getAttribute("aria-label") === "Apri o chiudi Firewall")'), false);
     await js('Checks.fill(' + JSON.stringify('#chosen-' + ids[2]) + ', "125,00")');
     await js('document.querySelector(' + JSON.stringify('#chosen-' + ids[2]) + ').dispatchEvent(new FocusEvent("focusout", { bubbles: true })); Checks.settle()');
     assert.equal((await info()).quote.items.find(e => e.id === ids[2]).chosenPrice, '125.00');
@@ -258,6 +258,7 @@ app.whenReady().then(async () => {
       if (await js('Array.from(document.querySelectorAll("button")).find(e => e.getAttribute("aria-label") === "Apri o chiudi Storage")?.getAttribute("aria-expanded") === "false"')) await click('Apri o chiudi Storage');
       writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-operational-table.png'), (await win.webContents.capturePage()).toPNG());
     }
+    assert.equal(await js('Checks.runTypeConversionChecks()'), 'TYPE_CONVERSION_UI_OK');
     process.stdout.write('LAYOUT_UI_OK\n', () => app.exit(0));
   } catch(error) {
     process.stderr.write(String(error) + '\n' + JSON.stringify(await info().catch(() => ({}))) + '\n' + await js('document.body.innerText').catch(() => ''), () => app.exit(1));
