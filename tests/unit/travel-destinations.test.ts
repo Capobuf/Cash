@@ -63,7 +63,7 @@ vi.mock('@/components/EntityDialogs', () => ({
 
 describe('destinazioni delle trasferte', () => {
   it.each([false, true])(
-    'mostra tutte le sedi e conserva la proposta iniziale (cliente: %s)',
+    'mostra le sedi compatibili con il cliente e conserva la proposta iniziale (cliente: %s)',
     (withClient) => {
       const doc = createEmptyDocument();
       const client = {
@@ -74,7 +74,12 @@ describe('destinazioni delle trasferte', () => {
       };
       const main = { ...meta(), name: 'Sede cliente', client };
       const supplier = { ...meta(), name: 'Fornitore ABC' };
-      doc.sites.push(main, supplier);
+      const other = {
+        ...meta(),
+        name: 'Altro cliente',
+        client: { ...client, clientId: '3' },
+      };
+      doc.sites.push(main, supplier, other);
       const quote: Quote = {
         number: 1,
         ...meta(),
@@ -109,6 +114,7 @@ describe('destinazioni delle trasferte', () => {
             doc,
             appState: new AppState(),
             initialKind: 'travel',
+            client: quote.client,
             defaultDestinationSiteId: quote.mainSite?.sourceId,
             onClose: close,
             onSaveSimple: () => true,
@@ -135,9 +141,14 @@ describe('destinazioni delle trasferte', () => {
           new RegExp(`<div[^>]*id="${id}"[^>]*>[\\s\\S]*?</div>`),
         )?.[0];
         expect(select).toContain('Fornitore ABC');
-        expect(select).toContain('Sede cliente');
-        if (withClient)
+        expect(select).not.toContain('Altro cliente');
+        if (withClient) {
+          expect(select).toContain('Sede cliente');
           expect(select).toContain(`data-selected-value="${main.id}"`);
+        } else {
+          expect(select).not.toContain('Sede cliente');
+          expect(select).toContain('data-selected-value=""');
+        }
       }
     },
   );

@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/ui/data-table';
 import { Spinner } from '@/components/ui/spinner';
 import { useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
@@ -37,14 +38,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { dateIt, eur } from '@/lib/format';
 
 type BankMovementsProps = {
@@ -233,197 +226,224 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
               nell’intestazione. Cambiando filtri o anno la selezione si azzera.
             </span>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
+          <DataTable
+            preferencesKey="bank-movements"
+            data={rows.map((expense) => {
+              const effective = effectiveCategoryIds(
+                expense,
+                doc.bankExpenseRules,
+              );
+              const auto = automaticCategoryIds(expense, doc.bankExpenseRules);
+              const excluded = isBankExpenseExcluded(
+                expense,
+                doc.bankExpenseCategories,
+                doc.bankExpenseRules,
+              );
+              return { ...expense, effective, auto, excluded };
+            })}
+            getRowKey={(expense) => expense.id}
+            emptyMessage={
+              doc.bankExpenses.length
+                ? 'Nessun movimento corrisponde all’anno e ai filtri selezionati.'
+                : 'Crea una spesa oppure importa un file XLSX o CSV della banca per iniziare.'
+            }
+            longTableThreshold={Infinity}
+            isRowSelected={(expense) => selectedSet.has(expense.id)}
+            columns={[
+              {
+                id: 'selection',
+                header: 'Selezione',
+                value: () => undefined,
+                sortable: false,
+                configurable: false,
+                headerContent: (
+                  <>
+                    <Checkbox
+                      aria-label="Seleziona tutte le spese visibili"
+                      disabled={readOnly || !rows.length}
+                      checked={
+                        rows.length > 0 && selectedRows.length === rows.length
+                      }
+                      indeterminate={
+                        selectedRows.length > 0 &&
+                        selectedRows.length < rows.length
+                      }
+                      onCheckedChange={(checked) =>
+                        setSelected(checked ? rows.map((row) => row.id) : [])
+                      }
+                    />
+                  </>
+                ),
+                cell: (expense) => (
                   <Checkbox
-                    aria-label="Seleziona tutte le spese visibili"
-                    disabled={readOnly || !rows.length}
-                    checked={
-                      rows.length > 0 && selectedRows.length === rows.length
-                    }
-                    indeterminate={
-                      selectedRows.length > 0 &&
-                      selectedRows.length < rows.length
-                    }
+                    aria-label={`Seleziona ${expense.description} del ${dateIt(expense.date)}`}
+                    disabled={readOnly}
+                    checked={selectedSet.has(expense.id)}
                     onCheckedChange={(checked) =>
-                      setSelected(checked ? rows.map((row) => row.id) : [])
+                      setSelected((current) =>
+                        checked
+                          ? [...new Set([...current, expense.id])]
+                          : current.filter((id) => id !== expense.id),
+                      )
                     }
                   />
-                </TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead>Descrizione</TableHead>
-                <TableHead className="text-right">Importo</TableHead>
-                <TableHead>Categorie</TableHead>
-                <TableHead>Conteggi</TableHead>
-                <TableHead>Azioni</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((expense) => {
-                const effective = effectiveCategoryIds(
-                  expense,
-                  doc.bankExpenseRules,
-                );
-                const auto = automaticCategoryIds(
-                  expense,
-                  doc.bankExpenseRules,
-                );
-                const excluded = isBankExpenseExcluded(
-                  expense,
-                  doc.bankExpenseCategories,
-                  doc.bankExpenseRules,
-                );
-                return (
-                  <TableRow
-                    key={expense.id}
-                    data-state={
-                      selectedSet.has(expense.id) ? 'selected' : undefined
-                    }
-                  >
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`Seleziona ${expense.description} del ${dateIt(expense.date)}`}
-                        disabled={readOnly}
-                        checked={selectedSet.has(expense.id)}
-                        onCheckedChange={(checked) =>
-                          setSelected((current) =>
-                            checked
-                              ? [...new Set([...current, expense.id])]
-                              : current.filter((id) => id !== expense.id),
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {dateIt(expense.date)}
-                    </TableCell>
-                    <TableCell className="min-w-56 max-w-xl whitespace-normal break-words">
-                      {expense.description}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {eur(expense.amount)}
-                    </TableCell>
-                    <TableCell className="min-w-56 whitespace-normal">
-                      <div className="flex flex-wrap gap-1">
-                        {effective.map((id) => (
-                          <Badge
-                            key={id}
-                            variant={
-                              expense.categoryIds.includes(id)
-                                ? 'secondary'
-                                : 'outline'
-                            }
-                            className="whitespace-normal"
-                          >
-                            {bankCategoryLabel(doc.bankExpenseCategories, id)}
-                            <span className="text-muted-foreground">
-                              {auto.includes(id)
-                                ? expense.categoryIds.includes(id)
-                                  ? 'Manuale · Auto'
-                                  : 'Auto'
-                                : 'Manuale'}
-                            </span>
-                          </Badge>
-                        ))}
-                        {!effective.length ? (
-                          <span className="text-sm text-muted-foreground">
-                            Senza categoria
+                ),
+              },
+              {
+                id: 'date',
+                header: 'Data',
+                value: (expense) => expense.date,
+                className: 'whitespace-nowrap',
+                cell: (expense) => dateIt(expense.date),
+              },
+              {
+                id: 'description',
+                header: 'Descrizione',
+                value: (expense) => expense.description,
+                className: 'min-w-56 max-w-xl whitespace-normal break-words',
+                cell: (expense) => expense.description,
+              },
+              {
+                id: 'amount',
+                header: 'Importo',
+                value: (expense) => Number(expense.amount),
+                headClassName: 'text-right',
+                className: 'text-right tabular-nums',
+                cell: (expense) => eur(expense.amount),
+              },
+              {
+                id: 'categories',
+                header: 'Categorie',
+                value: (expense) =>
+                  expense.effective
+                    .map((id) =>
+                      bankCategoryLabel(doc.bankExpenseCategories, id),
+                    )
+                    .join(', '),
+                className: 'min-w-56 whitespace-normal',
+                cell: (expense) => (
+                  <>
+                    <div className="flex flex-wrap gap-1">
+                      {expense.effective.map((id) => (
+                        <Badge
+                          key={id}
+                          variant={
+                            expense.categoryIds.includes(id)
+                              ? 'secondary'
+                              : 'outline'
+                          }
+                          className="whitespace-normal"
+                        >
+                          {bankCategoryLabel(doc.bankExpenseCategories, id)}
+                          <span className="text-muted-foreground">
+                            {expense.auto.includes(id)
+                              ? expense.categoryIds.includes(id)
+                                ? 'Manuale · Auto'
+                                : 'Auto'
+                              : 'Manuale'}
                           </span>
-                        ) : null}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={readOnly}
-                        aria-label={`Modifica categorie per ${expense.description} del ${dateIt(expense.date)}`}
-                        onClick={() => setEditing(expense)}
-                      >
-                        Modifica categorie
-                      </Button>
-                    </TableCell>
-                    <TableCell className="min-w-44 whitespace-normal">
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm">
-                          <Checkbox
-                            aria-label={`Ignora nei conteggi ${expense.description} del ${dateIt(expense.date)}`}
-                            checked={Boolean(expense.excludedFromCalculations)}
-                            disabled={readOnly}
-                            onCheckedChange={(checked) => {
-                              appState.mutate((document) => {
-                                const row = document.bankExpenses.find(
-                                  (item) => item.id === expense.id,
-                                );
-                                if (!row) return;
-                                row.excludedFromCalculations = checked === true;
-                                row.updatedAt = nowIso();
-                              });
-                            }}
-                          />
-                          Ignora nei conteggi
-                        </label>
-                        <Badge variant={excluded ? 'secondary' : 'outline'}>
-                          {excluded
-                            ? 'Esclusa dai conteggi'
-                            : 'Inclusa nei conteggi'}
                         </Badge>
-                        {excluded && !expense.excludedFromCalculations ? (
-                          <p className="text-xs text-muted-foreground">
-                            Esclusione derivata dalla categoria.
-                          </p>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={readOnly}
-                          aria-label={`Modifica spesa ${expense.description} del ${dateIt(expense.date)}`}
-                          onClick={() => setExpenseEditor({ expense })}
-                        >
-                          <Pencil />
-                          Modifica
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={readOnly}
-                          aria-label={`Elimina spesa ${expense.description} del ${dateIt(expense.date)}`}
-                          onClick={() => setDeleting([expense])}
-                        >
-                          <Trash2 />
-                          Elimina
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={readOnly}
-                          onClick={() => setRuleExpense(expense)}
-                        >
-                          Crea regola
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!rows.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-12 text-center text-muted-foreground"
-                  >
-                    {doc.bankExpenses.length
-                      ? 'Nessun movimento corrisponde all’anno e ai filtri selezionati.'
-                      : 'Crea una spesa oppure importa un file XLSX o CSV della banca per iniziare.'}
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
+                      ))}
+                      {!expense.effective.length ? (
+                        <span className="text-sm text-muted-foreground">
+                          Senza categoria
+                        </span>
+                      ) : null}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={readOnly}
+                      aria-label={`Modifica categorie per ${expense.description} del ${dateIt(expense.date)}`}
+                      onClick={() => setEditing(expense)}
+                    >
+                      Modifica categorie
+                    </Button>
+                  </>
+                ),
+              },
+              {
+                id: 'counts',
+                header: 'Conteggi',
+                value: (expense) =>
+                  expense.excluded
+                    ? 'Esclusa dai conteggi'
+                    : 'Inclusa nei conteggi',
+                className: 'min-w-44 whitespace-normal',
+                cell: (expense) => (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        aria-label={`Ignora nei conteggi ${expense.description} del ${dateIt(expense.date)}`}
+                        checked={Boolean(expense.excludedFromCalculations)}
+                        disabled={readOnly}
+                        onCheckedChange={(checked) => {
+                          appState.mutate((document) => {
+                            const row = document.bankExpenses.find(
+                              (item) => item.id === expense.id,
+                            );
+                            if (!row) return;
+                            row.excludedFromCalculations = checked === true;
+                            row.updatedAt = nowIso();
+                          });
+                        }}
+                      />
+                      Ignora nei conteggi
+                    </label>
+                    <Badge variant={expense.excluded ? 'secondary' : 'outline'}>
+                      {expense.excluded
+                        ? 'Esclusa dai conteggi'
+                        : 'Inclusa nei conteggi'}
+                    </Badge>
+                    {expense.excluded && !expense.excludedFromCalculations ? (
+                      <p className="text-xs text-muted-foreground">
+                        Esclusione derivata dalla categoria.
+                      </p>
+                    ) : null}
+                  </div>
+                ),
+              },
+              {
+                id: 'actions',
+                header: 'Azioni',
+                value: () => undefined,
+                sortable: false,
+                configurable: false,
+                cell: (expense) => (
+                  <div className="flex flex-wrap gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={readOnly}
+                      aria-label={`Modifica spesa ${expense.description} del ${dateIt(expense.date)}`}
+                      onClick={() => setExpenseEditor({ expense })}
+                    >
+                      <Pencil />
+                      Modifica
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={readOnly}
+                      aria-label={`Elimina spesa ${expense.description} del ${dateIt(expense.date)}`}
+                      onClick={() => setDeleting([expense])}
+                    >
+                      <Trash2 />
+                      Elimina
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={readOnly}
+                      onClick={() => setRuleExpense(expense)}
+                    >
+                      Crea regola
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </CardContent>
       </Card>
       {editing ? (

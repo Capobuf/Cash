@@ -344,6 +344,16 @@ export async function importJsonArchive(
     await writeNew(destination, document.value);
     return await openArchive(destination);
   } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'EEXIST')
+      return err({
+        code: 'CONFLICT',
+        source: 'archive',
+        field: 'path',
+        message:
+          'Il file di destinazione esiste già e non è stato sovrascritto.',
+        action:
+          'Scegli un altro nome per importare il JSON oppure usa Apri archivio per aprire lo SQLite esistente. L’originale JSON e i suoi backup sono stati conservati.',
+      });
     return failure(
       cause,
       'Importazione non riuscita. L’archivio JSON originale e i suoi backup sono stati conservati.',
@@ -504,11 +514,44 @@ export async function prepareRestoreCopy(
 export async function restoreArchiveCopy(
   source: string,
   destination: string,
+  replaceExisting = false,
 ): Promise<Result<ArchiveSession>> {
   const valid = localPath(destination);
   if (!valid.ok) return valid;
   const verified = await verifyArchiveCopy(source);
   if (!verified.ok) return verified;
+  if (replaceExisting) {
+    let exists = false;
+    try {
+      await stat(destination);
+      exists = true;
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT')
+        return failure(cause, 'Impossibile verificare l’archivio predefinito.');
+    }
+    if (exists) {
+      // Update SQLite transactionally so active connections and WAL stay valid.
+      const connection = connections.get(resolve(destination));
+      const opened = connection
+        ? ok(session(destination, connection.document))
+        : await openArchive(destination);
+      if (!opened.ok) return opened;
+      if (opened.value.readOnly)
+        return err({
+          code: 'SCHEMA_NEWER',
+          source: 'archive',
+          message:
+            'L’archivio predefinito richiede una versione più recente di Cash.',
+        });
+      const restored = await restoreBackup(
+        destination,
+        opened.value.token,
+        source,
+      );
+      if (!restored.ok && !connection) closeArchive(destination);
+      return restored;
+    }
+  }
   const temp = temporaryPath(destination);
   let result: Result<ArchiveSession>;
   try {
@@ -635,6 +678,7 @@ export async function saveRecoveryCopy(
 export function restoreBackup(
   path: string,
   token: ConcurrencyToken,
+  source?: string,
 ): Promise<Result<ArchiveSession>> {
   const connection = connections.get(resolve(path));
   return enqueue(async () => {
@@ -647,7 +691,23 @@ export function restoreBackup(
     try {
       await stat(path);
       if (connection.closing) return conflict();
-      copy = readonly(backupPathFor(path));
+      const previousBackup = source ?? backupPathFor(path);
+      try {
+        await stat(previousBackup);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+        return err({
+          code: 'FILE_NOT_FOUND',
+          source: 'archive',
+          field: 'path',
+          message:
+            'Non è disponibile una copia automatica della versione precedente.',
+          action:
+            'Per ripristinare un file SQLite a tua scelta, usa «Ripristina da backup» dal menu Archivio.',
+          details: [previousBackup],
+        });
+      }
+      copy = readonly(previousBackup);
       recognize(copy);
       checkIntegrity(copy, true);
       if (
@@ -662,13 +722,15 @@ export function restoreBackup(
       if (version(copy) !== STORAGE_VERSION)
         throw new Error('Schema del backup non supportato.');
       const now = new Date().toISOString();
-      const restored = parseDocument({
-        ...readDocument(copy),
-        documentId: randomUUID(),
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
+      const restored = source
+        ? readDocument(copy)
+        : parseDocument({
+            ...readDocument(copy),
+            documentId: randomUUID(),
+            revision: 1,
+            createdAt: now,
+            updatedAt: now,
+          });
       copy.close();
       copy = undefined;
       db.exec('BEGIN IMMEDIATE');
@@ -692,7 +754,7 @@ export function restoreBackup(
         token,
       );
       await consistentBackup(
-        backupPathFor(path),
+        previousBackup,
         `${base}.backup-conservato.${stamp}.sqlite`,
       );
       if (connection.closing) {

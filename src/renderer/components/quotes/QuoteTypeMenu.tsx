@@ -36,8 +36,11 @@ export function QuoteTypeMenu({
   onChange,
   onGeneric,
   onTemplate,
+  onCatalog,
+  onComplexChange,
   generic = false,
   hasTemplates = false,
+  hasCatalog = false,
 }: {
   label: string;
   typeLabel: string;
@@ -47,8 +50,11 @@ export function QuoteTypeMenu({
   children: ReactNode;
   onGeneric?: () => void;
   onTemplate?: () => void;
+  onCatalog?: () => void;
+  onComplexChange?: (kind: QuoteSubItem['kind']) => void;
   generic?: boolean;
   hasTemplates?: boolean;
+  hasCatalog?: boolean;
   onChange: (
     kind: QuoteSubItem['kind'],
     expected?: QuoteSubItem,
@@ -72,6 +78,10 @@ export function QuoteTypeMenu({
     }
   };
   const select = (kind: QuoteSubItem['kind']) => {
+    if (complex && onComplexChange) {
+      onComplexChange(kind);
+      return;
+    }
     if (
       sub &&
       (sub.kind === 'travel' ||
@@ -99,7 +109,7 @@ export function QuoteTypeMenu({
           {children}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          {complex ? (
+          {complex && !onComplexChange ? (
             <p className="max-w-64 px-2 py-1.5 text-xs text-muted-foreground">
               Questa voce contiene più sottorighe o varianti. Cambia il tipo
               delle singole sottorighe.
@@ -108,14 +118,16 @@ export function QuoteTypeMenu({
           {types.map(([kind, name, Icon]) => (
             <DropdownMenuItem
               key={kind}
-              disabled={complex || sub?.kind === kind}
+              disabled={(complex && !onComplexChange) || sub?.kind === kind}
               onClick={() => select(kind)}
             >
               <Icon />
               {name}
             </DropdownMenuItem>
           ))}
-          {onGeneric || onTemplate ? <DropdownMenuSeparator /> : null}
+          {onGeneric || onTemplate || onCatalog ? (
+            <DropdownMenuSeparator />
+          ) : null}
           {onGeneric ? (
             <DropdownMenuItem disabled={generic} onClick={onGeneric}>
               <Text />
@@ -126,6 +138,12 @@ export function QuoteTypeMenu({
             <DropdownMenuItem disabled={!hasTemplates} onClick={onTemplate}>
               <BookOpen />
               Da template
+            </DropdownMenuItem>
+          ) : null}
+          {onCatalog ? (
+            <DropdownMenuItem disabled={!hasCatalog} onClick={onCatalog}>
+              <BookOpen />
+              Da catalogo
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>

@@ -373,8 +373,172 @@ export async function showExport() {
   );
 }
 
+export async function runQuickEntryChecks() {
+  await setup(true);
+  const assert = (condition: unknown, message: string) => {
+    if (!condition) throw new Error(message);
+  };
+  const current = () => state.document!.quotes[0]!;
+  const openTypes = async () => {
+    const row = [...document.querySelectorAll('[data-quote-empty-row]')].find(
+      (entry) => !entry.closest('[data-quote-container]'),
+    )!;
+    assert(
+      row.querySelectorAll('[role=cell]').length === 7,
+      'Riga vuota allineata alle sette colonne',
+    );
+    row.querySelector<HTMLButtonElement>('button')!.click();
+    await settle();
+  };
+  const initial = JSON.stringify(current());
+  await openTypes();
+  const labels = [...document.querySelectorAll('[role=menuitem]')].map(
+    (entry) => entry.textContent?.trim(),
+  );
+  for (const label of [
+    'Attività',
+    'Spesa',
+    'Trasferta',
+    'Riga generica',
+    'Da template',
+    'Da catalogo',
+  ])
+    assert(labels.includes(label), `Tipo disponibile: ${label}`);
+  document.activeElement?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  );
+  await settle();
+  assert(
+    JSON.stringify(current()) === initial && writes === 0,
+    'Aprire il menu non crea righe né salva',
+  );
+  await openTypes();
+  await click('Attività');
+  assert(
+    current().items.length === 1 &&
+      document.activeElement?.id === `quote-name-${current().items[0]!.id}`,
+    'La scelta crea una riga e sposta il focus sul nome',
+  );
+  assert(
+    document.querySelectorAll('[data-quote-empty-row]').length === 1,
+    'Una nuova riga vuota rimane pronta',
+  );
+  const beforeCatalog = JSON.stringify(current());
+  await openTypes();
+  await click('Da catalogo');
+  await click('Annulla inserimento dal catalogo');
+  assert(
+    JSON.stringify(current()) === beforeCatalog,
+    'Annullare il catalogo non aggiunge righe',
+  );
+  await openTypes();
+  await click('Da catalogo');
+  await choose(
+    '[data-quote-catalog-editor] button[id^="catalog-entry-"]',
+    'Cancelleria',
+  );
+  await click('Aggiungi dal catalogo');
+  assert(
+    current().items.length === 2 &&
+      current().items[1]!.name === 'Cancelleria' &&
+      current().items[1]!.subItems[0]?.kind === 'expense',
+    'Catalogo inserito in una sola riga completa',
+  );
+  const beforeTemplate = JSON.stringify(current());
+  await openTypes();
+  await click('Da template');
+  await choose('#quote-template-picker', 'Infrastruttura');
+  const group = state.document!.catalog.templates.find(
+    (entry) => entry.name === 'Infrastruttura',
+  )!.items[0]!.variantGroups[0]!;
+  await choose(`#template-choice-${group.id}`, 'Base');
+  await click('Annulla');
+  assert(
+    JSON.stringify(current()) === beforeTemplate,
+    'Annullare il template non aggiunge righe',
+  );
+  await openTypes();
+  await click('Da template');
+  await choose('#quote-template-picker', 'Infrastruttura');
+  await choose(`#template-choice-${group.id}`, 'Base');
+  await click('Inserisci riga da template');
+  const inserted = current().items.at(-1)!;
+  assert(
+    current().items.length === 3 &&
+      inserted.name === 'Infrastruttura' &&
+      inserted.subItems.length === 3 &&
+      inserted.variantGroups.length === 1,
+    'Template accorpato in una riga con tutte le varianti',
+  );
+  await setReadOnly(true);
+  assert(
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[data-quote-empty-row] button',
+      ),
+    ].every((button) => button.disabled),
+    'Selettori disabilitati in sola lettura',
+  );
+  await setReadOnly(false);
+  assert(info().valid, 'Archivio valido dopo gli inserimenti rapidi');
+  await state.save();
+  return 'QUICK_ENTRY_UI_OK';
+}
+
+export async function runContainerCreationChecks() {
+  await setup(true);
+  const assert = (condition: unknown, message: string) => {
+    if (!condition) throw new Error(message);
+  };
+  const current = () => state.document!.quotes[0]!;
+  for (let count = 1; count <= 2; count++) {
+    await click('Nuovo contenitore');
+    assert(
+      current().layout?.filter((entry) => entry.kind === 'container').length ===
+        count &&
+        document.querySelectorAll('[data-quote-container]').length === count,
+      'Ogni clic crea esattamente un contenitore',
+    );
+    assert(
+      !document.querySelector(
+        'input[aria-label="Titolo del contenitore iniziale"]',
+      ) &&
+        document.querySelectorAll('[data-quote-layout] [role=columnheader]')
+          .length ===
+          count * 7,
+      'Nessun titolo o intestazione di un secondo contenitore vuoto',
+    );
+    assert(
+      document.activeElement?.getAttribute('aria-label') ===
+        'Titolo contenitore Nuovo contenitore',
+      'Focus sul titolo del contenitore appena creato',
+    );
+    await renameLastContainer(`Contenitore ${count}`);
+  }
+  assert(
+    document.querySelector('[data-quote-drop="quote-root"]') &&
+      [...document.querySelectorAll('[data-quote-empty-row] button')].some(
+        (button) => !button.closest('[data-quote-container]'),
+      ),
+    'Inserimento e trascinamento di righe libere ancora disponibili',
+  );
+  assert(
+    current().items.length === 0 && info().valid,
+    'Nessuna voce economica aggiunta',
+  );
+  await state.save();
+  return 'CONTAINER_CREATION_UI_OK';
+}
+
 export async function runTypeConversionChecks() {
   await setup();
+  state.mutate((doc) => {
+    for (const item of doc.catalog.templates[0]!.items)
+      item.subItems = [
+        { ...meta(), kind: 'time', description: item.name, minutes: 30 },
+      ];
+  });
+  await settle();
   const assert = (condition: unknown, message: string) => {
     if (!condition) throw new Error(message);
   };
@@ -490,22 +654,16 @@ export async function runTypeConversionChecks() {
   });
   await settle();
   await click('Cambia tipo riga Router');
+  await click('Attività');
   assert(
-    document.body.textContent?.includes(
-      'Cambia il tipo delle singole sottorighe',
-    ),
-    'Spiegazione per aggregati',
+    document.querySelector('[role=alertdialog]'),
+    'Conversione aggregata richiede conferma',
   );
+  await click('Annulla');
   assert(
-    [...document.querySelectorAll('[role=menuitem]')]
-      .slice(0, 3)
-      .every((entry) => entry.getAttribute('aria-disabled') === 'true'),
-    'Nessuna conversione distruttiva aggregati',
+    item().subItems.length === 2,
+    'Annullare la conversione aggregata conserva i dettagli',
   );
-  document.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-  );
-  await settle();
   await click('Cambia tipo riga Nota');
   await click('Attività');
   assert(
@@ -548,16 +706,18 @@ export async function runTypeConversionChecks() {
   await click('Cambia tipo riga Router');
   await click('Da template');
   await choose('#quote-template-picker', 'Rete completa');
-  await click('Sostituisci riga');
+  await click('Applica template alla riga');
   assert(
-    item().name === 'LAN' && item().chosenPrice === '100.00',
-    'Prima voce template conserva prezzo',
+    item().name === 'Rete completa' &&
+      item().chosenPrice === '100.00' &&
+      item().subItems.length === 2,
+    'Template accorpato conserva prezzo e tutte le sottorighe',
   );
   assert(
     orderedQuoteItems(state.document!.quotes[0]!)
       .map((entry) => entry.name)
-      .join(',') === 'LAN,Wi-Fi,Switch,Firewall,Nota',
-    'Template sostituisce in posizione senza duplicare originale',
+      .join(',') === 'Rete completa,Switch,Firewall,Nota',
+    'Template accorpato sostituisce in posizione senza aggiungere righe',
   );
   await state.save();
   assert(
@@ -583,12 +743,12 @@ export async function runOperationalChecks() {
     const count = current().items.length;
     const buttons = [
       ...document.querySelectorAll<HTMLButtonElement>(
-        '[data-quote-add-menu] button',
+        '[data-quote-empty-row] button',
       ),
     ];
     const button = containerId
       ? document.querySelector<HTMLButtonElement>(
-          `[data-quote-container="${containerId}"] [data-quote-add-menu] button`,
+          `[data-quote-container="${containerId}"] [data-quote-empty-row] button`,
         )
       : buttons
           .filter((entry) => !entry.closest('[data-quote-container]'))
@@ -602,7 +762,9 @@ export async function runOperationalChecks() {
     );
     const item = current().items.at(-1)!;
     assert(
-      item.name === '' &&
+      (kind === 'Trasferta'
+        ? item.name.startsWith('Trasferta - ')
+        : item.name === '') &&
         item.subItems.length === 0 &&
         item.chosenPrice === undefined &&
         !document.querySelector('[data-quote-quick-add]'),
@@ -630,8 +792,8 @@ export async function runOperationalChecks() {
   );
   assert(
     !document.querySelector('[data-quote-item]') &&
-      document.querySelector('[data-quote-add-menu] button'),
-    'Tabella vuota con pulsante centrale',
+      document.querySelector('[data-quote-empty-row] button'),
+    'Riga vuota disponibile senza scritture automatiche',
   );
   const totals = document.querySelector('[data-quote-totals]')!;
   assert(
@@ -662,16 +824,13 @@ export async function runOperationalChecks() {
   await commit(`#quote-name-${parentId}`, 'Gestione cliente');
   const parent = () => current().items.find((item) => item.id === parentId)!;
   const countBeforeHeader = current().items.length;
-  document
-    .querySelector<HTMLButtonElement>(
-      `[data-quote-container="${container.kind === 'container' ? container.id : ''}"] button[data-slot="dropdown-menu-trigger"]`,
-    )!
-    .click();
-  await settle();
-  await click('Aggiungi riga');
+  await create(
+    'Riga generica',
+    container.kind === 'container' ? container.id : '',
+  );
   assert(
     current().items.length === countBeforeHeader + 1,
-    'Aggiungi riga del contenitore crea subito la voce',
+    'La riga vuota del contenitore crea una sola voce',
   );
   const emptyItemId = current().items.at(-1)!.id;
   assert(
@@ -1036,8 +1195,34 @@ export async function runOperationalChecks() {
   );
 
   await choose('#quote-site', 'Via Cliente 2');
+  const selectedMainSite = current().mainSite?.sourceId;
+  const beforeSiteEdit = JSON.stringify(state.document!.sites);
+  document.querySelector<HTMLButtonElement>('#quote-site')!.click();
+  await settle();
+  const editMainSite = [
+    ...document.querySelectorAll<HTMLButtonElement>('button'),
+  ].find(
+    (button) =>
+      button.getAttribute('aria-label')?.startsWith('Modifica ') &&
+      button.getAttribute('aria-label')?.includes('Via Cliente 2'),
+  )!;
+  editMainSite.click();
+  await settle();
+  assert(
+    document
+      .querySelector('[role=dialog]')
+      ?.textContent?.includes('Modifica sede'),
+    'La matita della sede principale apre il modale',
+  );
+  await fill('#site-name', 'Modifica da annullare');
+  await click('Annulla');
+  assert(
+    JSON.stringify(state.document!.sites) === beforeSiteEdit &&
+      current().mainSite?.sourceId === selectedMainSite,
+    'Annullare conserva la sede e la selezione',
+  );
   for (const [name, destination] of [
-    ['Ritiro dal fornitore', 'Via Altra 3'],
+    ['Ritiro dal fornitore', 'Via Libera 1'],
     ['Trasporto al cliente', 'Via Cliente 2'],
   ]) {
     const id = await add(name!, 'Trasferta');
@@ -1046,31 +1231,113 @@ export async function runOperationalChecks() {
       item().subItems.length === 0,
       'La riga Trasferta nasce senza sottorighe',
     );
-    await click(`Aggiungi sottoriga a ${name}`);
-    await click('Trasferta');
-    const travelId = item().subItems[0]!.id;
-    assert(
-      item().subItems[0]?.kind === 'travel',
-      'Sottoriga Trasferta aggiunta solo con azione esplicita',
-    );
     await click(`Configura trasferta di ${name}`);
+    assert(
+      document.querySelector('[data-quote-sub-editor="travel"]') &&
+        item().subItems.length === 0,
+      'Aprire la riga mostra direttamente la configurazione senza creare sottorighe',
+    );
     assert(
       !document.querySelector('[role=dialog]'),
       'Configurazione trasferta inline',
     );
     await fill('#sub-description', name!);
+    if (name === 'Ritiro dal fornitore') {
+      await fill('#travel-duration', '20m');
+      const selectedDestination = document.querySelector(
+        '#travel-destination',
+      )!.textContent;
+      document.querySelector<HTMLButtonElement>('#travel-destination')!.click();
+      await settle();
+      assert(
+        ![...document.querySelectorAll('[role=option]')].some((option) =>
+          option.textContent?.includes('Via Altra 3'),
+        ),
+        'Il menu esclude le sedi degli altri clienti',
+      );
+      const editSite = [
+        ...document.querySelectorAll<HTMLButtonElement>('button'),
+      ].find(
+        (button) =>
+          button.getAttribute('aria-label')?.startsWith('Modifica ') &&
+          button.getAttribute('aria-label')?.includes('Via Libera 1'),
+      )!;
+      editSite.click();
+      await settle();
+      assert(
+        document
+          .querySelector('[role=dialog]')
+          ?.textContent?.includes('Modifica sede') &&
+          !document.querySelector('[role=listbox]'),
+        'La matita chiude il menu e apre la modifica in un modale',
+      );
+      await fill('#site-name', 'Magazzino');
+      await click('Salva sede');
+      assert(
+        !document.querySelector('[role=dialog]') &&
+          state.document!.sites.find((site) => site.address === 'Via Libera 1')
+            ?.name === 'Magazzino',
+        'La modifica salva la sede esistente',
+      );
+      assert(
+        document.querySelector('#travel-destination')!.textContent ===
+          selectedDestination &&
+          document.querySelector<HTMLInputElement>('#travel-duration')
+            ?.value === '20m' &&
+          item().subItems.length === 0,
+        'Modificare la sede non cambia la selezione né salva la trasferta in compilazione',
+      );
+    }
     await choose('#travel-destination', destination!);
     await fill('#travel-duration', '20m');
     document
       .querySelector<HTMLFormElement>('[data-quote-sub-editor]')!
       .requestSubmit();
     await settle();
+    const travelId = item().subItems[0]!.id;
+    await click(`Configura trasferta di ${name}`);
     assert(
-      item().subItems[0]!.id === travelId &&
+      document.querySelector('[data-quote-sub-editor="travel"]') &&
+        document.querySelector<HTMLInputElement>('#travel-duration')?.value ===
+          '20m',
+      'Riaprire una trasferta configurata mostra i valori salvati',
+    );
+    document
+      .querySelector<HTMLFormElement>('[data-quote-sub-editor]')!
+      .requestSubmit();
+    await settle();
+    assert(
+      item().subItems.length === 1 &&
+        item().subItems[0]!.id === travelId &&
         item().subItems[0]?.kind === 'travel',
       'Configurazione aggiorna la riga senza duplicazioni',
     );
   }
+  const defaultTravelId = await create('Trasferta');
+  const defaultTravel = () =>
+    current().items.find((item) => item.id === defaultTravelId)!;
+  assert(
+    defaultTravel().name === 'Trasferta - Magazzino <--> Ufficio',
+    'La trasferta nasce con il nome del percorso predefinito',
+  );
+  await click(`Configura trasferta di ${defaultTravel().name}`);
+  await choose('#travel-departure', 'Via Cliente 2');
+  await choose('#travel-destination', 'Via Libera 1');
+  assert(
+    document.querySelector<HTMLInputElement>('#sub-description')?.value ===
+      'Trasferta - Ufficio <--> Magazzino',
+    'Il nome proposto segue le sedi selezionate',
+  );
+  await fill('#travel-duration', '20m');
+  document
+    .querySelector<HTMLFormElement>('[data-quote-sub-editor]')!
+    .requestSubmit();
+  await settle();
+  assert(
+    defaultTravel().name === 'Trasferta - Ufficio <--> Magazzino' &&
+      defaultTravel().subItems[0]?.description === defaultTravel().name,
+    'Il nome del percorso viene salvato sulla riga principale',
+  );
   const templateCount = state.document!.catalog.templates.length;
   await click('Altre azioni preventivo');
   await click('Salva come template');
@@ -1081,6 +1348,179 @@ export async function runOperationalChecks() {
     'Template completo creato dal controller',
   );
   assert(info().valid, 'Archivio valido dopo il flusso operativo');
+  const typeId = await add('Tipo modificabile');
+  const converted = () => current().items.find((item) => item.id === typeId)!;
+  await commit(`#chosen-${typeId}`, '125,00');
+  const position = JSON.stringify(current().layout);
+  await click('Cambia tipo riga Tipo modificabile');
+  await click('Spesa');
+  assert(
+    converted().subItems.length === 1 &&
+      converted().subItems[0]?.kind === 'expense',
+    'Generica convertita in spesa',
+  );
+  await commit('input[aria-label="Spese di Tipo modificabile"]', '12,50');
+  const beforeCancel = JSON.stringify(converted());
+  await click('Cambia tipo riga Tipo modificabile');
+  await click('Attività');
+  assert(
+    document.querySelector('[role=alertdialog]'),
+    'Conferma prima di sostituire dati tecnici',
+  );
+  await click('Annulla');
+  assert(
+    JSON.stringify(converted()) === beforeCancel,
+    'Annulla conserva i dati della spesa',
+  );
+  await click('Cambia tipo riga Tipo modificabile');
+  await click('Trasferta');
+  await click('Converti');
+  assert(
+    converted().subItems.length === 1 &&
+      converted().subItems[0]?.kind === 'travel',
+    'Spesa convertita in trasferta senza duplicazioni',
+  );
+  const beforeCatalog = JSON.stringify(converted());
+  await click('Cambia tipo riga Tipo modificabile');
+  await click('Da catalogo');
+  await click('Cambia tipo');
+  await click('Annulla inserimento dal catalogo');
+  assert(
+    JSON.stringify(converted()) === beforeCatalog,
+    'Annulla catalogo conserva la trasferta',
+  );
+  await click('Cambia tipo riga Tipo modificabile');
+  await click('Da catalogo');
+  await click('Cambia tipo');
+  await choose(`#catalog-entry-${typeId}`, 'Cancelleria');
+  await click('Sostituisci dal catalogo');
+  assert(
+    converted().subItems.length === 1 &&
+      converted().subItems[0]?.kind === 'expense' &&
+      converted().subItems[0]?.amount === '12.00',
+    'Catalogo sostituisce la trasferta',
+  );
+  assert(
+    converted().name === 'Cancelleria' &&
+      converted().chosenPrice === '125.00' &&
+      JSON.stringify(current().layout) === position,
+    'La voce del catalogo sostituisce il nome e conserva prezzo e posizione',
+  );
+  assert(
+    document.querySelector<HTMLInputElement>(`#quote-name-${typeId}`)?.value ===
+      'Cancelleria' &&
+      document.querySelector<HTMLInputElement>(
+        'input[aria-label="Spese di Cancelleria"]',
+      )?.value === '12,00' &&
+      !document.querySelector('[aria-label="Apri o chiudi Cancelleria"]'),
+    'La spesa del catalogo compare nella riga principale senza aprire una sottospesa',
+  );
+  await setReadOnly(true);
+  assert(
+    document.querySelector<HTMLButtonElement>(
+      '[aria-label="Cambia tipo riga Cancelleria"]',
+    )?.disabled,
+    'Cambio tipo disabilitato in sola lettura',
+  );
+  await setReadOnly(false);
+  assert(
+    document
+      .querySelector('[aria-label="Cambia tipo riga Cancelleria"]')
+      ?.getAttribute('title')
+      ?.startsWith('Spesa'),
+    'Tipo conservato alla riapertura',
+  );
+  await click('Cambia tipo riga Cancelleria');
+  await click('Riga generica');
+  await click('Converti');
+  assert(
+    converted().subItems.length === 0 && converted().chosenPrice === '125.00',
+    'Ritorno a generica conserva prezzo',
+  );
+  assert(info().valid, 'Archivio valido dopo i cambi di tipo');
+  state.mutate((doc) => {
+    doc.catalog.subItems = [];
+  });
+  await settle();
+  const beforeTemplate = JSON.stringify(current());
+  const itemCount = current().items.length;
+  await click('Cambia tipo riga Cancelleria');
+  await click('Da catalogo');
+  assert(
+    document.querySelector('[data-quote-template-editor]'),
+    'Catalogo con soli template disponibile sulla riga principale',
+  );
+  await choose('#quote-template-picker', 'Infrastruttura');
+  await choose(`#template-choice-${group.id}`, 'Base');
+  await click('Annulla');
+  assert(
+    JSON.stringify(current()) === beforeTemplate,
+    'Annullare il template lascia intatta la riga',
+  );
+  await click('Cambia tipo riga Cancelleria');
+  await click('Da catalogo');
+  await choose('#quote-template-picker', 'Infrastruttura');
+  await choose(`#template-choice-${group.id}`, 'Base');
+  await click('Applica template alla riga');
+  assert(
+    current().items.length === itemCount && converted().subItems.length === 3,
+    'Le due voci del template diventano dati tecnici della stessa riga',
+  );
+  assert(
+    converted()
+      .subItems.map((sub) => sub.description)
+      .join('|') === 'Configurazione NAS|Licenza NAS base|Disco',
+    'Dati tecnici di entrambe le voci preservati',
+  );
+  assert(
+    converted().variantGroups.length === 1 &&
+      converted().variantSelections.length === 1,
+    'Varianti mantenute nella riga convertita',
+  );
+  assert(
+    converted().name === 'Infrastruttura' &&
+      converted().chosenPrice === '125.00' &&
+      JSON.stringify(current().layout) === position,
+    'Il template sostituisce il nome e conserva prezzo e posizione',
+  );
+  assert(
+    document.querySelector<HTMLInputElement>(`#quote-name-${typeId}`)?.value ===
+      'Infrastruttura' &&
+      document
+        .querySelector('[aria-label="Apri o chiudi Infrastruttura"]')
+        ?.getAttribute('aria-expanded') === 'false',
+    'Il template sostituisce la riga principale e chiude il selettore',
+  );
+  await click('Aggiungi sottoriga a Infrastruttura');
+  const catalogAction = [...document.querySelectorAll('[role=menuitem]')].find(
+    (entry) => entry.textContent?.trim() === 'Dal catalogo',
+  );
+  assert(
+    catalogAction?.getAttribute('aria-disabled') === 'true',
+    'I template non sono disponibili per le sottorighe',
+  );
+  document.activeElement?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  );
+  await settle();
+  assert(info().valid, 'Archivio valido dopo la conversione da template');
+  const beforeDuplicate = JSON.stringify(converted());
+  await click('Azioni voce Infrastruttura');
+  await click('Duplica Infrastruttura');
+  const duplicated = current().items.at(-1)!;
+  const visualIds = orderedQuoteItems(current()).map((item) => item.id);
+  assert(
+    duplicated.id !== typeId &&
+      duplicated.name === 'Infrastruttura' &&
+      duplicated.chosenPrice === '125.00' &&
+      visualIds[visualIds.indexOf(typeId) + 1] === duplicated.id,
+    'Duplica dai tre pallini inserisce la copia subito dopo l’originale',
+  );
+  await commit(`#quote-name-${duplicated.id}`, 'Copia Infrastruttura');
+  assert(
+    JSON.stringify(converted()) === beforeDuplicate && info().valid,
+    'La copia è modificabile indipendentemente dall’originale',
+  );
   const preservedAfter = JSON.stringify(current());
   await setReadOnly(true);
   assert(

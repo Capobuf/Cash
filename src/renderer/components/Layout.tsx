@@ -474,9 +474,18 @@ export function AppShell({
                       appState.archiveOperationPending ||
                       appState.backup?.running
                     }
+                    onClick={() => void appState.restoreFromBackup()}
+                  >
+                    Ripristina da backup
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={
+                      appState.archiveOperationPending ||
+                      appState.backup?.running
+                    }
                     onClick={() => void appState.restoreBackup()}
                   >
-                    Ripristina backup
+                    Ripristina versione precedente
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>

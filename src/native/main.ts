@@ -8,7 +8,8 @@ import {
 } from 'electron';
 import { BackupManager } from './backups';
 import { readBankExpenseFile } from './bank-expense-import';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, dirname, extname, join } from 'node:path';
 import {
   createEmptyDocument,
   err,
@@ -198,6 +199,17 @@ async function selectOpen() {
     return err({ code: 'CANCELLED', message: 'Apertura annullata.' });
   return openWithMigration(choice.filePaths[0]);
 }
+function unusedImportDestination(path: string): string {
+  if (!existsSync(path)) return path;
+  const name = basename(path, extname(path));
+  for (let index = 1; ; index++) {
+    const candidate = join(
+      dirname(path),
+      `${name}-importato${index === 1 ? '' : `-${index}`}.sqlite`,
+    );
+    if (!existsSync(candidate)) return candidate;
+  }
+}
 async function openWithMigration(path: string) {
   if (restoreFileActive)
     return err({
@@ -233,24 +245,48 @@ async function openWithMigration(path: string) {
         source: 'archive',
         message: 'Migrazione annullata.',
       });
-    const destination = await dialog.showSaveDialog({
-      title: 'Importa archivio JSON in SQLite',
-      defaultPath: join(app.getPath('userData'), 'Cash.sqlite'),
-      filters: [{ name: 'Archivio Cash SQLite', extensions: ['sqlite'] }],
-    });
-    if (destination.canceled || !destination.filePath)
-      return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
-    const migrated = await importJsonArchive(path, destination.filePath);
-    if (migrated.ok) {
-      const remembered = await rememberArchive(migrated.value.path);
-      if (!remembered.ok) {
-        if (current?.path !== migrated.value.path)
-          closeArchive(migrated.value.path);
-        return remembered;
+    let defaultPath = unusedImportDestination(
+      join(app.getPath('userData'), 'Cash.sqlite'),
+    );
+    while (true) {
+      const destination = await dialog.showSaveDialog({
+        title: 'Importa archivio JSON in SQLite',
+        defaultPath,
+        filters: [{ name: 'Archivio Cash SQLite', extensions: ['sqlite'] }],
+      });
+      if (destination.canceled || !destination.filePath)
+        return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
+      const migrated = await importJsonArchive(path, destination.filePath);
+      if (
+        !migrated.ok &&
+        migrated.error.code === 'CONFLICT' &&
+        migrated.error.field === 'path'
+      ) {
+        const retry = await dialog.showMessageBox({
+          type: 'warning',
+          title: 'Destinazione già esistente',
+          message: migrated.error.message,
+          detail: `${destination.filePath}\n\n${migrated.error.action}`,
+          buttons: ['Annulla', 'Scegli un altro file'],
+          defaultId: 1,
+          cancelId: 0,
+        });
+        if (retry.response !== 1)
+          return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
+        defaultPath = unusedImportDestination(destination.filePath);
+        continue;
       }
-      replaceCurrent(migrated.value);
+      if (migrated.ok) {
+        const remembered = await rememberArchive(migrated.value.path);
+        if (!remembered.ok) {
+          if (current?.path !== migrated.value.path)
+            closeArchive(migrated.value.path);
+          return remembered;
+        }
+        replaceCurrent(migrated.value);
+      }
+      return migrated;
     }
-    return migrated;
   }
   if (result.ok) {
     const remembered = await rememberArchive(result.value.path);
@@ -353,8 +389,27 @@ function registerHandlers(): void {
         if (!selected.ok) return selected;
         source = selected.value.path;
       } else {
+        const preferences = await readPreferences();
+        if (!preferences.ok) return preferences;
+        const { backup, backupLast } = preferences.value;
+        const documentId = previous?.token.documentId ?? backupLast?.documentId;
+        const archiveFolder =
+          backup && documentId
+            ? join(
+                backup.destination,
+                'Cash-Backups',
+                backup.installationId,
+                documentId,
+              )
+            : undefined;
+        const defaultPath =
+          archiveFolder && existsSync(archiveFolder)
+            ? archiveFolder
+            : (backup?.destination ??
+              (backupLast ? dirname(backupLast.path) : undefined));
         const choice = await dialog.showOpenDialog({
           title: 'Ripristina da backup',
+          defaultPath,
           properties: ['openFile'],
           filters: [{ name: 'Backup Cash SQLite', extensions: ['sqlite'] }],
         });
@@ -366,24 +421,17 @@ function registerHandlers(): void {
       if (!prepared.ok) return prepared;
       staged = prepared.value.path;
       const { header, size } = prepared.value.inspection;
+      const destination = join(app.getPath('userData'), 'Cash.sqlite');
       const confirmation = await dialog.showMessageBox({
         type: 'question',
         title: 'Ripristina da backup',
         message: `Ripristinare la revisione ${header.revision}?`,
-        detail: `Archivio: ${header.documentId}\nDati aggiornati: ${new Date(header.updatedAt).toLocaleString('it-IT')}\nDimensione: ${size.toLocaleString('it-IT')} byte\n\nLa copia è stata verificata. Scegli un nuovo file su disco locale NON sincronizzato. Le credenziali FIC/ORS e le preferenze della vecchia postazione non sono incluse.`,
-        buttons: ['Annulla', 'Scegli destinazione e ripristina'],
+        detail: `Archivio: ${header.documentId}\nDati aggiornati: ${new Date(header.updatedAt).toLocaleString('it-IT')}\nDimensione: ${size.toLocaleString('it-IT')} byte\n\nIl backup verificato sarà ripristinato nell’archivio predefinito di Cash:\n${destination}\n\nSe esiste già, ne verrà conservata una copia datata prima di sostituirne i dati. Le credenziali FIC/ORS e le preferenze della postazione resteranno invariate.`,
+        buttons: ['Annulla', 'Ripristina'],
         defaultId: 0,
         cancelId: 0,
       });
       if (confirmation.response !== 1)
-        return err({ code: 'CANCELLED', message: 'Ripristino annullato.' });
-      const destination = await dialog.showSaveDialog({
-        title:
-          'Nuovo archivio locale ripristinato (fuori dalle cartelle sincronizzate)',
-        defaultPath: join(app.getPath('userData'), 'Cash-ripristinato.sqlite'),
-        filters: [{ name: 'Archivio Cash', extensions: ['sqlite'] }],
-      });
-      if (destination.canceled || !destination.filePath)
         return err({ code: 'CANCELLED', message: 'Ripristino annullato.' });
       if (current !== previous)
         return err({
@@ -391,7 +439,7 @@ function registerHandlers(): void {
           message:
             'Archivio cambiato durante il ripristino. Ripeti l’operazione.',
         });
-      const result = await restoreArchiveCopy(staged, destination.filePath);
+      const result = await restoreArchiveCopy(staged, destination, true);
       if (!result.ok) return result;
       if (current !== previous) {
         closeArchive(result.value.path);
@@ -406,7 +454,10 @@ function registerHandlers(): void {
       }
       const remembered = await rememberArchive(result.value.path);
       if (!remembered.ok) {
-        closeArchive(result.value.path);
+        if (previous?.path === result.value.path) {
+          replaceCurrent(result.value);
+          window?.webContents.send(IPC.appArchiveReloaded, result.value);
+        } else closeArchive(result.value.path);
         return remembered;
       }
       replaceCurrent(result.value);
@@ -539,7 +590,7 @@ function registerHandlers(): void {
       const restoringSession = current;
       const choice = await dialog.showMessageBox({
         type: 'warning',
-        title: 'Ripristina copia di sicurezza',
+        title: 'Ripristina versione precedente',
         message: 'Ripristinare la precedente versione valida?',
         detail:
           'Cash conserverà copie datate sia del file corrente sia del backup e creerà una nuova identità archivio.',

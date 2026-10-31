@@ -70,17 +70,18 @@ app.whenReady().then(async () => {
   const key = async (keyCode) => { win.webContents.sendInputEvent({ type: 'keyDown', keyCode }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode }); await wait(120); };
   const info = () => js('Checks.info()');
   const click = (label) => js('Checks.click(' + JSON.stringify(label) + ')');
-  const point = (selector) => js('(() => { const e = document.querySelector(' + JSON.stringify(selector) + '); if (!e) throw new Error("Missing target " + ' + JSON.stringify(selector) + '); const r = e.getBoundingClientRect(); return { x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) }; })()');
-  const handle = (id) => '[data-quote-item="' + id + '"] [data-quote-drag-handle]';
+  const point = (selector) => js('(() => { const e = document.querySelector(' + JSON.stringify(selector) + '); if (!e) throw new Error("Missing target " + ' + JSON.stringify(selector) + '); const r = e.getBoundingClientRect(); return e.hasAttribute("data-quote-drag-row") ? {x: Math.round(r.x + 4), y: Math.round(r.y + 3)} : { x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) }; })()');
+  const row = (id) => '[data-quote-item="' + id + '"] [data-quote-drag-row]';
   const drop = (id) => '[data-quote-drop="' + id + '"]';
   const drag = async (source, target, cancel = false) => {
     await idle();
-    await until('(() => { const e = document.querySelector(' + JSON.stringify(source) + '); const r = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2)); })()', 'unobstructed drag handle');
+    await until('(() => { const e = document.querySelector(' + JSON.stringify(source) + '); const r = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2)); })()', 'unobstructed draggable row');
     const start = await point(source);
     let end = await point(target);
     win.webContents.sendInputEvent({ type: 'mouseMove', ...start });
     win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...start });
-    await until('!!document.querySelector("[data-dnd-dragging]")', 'pointer drag activation');
+    win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', x: start.x + 8, y: start.y });
+    await until('!!document.querySelector("[data-dnd-dragging]")', 'pointer drag activation from ' + source);
     for (let i=1; i<=12; i++) {
       win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', x: Math.round(start.x+(end.x-start.x)*i/12), y: Math.round(start.y+(end.y-start.y)*i/12) });
       await wait(20);
@@ -145,72 +146,90 @@ app.whenReady().then(async () => {
     await js('Checks.renameLastContainer("Sede Sud")');
     let snapshot = await info();
     const [north, south] = snapshot.quote.layout.filter(e => e.kind === 'container').map(e => e.id);
-    await drag(handle(ids[0]), drop(north));
+    await drag(row(ids[0]), drop(north));
     snapshot = await info();
     assert.deepEqual(snapshot.quote.layout.find(e => e.id === north).itemIds, [ids[0]], 'drop into empty container');
     assert.equal(snapshot.unchangedItems && snapshot.unchangedTotal, true);
     const beforeCancel = JSON.stringify(snapshot.quote);
     const writes = snapshot.writes;
-    await drag(handle(ids[1]), drop(south), true);
+    await drag(row(ids[1]), drop(south), true);
     snapshot = await info();
     assert.equal(JSON.stringify(snapshot.quote), beforeCancel, 'escape must not mutate');
     assert.equal(snapshot.writes, writes, 'escape must not save');
-    await drag(handle(ids[1]), drop(north));
+    await drag(row(ids[1]), drop(north));
     assert.deepEqual((await info()).quote.layout.find(e => e.id === north).itemIds, [ids[0], ids[1]], 'drop after cancellation');
     // Reorder two children with the keyboard, then cancel another keyboard drag.
-    await js('document.querySelector(' + JSON.stringify(handle(ids[1])) + ').focus()');
+    await js('document.querySelector(' + JSON.stringify(row(ids[1])) + ').focus()');
     await key('Space'); await key('Up'); await key('Space');
     snapshot = await info();
     assert.deepEqual(snapshot.quote.layout.find(e => e.id === north).itemIds, [ids[1], ids[0]], 'keyboard within container');
-    assert.equal(await js('document.activeElement?.hasAttribute("data-quote-drag-handle")'), true, 'focus stays on handle');
+    assert.equal(await js('document.activeElement?.hasAttribute("data-quote-drag-row")'), true, 'focus stays on row');
     const beforeKeyboardCancel = JSON.stringify(snapshot.quote);
     await key('Space'); await key('Down'); await key('Escape');
     assert.equal(JSON.stringify((await info()).quote), beforeKeyboardCancel);
-    await drag(handle(ids[0]), drop(south));
+    await drag(row(ids[0]), drop(south));
     snapshot = await info();
     assert.deepEqual(snapshot.quote.layout.find(e => e.id === north).itemIds, [ids[1]], 'between containers');
     assert.deepEqual(snapshot.quote.layout.find(e => e.id === south).itemIds, [ids[0]]);
-    await drag(handle(ids[0]), drop('quote-root'));
+    await drag(row(ids[0]), drop('quote-root'));
     snapshot = await info();
     assert.deepEqual(snapshot.quote.layout.at(-1), { kind: 'item', itemId: ids[0] }, 'back to root');
     const beforeNoop = snapshot.writes;
-    await drag(handle(ids[0]), handle(ids[0]));
+    await drag(row(ids[0]), row(ids[0]));
     assert.equal((await info()).writes, beforeNoop, 'no-op must not save');
     await js('const invalid = document.createElement("div"); invalid.id = "invalid-drop"; invalid.style.cssText = "position:fixed;right:0;bottom:0;width:20px;height:20px"; document.body.append(invalid)');
     const beforeInvalid = JSON.stringify((await info()).quote);
-    await drag(handle(ids[0]), '#invalid-drop');
+    await drag(row(ids[0]), '#invalid-drop');
     assert.equal(JSON.stringify((await info()).quote), beforeInvalid, 'invalid drop must not mutate');
     assert.equal((await info()).writes, beforeNoop, 'invalid drop must not save');
     await js('document.querySelector("#invalid-drop").remove()');
-    // A simple item exposes price edits directly without duplicate detail rows.
+    // Clicks and movements below the threshold must not start a drag or save.
+    const stationary = await point(row(ids[2]));
+    const beforeClick = (await info()).writes;
+    win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...stationary });
+    win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', x: stationary.x + 2, y: stationary.y });
+    await wait(100);
+    assert.equal(await js('!!document.querySelector("[data-dnd-dragging]")'), false);
+    win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...stationary });
+    assert.equal((await info()).writes, beforeClick);
+    // Moving over editable fields and buttons must not start a row drag.
+    for (const selector of ['#quote-name-' + ids[2], '[aria-label="Cambia tipo riga Firewall"]']) {
+      const control = await point(selector);
+      win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...control });
+      win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', x: control.x + 15, y: control.y });
+      await wait(100);
+      assert.equal(await js('!!document.querySelector("[data-dnd-dragging]")'), false, 'interactive control started row drag');
+      win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, x: control.x + 15, y: control.y });
+    }
+    // The draggable row must not intercept price edits or the card collapse button.
     assert.equal(await js('Array.from(document.querySelectorAll("button")).some(e => e.getAttribute("aria-label") === "Apri o chiudi Firewall")'), false);
     await js('Checks.fill(' + JSON.stringify('#chosen-' + ids[2]) + ', "125,00")');
     await js('document.querySelector(' + JSON.stringify('#chosen-' + ids[2]) + ').dispatchEvent(new FocusEvent("focusout", { bubbles: true })); Checks.settle()');
     assert.equal((await info()).quote.items.find(e => e.id === ids[2]).chosenPrice, '125.00');
-    await js('document.querySelector(' + JSON.stringify(handle(ids[2])) + ').focus()');
+    await js('document.querySelector(' + JSON.stringify(row(ids[2])) + ').focus()');
     const beforeKeyboard = (await info()).domOrder;
     await key('Space'); await key('Down'); await key('Space');
     snapshot = await info();
     assert.notDeepEqual(snapshot.domOrder, beforeKeyboard, 'keyboard reorder');
     assert.equal(snapshot.valid, true);
-    await drag('[data-quote-container="' + south + '"] [data-quote-drag-handle]', '[data-quote-container="' + north + '"] [data-quote-drag-handle]');
+    await drag('[data-quote-container="' + south + '"] [data-quote-drag-row]', '[data-quote-container="' + north + '"] [data-quote-drag-row]');
     snapshot = await info();
     assert(snapshot.quote.layout.findIndex(e => e.id === south) < snapshot.quote.layout.findIndex(e => e.id === north), 'container reorder');
     // Container actions open the inline picker without choosing a template.
-    await js('document.querySelector(' + JSON.stringify('[data-quote-container="' + north + '"] button[data-slot=dropdown-menu-trigger]') + ').click(); Checks.settle()');
+    await js('document.querySelector(' + JSON.stringify('[data-quote-container="' + north + '"] [data-quote-empty-row] button') + ').click(); Checks.settle()');
     await click('Da template');
     await js('document.querySelector("[data-quote-template-editor]").scrollIntoView(); Checks.settle()');
     await js('Checks.choose("#quote-template-picker", "Rete completa")');
-    await click('Inserisci 2 voci');
+    await click('Inserisci riga da template');
     snapshot = await info();
-    assert.deepEqual(snapshot.quote.layout.find(e => e.id === north).itemIds.map(id => snapshot.quote.items.find(e => e.id === id).name), ['Switch', 'LAN', 'Wi-Fi']);
+    assert.deepEqual(snapshot.quote.layout.find(e => e.id === north).itemIds.map(id => snapshot.quote.items.find(e => e.id === id).name), ['Switch', 'Rete completa']);
     await click('Elimina contenitore Sede Nord');
     await click('Annulla');
     assert((await info()).quote.layout.some(e => e.id === north));
     await click('Elimina contenitore Sede Nord');
     await click('Elimina contenitore');
     snapshot = await info();
-    assert.equal(snapshot.quote.items.length, 5);
+    assert.equal(snapshot.quote.items.length, 4);
     assert.equal(snapshot.quote.layout.some(e => e.id === north), false);
     assert.equal(snapshot.valid, true);
     for (const width of [375, 768, 1200]) {
@@ -224,7 +243,7 @@ app.whenReady().then(async () => {
     // used to leave collision detection stuck on an earlier sortable row.
     await win.webContents.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: 4 });
     await js('Checks.settle()');
-    await drag(handle(ids[0]), drop(south));
+    await drag(row(ids[0]), drop(south));
     assert.deepEqual((await info()).quote.layout.find(e => e.id === south).itemIds, [ids[0]]);
     await win.webContents.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: 1 });
     if (process.env.CASH_UI_SCREENSHOTS) {
@@ -233,19 +252,20 @@ app.whenReady().then(async () => {
       writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-containers.png'), (await win.webContents.capturePage()).toPNG());
     }
     await js('Checks.setReadOnly(true)');
-    assert.equal(await js('Array.from(document.querySelectorAll("[data-quote-drag-handle]")).every(e => e.disabled)'), true);
+    assert.equal(await js('Array.from(document.querySelectorAll("[data-quote-drag-row]")).every(e => e.getAttribute("aria-disabled") === "true" && e.tabIndex === -1)'), true);
     await js('Checks.setReadOnly(false)');
-    // Leaving an inline edit for the dedicated handle must commit the edit and
+    // Leaving an inline edit for the row must commit the edit and
     // still allow that same gesture to move the row.
     await js('Checks.fill(' + JSON.stringify('#quote-name-' + ids[0]) + ', "Router aggiornato")');
     assert.equal(await js('document.activeElement?.id'), 'quote-name-' + ids[0], 'inline field focused before pointer drag');
-    await drag(handle(ids[0]), drop('quote-root'));
+    await drag(row(ids[0]), drop('quote-root'));
     assert.equal((await info()).quote.items.find(item => item.id === ids[0]).name, 'Router aggiornato');
     assert.deepEqual((await info()).quote.layout.at(-1), { kind: 'item', itemId: ids[0] });
     const beforeSwitch = (await info()).quote;
-    // Switch context during a pending pointer operation.
-    const start = await point(handle(ids[2]));
+    // Switch context during an active pointer operation.
+    const start = await point(row(ids[2]));
     win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...start });
+    win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', x: start.x + 8, y: start.y });
     await wait(250);
     await js('Checks.switchArchive()');
     win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...start });
@@ -259,6 +279,18 @@ app.whenReady().then(async () => {
       writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-operational-table.png'), (await win.webContents.capturePage()).toPNG());
     }
     assert.equal(await js('Checks.runTypeConversionChecks()'), 'TYPE_CONVERSION_UI_OK');
+    assert.equal(await js('Checks.runContainerCreationChecks()'), 'CONTAINER_CREATION_UI_OK');
+    assert.equal(await js('Checks.runQuickEntryChecks()'), 'QUICK_ENTRY_UI_OK');
+    if (process.env.CASH_UI_SCREENSHOTS) {
+      await js('Checks.setup()');
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+      await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1200, height: 1400, deviceScaleFactor: 1, mobile: false });
+      for (const dark of [false, true]) {
+        await js('document.documentElement.classList.toggle("dark", ' + dark + '); window.scrollTo(0, 0); Checks.settle()');
+        const rect = await js('(() => {const table = document.querySelector("[data-quote-layout]").getBoundingClientRect(); const totals = document.querySelector("[data-quote-totals]").getBoundingClientRect(); const y = Math.max(0, Math.floor(table.top) - 48); return {x: Math.floor(table.left), y, width: Math.floor(table.width), height: Math.ceil(totals.bottom - y) + 8};})()');
+        writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-editor-' + (dark ? 'dark' : 'light') + '.png'), (await win.webContents.capturePage(rect)).toPNG());
+      }
+    }
     process.stdout.write('LAYOUT_UI_OK\n', () => app.exit(0));
   } catch(error) {
     process.stderr.write(String(error) + '\n' + JSON.stringify(await info().catch(() => ({}))) + '\n' + await js('document.body.innerText').catch(() => ''), () => app.exit(1));

@@ -115,6 +115,8 @@ Le copie vengono verificate e quelle precedenti vengono conservate secondo il nu
 
 Se la destinazione non è più disponibile, consulta lo stato del backup e seleziona o ricrea la cartella prima di riprovare. Il ripristino modifica l'archivio utilizzato: scegli con attenzione la copia.
 
+Per ripristinare un file SQLite usa **Archivio → Ripristina da backup** e seleziona solo il file sorgente. Dopo la conferma, Cash lo ripristina automaticamente in `%APPDATA%\cash-desktop\Cash.sqlite`, conservando una copia datata dell'archivio già presente. Non occorre scegliere una destinazione.
+
 ## 7. Verifica finale
 
 Prima di iniziare un preventivo controlla di avere:

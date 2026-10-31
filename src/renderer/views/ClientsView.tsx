@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/ui/data-table';
 import { useFicClients } from '@/hooks/use-fic-clients';
 import { CreateFicClientDialog } from '@/components/CreateFicClientDialog';
 import {
@@ -19,13 +20,7 @@ import {
   Users,
   UserRound,
 } from 'lucide-react';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-} from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
   CashDocument,
   FicClientDetails,
@@ -67,14 +62,6 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 
@@ -307,15 +294,6 @@ export function ClientsView({
     void loadClients(query);
   };
 
-  const openFromKeyboard = (
-    event: KeyboardEvent<HTMLTableRowElement>,
-    client: FicClientSnapshot,
-  ) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    void openDetails(client);
-  };
-
   return (
     <>
       <Card>
@@ -406,103 +384,86 @@ export function ClientsView({
             </Button>
           ) : null}
           {integrationReady && (loading || clients.length > 0) ? (
-            <Table aria-busy={loading}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Partita IVA</TableHead>
-                  <TableHead>Sedi Cash</TableHead>
-                  <TableHead>Sorgente</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading && clients.length === 0
-                  ? Array.from({ length: 5 }, (_, index) => (
-                      <TableRow key={index} aria-hidden="true">
-                        <TableCell>
-                          <Skeleton className="h-5 w-44" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-5 w-28" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-5 w-12" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-5 w-10" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="size-7" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  : clients.map((client) => {
-                      const siteCount = sitesForClient(doc, client).length;
-                      return (
-                        <TableRow
-                          key={client.clientId}
-                          className="cursor-pointer"
-                          tabIndex={0}
-                          aria-label={`Apri dettagli di ${client.displayName}`}
+            <DataTable
+              preferencesKey="clients"
+              data={clients}
+              loading={loading}
+              longTableThreshold={Infinity}
+              getRowKey={(client) => client.clientId}
+              emptyMessage="Nessun cliente."
+              onRowClick={(client) => void openDetails(client)}
+              getRowAriaLabel={(client) =>
+                `Apri dettagli di ${client.displayName}`
+              }
+              columns={[
+                {
+                  id: 'name',
+                  header: 'Cliente',
+                  value: (client) => client.displayName,
+                  className: 'font-medium',
+                },
+                {
+                  id: 'vat',
+                  header: 'Partita IVA',
+                  value: (client) => client.vatNumber,
+                  cell: (client) => client.vatNumber ?? 'Non indicata',
+                  className: 'text-muted-foreground',
+                },
+                {
+                  id: 'sites',
+                  header: 'Sedi Cash',
+                  value: (client) => sitesForClient(doc, client).length,
+                  cell: (client) => (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Building2 className="size-4 text-muted-foreground" />
+                      {sitesForClient(doc, client).length}
+                    </span>
+                  ),
+                },
+                {
+                  id: 'source',
+                  header: 'Sorgente',
+                  value: () => 'FIC',
+                  cell: () => <Badge variant="outline">FIC</Badge>,
+                },
+                {
+                  id: 'actions',
+                  header: 'Azioni',
+                  value: () => undefined,
+                  sortable: false,
+                  configurable: false,
+                  cell: (client) => (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Azioni per ${client.displayName}`}
+                          />
+                        }
+                      >
+                        <MoreHorizontal />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-52">
+                        <DropdownMenuItem
                           onClick={() => void openDetails(client)}
-                          onKeyDown={(event) => openFromKeyboard(event, client)}
                         >
-                          <TableCell className="font-medium">
-                            {client.displayName}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {client.vatNumber ?? 'Non indicata'}
-                          </TableCell>
-                          <TableCell>
-                            <span className="inline-flex items-center gap-1.5">
-                              <Building2 className="size-4 text-muted-foreground" />
-                              {siteCount}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">FIC</Badge>
-                          </TableCell>
-                          <TableCell
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label={`Azioni per ${client.displayName}`}
-                                  />
-                                }
-                              >
-                                <MoreHorizontal />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-52"
-                              >
-                                <DropdownMenuItem
-                                  onClick={() => void openDetails(client)}
-                                >
-                                  <UserRound aria-hidden="true" />
-                                  Apri scheda cliente
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => setSiteEditor({ client })}
-                                >
-                                  <MapPinPlus aria-hidden="true" />
-                                  Aggiungi una sede
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-              </TableBody>
-            </Table>
+                          <UserRound aria-hidden="true" />
+                          Apri scheda cliente
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setSiteEditor({ client })}
+                        >
+                          <MapPinPlus aria-hidden="true" />
+                          Aggiungi una sede
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ),
+                },
+              ]}
+            />
           ) : null}
           {integrationReady &&
           loaded &&
@@ -859,37 +820,46 @@ export function ClientDetailsDialog({
                 </h3>
                 {quotes.length ? (
                   <div className="overflow-hidden rounded-xl border">
-                    <Table>
-                      <TableHeader className="bg-muted/30">
-                        <TableRow>
-                          <TableHead>Preventivo</TableHead>
-                          <TableHead>Data</TableHead>
-                          <TableHead />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {quotes.map((quote) => (
-                          <TableRow key={quote.id}>
-                            <TableCell className="font-medium whitespace-normal [overflow-wrap:anywhere]">
-                              {quoteTitle(quote)}
-                            </TableCell>
-                            <TableCell>
-                              {clientDateValue(quote.date, false)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                aria-label={`Apri ${quoteTitle(quote)}`}
-                                onClick={() => onOpenQuote(quote.id)}
-                              >
-                                Apri <ArrowRight aria-hidden="true" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <DataTable
+                      preferencesKey="client-quotes"
+                      data={quotes}
+                      getRowKey={(quote) => quote.id}
+                      emptyMessage="Nessun risultato."
+                      columns={[
+                        {
+                          id: 'title',
+                          header: 'Preventivo',
+                          value: (quote) => quoteTitle(quote),
+                          className:
+                            'font-medium whitespace-normal [overflow-wrap:anywhere]',
+                          cell: (quote) => quoteTitle(quote),
+                        },
+                        {
+                          id: 'date',
+                          header: 'Data',
+                          value: (quote) => quote.date,
+                          cell: (quote) => clientDateValue(quote.date, false),
+                        },
+                        {
+                          id: 'actions',
+                          header: 'Azioni',
+                          value: () => undefined,
+                          sortable: false,
+                          configurable: false,
+                          className: 'text-right',
+                          cell: (quote) => (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              aria-label={`Apri ${quoteTitle(quote)}`}
+                              onClick={() => onOpenQuote(quote.id)}
+                            >
+                              Apri <ArrowRight aria-hidden="true" />
+                            </Button>
+                          ),
+                        },
+                      ]}
+                    />
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-4">

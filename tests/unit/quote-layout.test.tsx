@@ -93,6 +93,452 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('disposizione dei preventivi', () => {
+  it.each([false, true])(
+    'inserisce una voce da catalogo nel punto scelto senza creare righe intermedie (contenitore: %s)',
+    async (inContainer) => {
+      const { controller, current, state } = setup();
+      const original = structuredClone(current().items);
+      let containerId: string | undefined;
+      if (inContainer) {
+        containerId = meta().id;
+        controller().saveLayout([
+          {
+            kind: 'container',
+            id: containerId,
+            name: 'Servizi',
+            itemIds: original.map((item) => item.id),
+          },
+        ]);
+      }
+      const entry = {
+        ...meta(),
+        kind: 'expense' as const,
+        description: 'Licenza',
+        amount: '12.00',
+      };
+      expect(
+        await controller().addReusable(
+          { containerId, afterItemId: original[0]!.id },
+          entry,
+        ),
+      ).toBe(true);
+      const inserted = current().items.at(-1)!;
+      expect(current().items).toHaveLength(4);
+      expect(inserted).toMatchObject({
+        name: 'Licenza',
+        subItems: [{ kind: 'expense', amount: '12.00' }],
+      });
+      expect(orderedQuoteItems(current()).map((item) => item.id)).toEqual([
+        original[0]!.id,
+        inserted.id,
+        original[1]!.id,
+        original[2]!.id,
+      ]);
+      expect(current().items.slice(0, 3)).toEqual(original);
+      await state.save();
+    },
+  );
+
+  it('inserisce un template accorpato nella nuova riga senza sostituire le voci esistenti', async () => {
+    const { controller, current, state, template } = setup();
+    state.document!.catalog.templates[0]!.items.forEach((item) => {
+      item.subItems = [
+        { ...meta(), kind: 'time', description: item.name, minutes: 30 },
+      ];
+    });
+    const original = structuredClone(current().items);
+    const source = structuredClone(state.document!.catalog.templates[0]);
+    expect(
+      await controller().insertTemplate(
+        template.id,
+        {},
+        {},
+        undefined,
+        original[0]!.id,
+        undefined,
+        true,
+      ),
+    ).toBe(true);
+    const inserted = current().items.at(-1)!;
+    expect(current().items).toHaveLength(4);
+    expect(inserted).toMatchObject({
+      name: 'Rete',
+      subItems: [
+        { description: 'LAN', minutes: 30 },
+        { description: 'Wi-Fi', minutes: 30 },
+      ],
+    });
+    expect(orderedQuoteItems(current()).map((item) => item.id)).toEqual([
+      original[0]!.id,
+      inserted.id,
+      original[1]!.id,
+      original[2]!.id,
+    ]);
+    expect(current().items.slice(0, 3)).toEqual(original);
+    expect(state.document!.catalog.templates[0]).toEqual(source);
+    await state.save();
+  });
+  it('nomina la trasferta con partenza e destinazione senza sovrascrivere un nome personalizzato', async () => {
+    const { controller, current, state } = setup();
+    const departure = { ...meta(), name: 'Magazzino' };
+    const destination = { ...meta(), name: 'Cliente' };
+    const other = { ...meta(), name: 'Sede secondaria' };
+    state.document!.sites.push(departure, destination, other);
+    state.document!.settings.defaultDepartureSiteId = departure.id;
+    current().mainSite = { sourceId: destination.id, name: destination.name };
+    const row = current().items[0]!;
+    row.name = 'Trasferta - Magazzino <--> Cliente';
+    row.subItems = [];
+    const input = {
+      description: '',
+      departureSiteId: departure.id,
+      destinationSiteId: destination.id,
+      roundTrip: true,
+      occurrences: 1,
+    };
+    expect(await controller().saveTravel(row.id, input)).toBe(true);
+    let saved = current().items[0]!;
+    expect(saved.name).toBe('Trasferta - Magazzino <--> Cliente');
+    expect(saved.subItems[0]!.description).toBe(saved.name);
+    const subId = saved.subItems[0]!.id;
+    expect(
+      await controller().saveTravel(
+        row.id,
+        { ...input, destinationSiteId: other.id },
+        subId,
+      ),
+    ).toBe(true);
+    saved = current().items[0]!;
+    expect(saved.name).toBe('Trasferta - Magazzino <--> Sede secondaria');
+    expect(saved.subItems).toHaveLength(1);
+    expect(saved.subItems[0]!.id).toBe(subId);
+    expect(controller().renameItem(row.id, 'Consegna urgente')).toBe(true);
+    expect(
+      await controller().saveTravel(
+        row.id,
+        { ...input, description: 'Ritiro materiale' },
+        subId,
+      ),
+    ).toBe(true);
+    expect(current().items[0]!.name).toBe('Consegna urgente');
+    expect(current().items[0]!.subItems[0]!.description).toBe(
+      'Ritiro materiale',
+    );
+    expect(current().items[0]!.chosenPrice).toBe('100.00');
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+  });
+
+  it.each([false, true])(
+    'duplica una riga con varianti subito dopo l’originale (nel contenitore: %s)',
+    async (grouped) => {
+      const { controller, current, state, container } = setup();
+      const source = current().items[0]!;
+      const option = {
+        ...meta(),
+        name: 'Base',
+        subItems: [
+          { kind: 'time' as const, description: 'Attività', minutes: 30 },
+        ],
+      };
+      const group = {
+        ...meta(),
+        name: 'Configurazione',
+        options: [option],
+        defaultOptionId: option.id,
+      };
+      source.variantGroups = [group];
+      source.variantSelections = [{ groupId: group.id, optionId: option.id }];
+      source.subItems[0]!.variantOwner = {
+        groupId: group.id,
+        optionId: option.id,
+        definitionIndex: 0,
+      };
+      source.subItems[0]!.manuallyModified = true;
+      source.subItems.push({
+        ...meta(),
+        kind: 'travel',
+        description: 'Trasferta',
+        roundTrip: true,
+        occurrences: 2,
+      });
+      if (grouped) {
+        controller().addContainer();
+        expect(
+          controller().saveLayout([
+            { ...container(), itemIds: [source.id] },
+            ...current()
+              .items.slice(1)
+              .map((item) => ({ kind: 'item' as const, itemId: item.id })),
+          ]),
+        ).toBe(true);
+      }
+      const before = structuredClone(current().items[0]!);
+      const id = controller().duplicateItem(source.id);
+      expect(id).toBeTypeOf('string');
+      const copy = current().items.find((item) => item.id === id)!;
+      expect(current().items).toHaveLength(4);
+      expect(
+        orderedQuoteItems(current())
+          .slice(0, 2)
+          .map((item) => item.id),
+      ).toEqual([source.id, id]);
+      if (grouped) expect(container().itemIds).toEqual([source.id, id]);
+      expect(copy).toMatchObject({
+        name: before.name,
+        chosenPrice: before.chosenPrice,
+      });
+      expect(copy.subItems.map((sub) => sub.id)).not.toEqual(
+        before.subItems.map((sub) => sub.id),
+      );
+      const copiedGroup = copy.variantGroups[0]!;
+      expect(copiedGroup.id).not.toBe(group.id);
+      expect(copiedGroup.options[0]!.id).not.toBe(option.id);
+      expect(copiedGroup.defaultOptionId).toBe(copiedGroup.options[0]!.id);
+      expect(copy.variantSelections).toEqual([
+        { groupId: copiedGroup.id, optionId: copiedGroup.options[0]!.id },
+      ]);
+      expect(copy.subItems[0]).toMatchObject({
+        minutes: 60,
+        manuallyModified: true,
+        variantOwner: {
+          groupId: copiedGroup.id,
+          optionId: copiedGroup.options[0]!.id,
+          definitionIndex: 0,
+        },
+      });
+      expect(copy.subItems[1]).toMatchObject({
+        kind: 'travel',
+        roundTrip: true,
+        occurrences: 2,
+      });
+      expect(controller().renameItem(copy.id, 'Copia modificata')).toBe(true);
+      expect(current().items[0]).toEqual(before);
+      expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+      const count = current().items.length;
+      state.session!.readOnly = true;
+      expect(controller().duplicateItem(source.id)).toBe(false);
+      expect(current().items).toHaveLength(count);
+    },
+  );
+
+  it('cambia tipo conservando identità, dati commerciali e posizione della voce', async () => {
+    const { controller, current, state } = setup();
+    const original = structuredClone(current().items[0]!);
+    const layout = quoteLayout(current());
+    expect(await controller().changeItemKind(original.id, 'expense')).toBe(
+      true,
+    );
+    let item = current().items[0]!;
+    expect(item).toMatchObject({
+      id: original.id,
+      name: original.name,
+      chosenPrice: original.chosenPrice,
+      createdAt: original.createdAt,
+    });
+    expect(item.subItems).toHaveLength(1);
+    expect(item.subItems[0]).toMatchObject({
+      kind: 'expense',
+      description: original.subItems[0]!.description,
+    });
+    expect(item.subItems[0]).not.toHaveProperty('amount');
+    expect(item.subItems[0]).not.toHaveProperty('minutes');
+    expect(quoteLayout(current())).toEqual(layout);
+    expect(await controller().changeItemKind(original.id, 'travel')).toBe(true);
+    expect(current().items[0]!.subItems[0]).toMatchObject({
+      kind: 'travel',
+      roundTrip: true,
+      occurrences: 1,
+    });
+    expect(await controller().changeItemKind(original.id, 'generic')).toBe(
+      true,
+    );
+    item = current().items[0]!;
+    expect(item.subItems).toEqual([]);
+    expect(item.variantGroups).toEqual([]);
+    expect(item.chosenPrice).toBe(original.chosenPrice);
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+    await state.save();
+  });
+
+  it('sostituisce dal catalogo senza aggiungere sottorighe residue o perdere il prezzo', async () => {
+    const { controller, current, state } = setup();
+    const original = structuredClone(current().items[0]!);
+    const option = { ...meta(), name: 'A', subItems: [] };
+    const group = { ...meta(), name: 'Scelta', options: [option] };
+    current().items[0]!.variantGroups = [group];
+    current().items[0]!.variantSelections = [
+      { groupId: group.id, optionId: option.id },
+    ];
+    const entry = {
+      ...meta(),
+      kind: 'expense' as const,
+      description: 'Licenza',
+      amount: '25.00',
+    };
+    expect(await controller().addReusable(original.id, entry, {}, true)).toBe(
+      true,
+    );
+    const item = current().items[0]!;
+    expect(item.subItems).toHaveLength(1);
+    expect(item.subItems[0]).toMatchObject({
+      kind: 'expense',
+      description: 'Licenza',
+      amount: '25.00',
+    });
+    expect(item).toMatchObject({
+      name: entry.description,
+      chosenPrice: original.chosenPrice,
+      variantGroups: [],
+      variantSelections: [],
+    });
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+    await state.save();
+  });
+
+  it('riunisce un template in una sola riga conservando dati commerciali e varianti indipendenti', async () => {
+    const { controller, current, state } = setup();
+    const original = structuredClone(current().items[0]!);
+    const layout = quoteLayout(current());
+    const template = state.document!.catalog.templates[0]!;
+    for (const [index, item] of template.items.entries()) {
+      item.subItems = [
+        { ...meta(), kind: 'time', description: item.name, minutes: 30 },
+      ];
+      const option = {
+        ...meta(),
+        name: 'Base',
+        subItems: [
+          {
+            kind: 'expense' as const,
+            description: item.name,
+            amount: `${index + 1}.00`,
+          },
+        ],
+      };
+      item.variantGroups = [
+        { ...meta(), name: 'Configurazione', options: [option] },
+      ];
+    }
+    const source = structuredClone(template);
+    const choices = Object.fromEntries(
+      template.items.map((item) => [
+        item.variantGroups[0]!.id,
+        item.variantGroups[0]!.options[0]!.id,
+      ]),
+    );
+    expect(
+      await controller().applyTemplateToItem(
+        original.id,
+        template.id,
+        choices,
+        {},
+      ),
+    ).toBe(true);
+    const item = current().items[0]!;
+    expect(current().items).toHaveLength(3);
+    expect(item).toMatchObject({
+      id: original.id,
+      name: template.name,
+      chosenPrice: original.chosenPrice,
+      createdAt: original.createdAt,
+    });
+    expect(quoteLayout(current())).toEqual(layout);
+    expect(item.subItems.map((sub) => sub.description)).toEqual([
+      'LAN',
+      'LAN',
+      'Wi-Fi',
+      'Wi-Fi',
+    ]);
+    expect(item.variantGroups.map((group) => group.name)).toEqual([
+      'LAN · Configurazione',
+      'Wi-Fi · Configurazione',
+    ]);
+    expect(item.variantSelections).toHaveLength(2);
+    for (const [index, group] of item.variantGroups.entries()) {
+      expect(group.id).not.toBe(source.items[index]!.variantGroups[0]!.id);
+      expect(item.variantSelections[index]).toEqual({
+        groupId: group.id,
+        optionId: group.options[0]!.id,
+      });
+      expect(item.subItems[index * 2 + 1]!.variantOwner).toMatchObject({
+        groupId: group.id,
+        optionId: group.options[0]!.id,
+      });
+    }
+    expect(state.document!.catalog.templates[0]).toEqual(source);
+    expect(cashDocumentSchema.safeParse(state.document).success).toBe(true);
+    await state.save();
+  });
+
+  it('non sostituisce parzialmente una riga quando manca una scelta del template', async () => {
+    const { controller, current, state } = setup();
+    const before = structuredClone(current());
+    const template = state.document!.catalog.templates[0]!;
+    template.items[1]!.variantGroups = [
+      {
+        ...meta(),
+        name: 'Configurazione',
+        options: [{ ...meta(), name: 'Base', subItems: [] }],
+      },
+    ];
+    expect(
+      await controller().applyTemplateToItem(
+        before.items[0]!.id,
+        template.id,
+        {},
+        {},
+      ),
+    ).toBe(false);
+    expect(current()).toEqual(before);
+  });
+
+  it('non applica un template se il contesto cambia durante la preparazione', async () => {
+    const { controller, current, state } = setup();
+    const before = structuredClone(current());
+    const template = state.document!.catalog.templates[0]!;
+    template.items[1]!.subItems = [
+      {
+        ...meta(),
+        kind: 'travel',
+        description: 'Viaggio',
+        roundTrip: true,
+        occurrences: 1,
+      },
+    ];
+    const operation = controller().applyTemplateToItem(
+      before.items[0]!.id,
+      template.id,
+      {},
+      {},
+    );
+    state.session!.readOnly = true;
+    expect(await operation).toBe(false);
+    expect(current()).toEqual(before);
+    expect(
+      await controller().applyTemplateToItem(
+        before.items[0]!.id,
+        template.id,
+        {},
+        {},
+      ),
+    ).toBe(false);
+  });
+
+  it('non converte una voce se il contesto cambia durante la preparazione', async () => {
+    const { controller, current, state } = setup();
+    const before = structuredClone(current());
+    const operation = controller().changeItemKind(
+      before.items[0]!.id,
+      'travel',
+    );
+    state.session!.readOnly = true;
+    expect(await operation).toBe(false);
+    expect(current()).toEqual(before);
+    expect(
+      await controller().changeItemKind(before.items[0]!.id, 'expense'),
+    ).toBe(false);
+  });
+
   it('crea e completa righe tecniche vuote conservando identità, ordine e prezzo indipendente', async () => {
     const { controller, current, state } = setup();
     const baseline = calculateQuote(current().items, '50.00');

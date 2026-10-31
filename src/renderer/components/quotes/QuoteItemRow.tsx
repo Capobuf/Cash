@@ -1,6 +1,7 @@
 import { SelectField } from '@/components/ui/selection-field';
 import {
   BookOpen,
+  Copy,
   Pencil,
   ChevronDown,
   ListChecks,
@@ -14,7 +15,7 @@ import {
   Text,
   AlertCircle,
 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode, type ComponentProps } from 'react';
 import { calculateItem } from '../../../domain/calculations';
 import { canReuseQuoteSubItem } from '../../../domain/catalog';
 import { parseDecimalInput } from '../../../domain/decimal';
@@ -48,10 +49,20 @@ import { decimalInputValue, eur, hours, moneyInputValue } from '@/lib/format';
 import type { DeleteTarget } from '../../types';
 import { InlineQuoteInput } from './InlineQuoteInput';
 import { QuoteTypeMenu } from './QuoteTypeMenu';
-import type { QuickKind } from './QuoteQuickAdd';
+import { quoteKinds, type QuickKind } from './QuoteQuickAdd';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 
 export const quoteColumns =
-  'grid grid-cols-[88px_minmax(260px,1fr)_90px_100px_120px_120px_72px] items-center gap-1 px-2';
+  'grid grid-cols-[60px_minmax(260px,1fr)_90px_100px_120px_120px_72px] items-center gap-x-3 gap-y-1 px-2';
 
 export function QuoteTableHeader() {
   return (
@@ -71,7 +82,13 @@ export function QuoteTableHeader() {
         <div
           key={label}
           role="columnheader"
-          className={index > 1 && index < 6 ? 'text-right' : undefined}
+          className={
+            index > 1 && index < 6
+              ? 'pr-3 text-right'
+              : index === 1
+                ? 'px-3'
+                : undefined
+          }
         >
           <span className={index === 0 || index === 6 ? 'sr-only' : undefined}>
             {label}
@@ -171,7 +188,7 @@ export interface QuoteItemActions {
     input: SimpleSubInput,
     subId?: string,
   ) => boolean;
-  editSub: (itemId: string, subId: string) => void;
+  editSub: (itemId: string, subId?: string) => void;
   saveSub: (itemId: string, subId: string) => void;
   changeVariant: (
     itemId: string,
@@ -180,8 +197,14 @@ export interface QuoteItemActions {
   ) => void;
   addSub: (itemId: string, kind: 'time' | 'expense' | 'travel') => void;
   addCatalog: (itemId: string) => void;
+  duplicate: (itemId: string) => void;
+  changeKind: (itemId: string, kind: QuickKind | 'catalog') => void;
   requestDelete: (target: DeleteTarget) => void;
 }
+
+export type QuoteRowDragProps = ComponentProps<'div'> & {
+  'data-quote-drag-row'?: boolean;
+};
 
 export function QuoteItemRow({
   item,
@@ -190,7 +213,7 @@ export function QuoteItemRow({
   doc,
   actions,
   missingTargets = [],
-  dragHandle,
+  dragProps,
   disabled = false,
   onInsertAfter,
   onInsertTemplateAfter,
@@ -204,7 +227,7 @@ export function QuoteItemRow({
   doc: CashDocument;
   actions: QuoteItemActions;
   missingTargets?: MissingAnalysisTarget[];
-  dragHandle?: ReactNode;
+  dragProps?: QuoteRowDragProps;
   disabled?: boolean;
   onInsertAfter?: () => void;
   onInsertTemplateAfter?: () => void;
@@ -212,6 +235,7 @@ export function QuoteItemRow({
   expanded?: boolean;
   onExpandedChange?: (open: boolean) => void;
 }) {
+  const [pendingKind, setPendingKind] = useState<QuickKind | 'catalog'>();
   const analysis = calculateItem(item, hourly);
   const displayName = item.name.trim() || 'Voce senza nome';
   const [localExpanded, setLocalExpanded] = useState(false);
@@ -260,6 +284,12 @@ export function QuoteItemRow({
           : item.subItems.length || item.variantGroups.length
             ? 'Voce complessa'
             : 'Riga generica';
+  const requestKindChange = (nextKind: QuickKind | 'catalog') => {
+    if (disabled) return;
+    if (item.subItems.length || item.variantGroups.length)
+      setPendingKind(nextKind);
+    else actions.changeKind(item.id, nextKind);
+  };
   const saveDuration = (value: string) => {
     const parsed = value.trim() ? parseDuration(value) : undefined;
     return (
@@ -290,6 +320,7 @@ export function QuoteItemRow({
     >
       <div
         role="row"
+        {...dragProps}
         id={
           simple
             ? sub
@@ -297,15 +328,19 @@ export function QuoteItemRow({
               : `quote-technical-${item.id}`
             : undefined
         }
-        tabIndex={simple ? -1 : undefined}
+        tabIndex={dragProps?.tabIndex ?? (simple ? -1 : undefined)}
         aria-describedby={
-          missingInline ? `quote-missing-${item.id}` : undefined
+          [
+            dragProps?.['aria-describedby'],
+            missingInline ? `quote-missing-${item.id}` : undefined,
+          ]
+            .filter(Boolean)
+            .join(' ') || undefined
         }
         data-quote-parent={hasChildren || undefined}
-        className={`${quoteColumns} min-h-12 border-b outline-none ${hasChildren ? 'bg-primary/8 ring-1 ring-inset ring-primary/20 hover:bg-primary/12' : 'hover:bg-muted/30'} ${missingInline ? 'ring-2 ring-inset ring-primary' : ''}`}
+        className={`${quoteColumns} min-h-12 border-b py-1 outline-none ${dragProps?.className ?? ''} ${hasChildren ? 'bg-muted/40 hover:bg-muted/50' : 'hover:bg-muted/20'} ${missingInline ? 'ring-2 ring-inset ring-primary' : ''}`}
       >
         <div role="cell" className="flex items-center gap-1">
-          {dragHandle}
           <QuoteTypeMenu
             label={`riga ${displayName}`}
             typeLabel={typeLabel}
@@ -319,6 +354,11 @@ export function QuoteItemRow({
             }
             hasTemplates={doc.catalog.templates.length > 0}
             onGeneric={() => actions.makeGeneric(item)}
+            onCatalog={() => requestKindChange('catalog')}
+            hasCatalog={Boolean(
+              doc.catalog.subItems.length || doc.catalog.templates.length,
+            )}
+            onComplexChange={(kind) => requestKindChange(kind)}
             onTemplate={() => actions.replaceWithTemplate(item)}
             onChange={(kind, expected) =>
               actions.changeType(item.id, kind, expected)
@@ -354,14 +394,14 @@ export function QuoteItemRow({
               disabled={disabled}
               onCommit={(name) => actions.rename(item.id, name)}
             />
-            {sub?.kind === 'travel' ? (
+            {sub?.kind === 'travel' || (!sub && kind === 'travel') ? (
               <Button
                 variant="ghost"
                 size="icon-xs"
                 disabled={disabled}
                 aria-label={`Configura trasferta di ${displayName}`}
                 title="Configura trasferta"
-                onClick={() => actions.editSub(item.id, sub.id)}
+                onClick={() => actions.editSub(item.id, sub?.id)}
               >
                 <Pencil />
               </Button>
@@ -405,7 +445,7 @@ export function QuoteItemRow({
           ) : analysis.minutes === undefined ? (
             ''
           ) : (
-            hours(analysis.minutes)
+            <span className="px-3">{hours(analysis.minutes)}</span>
           )}
         </div>
         <div role="cell" className="text-right text-sm tabular-nums">
@@ -431,13 +471,13 @@ export function QuoteItemRow({
           ) : analysis.expenses === undefined ? (
             ''
           ) : (
-            eur(analysis.expenses)
+            <span className="px-3">{eur(analysis.expenses)}</span>
           )}
         </div>
         <div
           role="cell"
           aria-label="Valore teorico"
-          className="flex flex-wrap items-center justify-end gap-x-1 text-right text-sm tabular-nums"
+          className="flex flex-wrap items-center justify-end gap-x-1 pr-3 text-right text-sm tabular-nums"
         >
           {analysis.theoreticalValue === undefined
             ? ''
@@ -571,6 +611,15 @@ export function QuoteItemRow({
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="size-8 justify-center p-0"
+                aria-label={`Duplica ${displayName}`}
+                title="Duplica riga"
+                disabled={disabled}
+                onClick={() => actions.duplicate(item.id)}
+              >
+                <Copy />
+              </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
                 className="size-8 justify-center p-0"
@@ -743,6 +792,41 @@ export function QuoteItemRow({
           </div>
         ) : null}
       </CollapsibleContent>
+      <AlertDialog
+        open={Boolean(pendingKind)}
+        onOpenChange={(open) => {
+          if (!open) setPendingKind(undefined);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambiare tipo di riga?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Passando a{' '}
+              {pendingKind === 'catalog'
+                ? 'una voce del catalogo'
+                : quoteKinds.find((entry) => entry.kind === pendingKind)?.label}
+              , i dati tecnici, le sottorighe e le varianti di “{displayName}”
+              saranno sostituiti.{' '}
+              {pendingKind === 'catalog'
+                ? 'La riga prenderà il nome della voce scelta; prezzo scelto e posizione resteranno invariati. La sostituzione avverrà solo dopo aver confermato la voce del catalogo.'
+                : 'Nome, prezzo scelto e posizione resteranno invariati.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={disabled}
+              onClick={() => {
+                if (pendingKind) actions.changeKind(item.id, pendingKind);
+                setPendingKind(undefined);
+              }}
+            >
+              Cambia tipo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Collapsible>
   );
 }
@@ -800,7 +884,7 @@ function QuoteSubRow({
           ? `variant-${item.id}-${sub.variantOwner.groupId}-label`
           : undefined
       }
-      className={`${quoteColumns} min-h-10 border-b bg-muted/15 outline-none hover:bg-muted/30 ${missing ? 'ring-2 ring-inset ring-primary' : ''}`}
+      className={`${quoteColumns} min-h-12 border-b bg-muted/10 py-1 outline-none hover:bg-muted/20 ${missing ? 'ring-2 ring-inset ring-primary' : ''}`}
     >
       <div
         role="cell"
@@ -877,7 +961,7 @@ function QuoteSubRow({
         ) : analysis.minutes === undefined ? (
           ''
         ) : (
-          hours(analysis.minutes)
+          <span className="px-3">{hours(analysis.minutes)}</span>
         )}
       </div>
       <div role="cell" className="text-right text-sm tabular-nums">
@@ -892,12 +976,12 @@ function QuoteSubRow({
         ) : analysis.expenses === undefined ? (
           ''
         ) : (
-          eur(analysis.expenses)
+          <span className="px-3">{eur(analysis.expenses)}</span>
         )}
       </div>
       <div
         role="cell"
-        className="flex flex-wrap items-center justify-end gap-x-1 text-right text-sm tabular-nums"
+        className="flex flex-wrap items-center justify-end gap-x-1 pr-3 text-right text-sm tabular-nums"
       >
         {analysis.theoreticalValue === undefined
           ? ''

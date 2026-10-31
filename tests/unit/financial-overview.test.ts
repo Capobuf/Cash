@@ -244,7 +244,7 @@ describe('panoramica finanziaria unificata', () => {
       /Saldo bancario di riferimento|Modifica saldo bancario|Disponibilità effettiva|Inserisci il saldo reale|Spese bancarie/,
     );
     expect(html).toContain('Ordina per Voce');
-    expect(html).toContain('Colonne');
+    expect(html).toContain('Configura colonne');
     expect(html).not.toContain('<details');
     for (const label of [
       'Uscite dal conto',
@@ -867,6 +867,7 @@ describe('panoramica finanziaria unificata', () => {
     }));
     const html = renderToStaticMarkup(
       createElement(DataTable<Row>, {
+        preferencesKey: 'test-financial',
         data: rows,
         columns: [
           { id: 'name', header: 'Nome', value: (row) => row.name },
@@ -877,7 +878,7 @@ describe('panoramica finanziaria unificata', () => {
       }),
     );
     expect(html).toContain('aria-label="Ordina per Nome"');
-    expect(html).toContain('Colonne');
+    expect(html).toContain('Configura colonne');
     expect(html).toContain('Cerca nella tabella');
     expect(html).toContain('Filtra la ricerca per colonna');
     expect(html).toContain('Righe per pagina');

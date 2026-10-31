@@ -19,7 +19,8 @@ import {
   QuoteVariantRow,
   QuoteVariantSelect,
 } from './QuoteItemRow';
-import { Fragment, useState } from 'react';
+import { Fragment, useState, type ComponentProps } from 'react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { templateRequiresTravel } from '../../../domain/catalog';
 import {
   type CashDocument,
@@ -46,6 +47,7 @@ import { eur, hours } from '@/lib/format';
 
 export function CatalogPickerEditor({
   itemId,
+  replaceItem = false,
   doc,
   quote,
   disabled,
@@ -53,6 +55,7 @@ export function CatalogPickerEditor({
   onAdd,
 }: {
   itemId: string;
+  replaceItem?: boolean;
   doc: CashDocument;
   quote: Quote;
   disabled: boolean;
@@ -77,7 +80,9 @@ export function CatalogPickerEditor({
     <form
       role="rowgroup"
       data-quote-catalog-editor
-      aria-label="Aggiungi dal catalogo"
+      aria-label={
+        replaceItem ? 'Sostituisci dal catalogo' : 'Aggiungi dal catalogo'
+      }
       aria-busy={busy}
       onSubmit={async (event) => {
         event.preventDefault();
@@ -127,8 +132,12 @@ export function CatalogPickerEditor({
             type="submit"
             size="icon-sm"
             disabled={disabled || busy || !complete}
-            aria-label="Aggiungi dal catalogo"
-            title="Aggiungi dal catalogo"
+            aria-label={
+              replaceItem ? 'Sostituisci dal catalogo' : 'Aggiungi dal catalogo'
+            }
+            title={
+              replaceItem ? 'Sostituisci dal catalogo' : 'Aggiungi dal catalogo'
+            }
           >
             {busy ? <Spinner /> : <Check />}
           </Button>
@@ -190,18 +199,69 @@ export function CatalogPickerEditor({
   );
 }
 
+// Only main rows use this selector. Subrow insertion keeps CatalogPickerEditor.
+export function CatalogRowEditor({
+  onTemplate,
+  ...props
+}: Omit<ComponentProps<typeof CatalogPickerEditor>, 'replaceItem'> & {
+  onTemplate: ComponentProps<typeof InsertTemplateEditor>['onInsert'];
+}) {
+  return (
+    <div role="row">
+      <div role="cell" aria-colspan={7}>
+        <Tabs
+          defaultValue={
+            props.doc.catalog.subItems.length ? 'subitems' : 'templates'
+          }
+          className="space-y-2 border-b py-2"
+        >
+          <TabsList className="mx-3" aria-label="Contenuto dal catalogo">
+            <TabsTrigger
+              value="subitems"
+              disabled={!props.doc.catalog.subItems.length}
+            >
+              Voci riutilizzabili
+            </TabsTrigger>
+            <TabsTrigger
+              value="templates"
+              disabled={!props.doc.catalog.templates.length}
+            >
+              Template
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="subitems">
+            <CatalogPickerEditor {...props} replaceItem />
+          </TabsContent>
+          <TabsContent value="templates">
+            <InsertTemplateEditor
+              doc={props.doc}
+              quote={props.quote}
+              disabled={props.disabled}
+              onClose={props.onClose}
+              onInsert={onTemplate}
+              replaceItem
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
 export function InsertTemplateEditor({
+  replaceItem = false,
+  singleRow = false,
   doc,
   quote,
   disabled,
   onClose,
   onInsert,
-  replacing = false,
 }: {
+  replaceItem?: boolean;
+  singleRow?: boolean;
   doc: CashDocument;
   quote: Quote;
   disabled: boolean;
-  replacing?: boolean;
   onClose: () => void;
   onInsert: (
     templateId: string,
@@ -233,14 +293,14 @@ export function InsertTemplateEditor({
     <section
       data-quote-template-editor
       aria-label={
-        replacing ? 'Sostituisci riga con template' : 'Inserisci template'
+        replaceItem ? 'Applica template alla riga' : 'Inserisci template'
       }
       aria-busy={busy}
       className="space-y-3 border-b bg-muted/10 py-3"
     >
       <div className="flex items-center gap-3 px-3">
         <h4 className="shrink-0 text-sm font-medium">
-          {replacing ? 'Sostituisci riga con template' : 'Inserisci template'}
+          {replaceItem ? 'Applica template alla riga' : 'Inserisci template'}
         </h4>
         {template ? (
           <span className="text-xs text-muted-foreground">
@@ -248,11 +308,17 @@ export function InsertTemplateEditor({
           </span>
         ) : null}
       </div>
-      {replacing ? (
+      {replaceItem ? (
         <p className="px-3 text-sm text-muted-foreground">
-          Alla conferma, nome, sottorighe e varianti attuali saranno sostituiti
-          dalle voci del template. La posizione resterà invariata e il prezzo
-          scelto sarà conservato sulla prima voce.
+          Tutti i dati tecnici e le varianti del template saranno riuniti in
+          questa riga principale, che prenderà il nome del template. Prezzo
+          scelto e posizione resteranno invariati.
+        </p>
+      ) : null}
+      {singleRow ? (
+        <p className="px-3 text-sm text-muted-foreground">
+          Le voci del template saranno riunite in una sola riga principale, con
+          tutte le relative varianti.
         </p>
       ) : null}
       <div className="px-3">
@@ -340,9 +406,7 @@ export function InsertTemplateEditor({
           Annulla
         </Button>
         <Button
-          disabled={
-            disabled || !template || !template.items.length || !complete || busy
-          }
+          disabled={disabled || !template?.items.length || !complete || busy}
           onClick={async () => {
             if (!template?.items.length || !complete || disabled || busy)
               return;
@@ -357,12 +421,16 @@ export function InsertTemplateEditor({
         >
           {busy ? <Spinner aria-hidden="true" /> : null}
           {busy
-            ? 'Inserimento…'
-            : replacing
-              ? 'Sostituisci riga'
-              : template
-                ? `Inserisci ${template.items.length} ${template.items.length === 1 ? 'voce' : 'voci'}`
-                : 'Inserisci template'}
+            ? replaceItem
+              ? 'Applicazione…'
+              : 'Inserimento…'
+            : replaceItem
+              ? 'Applica template alla riga'
+              : singleRow
+                ? 'Inserisci riga da template'
+                : template
+                  ? `Inserisci ${template.items.length} ${template.items.length === 1 ? 'voce' : 'voci'}`
+                  : 'Inserisci template'}
         </Button>
       </div>
     </section>

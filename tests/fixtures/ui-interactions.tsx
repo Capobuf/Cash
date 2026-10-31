@@ -743,8 +743,85 @@ export async function runUiChecks() {
         !button('Spese').hasAttribute('data-active'),
       'Expense parent and current page must not both appear selected',
     );
+    await act(async () => appState.save());
+    let selectedRestores = 0;
+    let previousRestores = 0;
+    window.cash.backup.restore = async () => {
+      selectedRestores++;
+      return err({ code: 'CANCELLED', message: 'Selezione annullata.' });
+    };
+    window.cash.archive.restoreBackup = async () => {
+      previousRestores++;
+      return err({ code: 'CANCELLED', message: 'Ripristino annullato.' });
+    };
+    await click(find('[aria-label="Azioni archivio"]'));
+    const menuItem = (label: string) => {
+      const element = [
+        ...document.querySelectorAll<HTMLElement>('[role=menuitem]'),
+      ].find((entry) => entry.textContent?.trim() === label);
+      check(element, 'Missing archive action: ' + label);
+      return element!;
+    };
+    await click(menuItem('Ripristina da backup'));
+    check(
+      selectedRestores === 1 && previousRestores === 0,
+      'File restore invoked automatic previous-version restore',
+    );
+    await click(find('[aria-label="Azioni archivio"]'));
+    await click(menuItem('Ripristina versione precedente'));
+    check(
+      selectedRestores === 1 && previousRestores === 1,
+      'Previous-version restore is not available separately',
+    );
     await render(null);
     results.push('navigation');
+
+    const listDoc = createEmptyDocument();
+    const listed = addQuote(listDoc);
+    listed.customTitle = 'Preventivo con clic singolo';
+    const listState = new AppState();
+    listState.acceptNativeSession(session(listDoc));
+    const openedQuotes: string[] = [];
+    const deletedQuotes: string[] = [];
+    await render(
+      <QuotesView
+        doc={listDoc}
+        appState={listState}
+        hasToken={false}
+        setActiveQuoteId={(id) => {
+          if (id) openedQuotes.push(id);
+        }}
+        requestDelete={(target) => {
+          if (target.kind === 'quote') deletedQuotes.push(target.id);
+        }}
+      />,
+    );
+    await click(find('tbody td:first-child'));
+    check(
+      openedQuotes.length === 1 && openedQuotes[0] === listed.id,
+      'Single click did not open the quote',
+    );
+    await click(find('[aria-label="Azioni Preventivo con clic singolo"]'));
+    const quoteActions = [
+      ...document.querySelectorAll<HTMLElement>('[role=menuitem]'),
+    ];
+    check(
+      quoteActions.length === 1 &&
+        quoteActions[0]!.textContent?.trim() === 'Elimina' &&
+        quoteActions[0]!.querySelector('svg'),
+      'Quote actions must contain only delete with a trash icon',
+    );
+    await click(quoteActions[0]!);
+    check(
+      openedQuotes.length === 1 &&
+        deletedQuotes.length === 1 &&
+        deletedQuotes[0] === listed.id,
+      'Delete action opened the quote or requested deletion more than once',
+    );
+    await key(find('tbody tr'), 'Enter');
+    check(openedQuotes.length === 2, 'Quote row is not keyboard accessible');
+    await render(null);
+    results.push('quote-list');
 
     const helpDoc = structuredClone(doc);
     helpDoc.profiles[0]!.confirmed = true;
@@ -835,6 +912,7 @@ export async function runUiChecks() {
     }));
     await render(
       <DataTable
+        preferencesKey="test-pagination"
         data={rows}
         columns={[{ id: 'name', header: 'Nome', value: (row) => row.name }]}
         getRowKey={(row) => row.id}
@@ -868,6 +946,160 @@ export async function runUiChecks() {
     check(
       document.querySelectorAll('tbody tr').length === 55,
       'Page size 100 failed',
+    );
+    await render(null);
+
+    localStorage.removeItem('cash:table-columns:v1:test-columns');
+    localStorage.removeItem('cash:table-columns:v1:test-columns-other');
+    const tableRows = [
+      { id: 'b', name: 'Beta', amount: 20 },
+      { id: 'a', name: 'Alfa', amount: 100 },
+      { id: 'c', name: 'Gamma', amount: 3 },
+    ];
+    const configurableTable = (preferencesKey = 'test-columns') => (
+      <DataTable
+        preferencesKey={preferencesKey}
+        data={tableRows}
+        columns={[
+          { id: 'name', header: 'Nome', value: (row) => row.name },
+          { id: 'amount', header: 'Importo', value: (row) => row.amount },
+          {
+            id: 'actions',
+            header: 'Azioni',
+            value: () => 'Apri',
+            sortable: false,
+            configurable: false,
+          },
+        ]}
+        getRowKey={(row) => row.id}
+        emptyMessage="Vuoto"
+      />
+    );
+    const firstCell = () => find('tbody td').textContent;
+    const headers = () =>
+      [...document.querySelectorAll('thead th')]
+        .map((el) => el.textContent)
+        .join('|');
+    await render(configurableTable());
+    check(
+      find('[aria-label="Configura colonne"]').closest('th') ===
+        document.querySelector('thead th:last-child'),
+      'Column control must be in the rightmost header, next to actions',
+    );
+    await click(find('[aria-label="Ordina per Importo"]'));
+    check(firstCell() === 'Gamma', 'Numeric ascending sort failed');
+    await click(find('[aria-label="Ordina per Importo"]'));
+    check(firstCell() === 'Alfa', 'Numeric descending sort failed');
+    await click(find('[aria-label="Ordina per Importo"]'));
+    check(
+      firstCell() === 'Beta',
+      'Third sort click did not restore original order',
+    );
+    await click(find('[aria-label="Ordina per Nome"]'));
+    check(firstCell() === 'Alfa', 'Text sort failed');
+    await click(find('[aria-label="Configura colonne"]'));
+    const amountCheckbox = [...document.querySelectorAll<HTMLElement>('label')]
+      .find((el) => el.textContent === 'Importo')!
+      .querySelector<HTMLElement>('[role=checkbox]')!;
+    await click(amountCheckbox);
+    check(headers() === 'Nome|Azioni', 'Hidden column remains in header');
+    check(
+      document.querySelectorAll('tbody tr:first-child td').length === 2,
+      'Hidden column remains in cells',
+    );
+    check(
+      document.querySelector(
+        '[role=checkbox][aria-disabled="true"], [role=checkbox][disabled]',
+      ),
+      'Last visible data column can be hidden',
+    );
+    await render(null);
+    await render(configurableTable());
+    check(headers() === 'Nome|Azioni', 'Column visibility was not persisted');
+    await render(configurableTable('test-columns-other'));
+    check(
+      headers() === 'Nome|Importo|Azioni',
+      'Preferences leaked to a different table',
+    );
+    await render(configurableTable());
+    await click(find('[aria-label="Configura colonne"]'));
+    await click(button('Ripristina colonne'));
+    check(headers() === 'Nome|Importo|Azioni', 'Reset failed');
+    const settleDrag = async () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+    const handle = find('[aria-label="Sposta colonna Nome"]');
+    handle.focus();
+    await key(handle, ' ');
+    await settleDrag();
+    await key(handle, 'ArrowDown');
+    await settleDrag();
+    await key(handle, ' ');
+    await settleDrag();
+    check(
+      headers() === 'Importo|Nome|Azioni',
+      'Keyboard drag did not reorder columns',
+    );
+    check(firstCell() === '20', 'Reordered cells do not follow their headers');
+    await render(null);
+    await render(configurableTable());
+    check(
+      headers() === 'Importo|Nome|Azioni',
+      'Column order was not persisted',
+    );
+    await render(null);
+
+    type GroupedRow = { id: string; amount: number; children?: GroupedRow[] };
+    await render(
+      <DataTable<GroupedRow>
+        preferencesKey="test-grouped-columns"
+        data={[
+          {
+            id: 'B',
+            amount: 30,
+            children: [
+              { id: 'B1', amount: 20 },
+              { id: 'B2', amount: 10 },
+            ],
+          },
+          {
+            id: 'A',
+            amount: 10,
+            children: [
+              { id: 'A1', amount: 9 },
+              { id: 'A2', amount: 1 },
+            ],
+          },
+        ]}
+        columns={[
+          { id: 'name', header: 'Nome', value: (row) => row.id },
+          { id: 'amount', header: 'Importo', value: (row) => row.amount },
+        ]}
+        getRowKey={(row) => row.id}
+        getSubRows={(row) => row.children ?? []}
+        emptyMessage="Vuoto"
+      />,
+    );
+    const groupedOrder = () =>
+      [...document.querySelectorAll('tbody tr td:first-child')]
+        .map((el) => el.textContent)
+        .join(',');
+    check(groupedOrder() === 'B,B1,B2,A,A1,A2', 'Default group order changed');
+    await click(find('[aria-label="Ordina per Importo"]'));
+    check(
+      groupedOrder() === 'A,A2,A1,B,B2,B1',
+      'Ascending sorting split category groups',
+    );
+    await click(find('[aria-label="Ordina per Importo"]'));
+    check(
+      groupedOrder() === 'B,B1,B2,A,A1,A2',
+      'Descending sorting split category groups',
+    );
+    await click(find('[aria-label="Ordina per Importo"]'));
+    check(
+      groupedOrder() === 'B,B1,B2,A,A1,A2',
+      'Default group order was not restored',
     );
     await render(null);
 

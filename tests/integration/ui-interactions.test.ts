@@ -119,6 +119,7 @@ app.whenReady().then(async () => {
         'controls',
         'fiscal-form',
         'navigation',
+        'quote-list',
         'contextual-help',
         'table',
         'bank-filters',

@@ -407,14 +407,17 @@ interface AggregateRow {
 }
 
 function AggregateTable({
+  preferencesKey,
   headers,
   rows,
 }: {
+  preferencesKey: string;
   headers: string[];
   rows: AggregateRow[];
 }) {
   return rows.length ? (
     <DataTable<AggregateRow>
+      preferencesKey={preferencesKey}
       data={rows}
       columns={headers.map((header, index) => ({
         id: `column-${index}`,
@@ -466,6 +469,7 @@ export function FinancialAggregates({
           </TabsList>
           <TabsContent value="clients">
             <AggregateTable
+              preferencesKey="financial-clients"
               headers={[
                 'Cliente',
                 'Fatture',
@@ -505,6 +509,7 @@ export function FinancialAggregates({
               attuale riguarda rate ancora aperte.
             </p>
             <AggregateTable
+              preferencesKey="financial-client-payments"
               headers={[
                 'Cliente',
                 'Pagamenti analizzati',
@@ -558,6 +563,7 @@ export function FinancialAggregates({
               costi pianificati Cash restano separati dai documenti FIC.
             </p>
             <AggregateTable
+              preferencesKey="financial-costs"
               headers={[
                 'Categoria',
                 'Documenti',
@@ -594,6 +600,7 @@ export function FinancialAggregates({
           </TabsContent>
           <TabsContent value="suppliers">
             <AggregateTable
+              preferencesKey="financial-suppliers"
               headers={[
                 'Fornitore',
                 'Documenti',

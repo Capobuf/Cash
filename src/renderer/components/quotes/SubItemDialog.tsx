@@ -1,5 +1,6 @@
 import { siteOptions } from '@/lib/site-options';
 import { SearchableSelect } from '@/components/ui/selection-field';
+import { toast } from '@/components/ui/toast';
 import { Route, Plus, ListChecks, ReceiptEuro, Check, X } from 'lucide-react';
 import { quoteColumns } from './QuoteItemRow';
 import { useState, type FormEvent } from 'react';
@@ -9,9 +10,13 @@ import {
 } from '../../../domain/calculations';
 import { parseDuration } from '../../../domain/duration';
 import { parseDecimalInput } from '../../../domain/decimal';
-import { siteHasUsableLocation } from '../../../domain/locations';
+import {
+  defaultTravelName,
+  siteHasUsableLocation,
+} from '../../../domain/locations';
 import {
   type CashDocument,
+  type CashError,
   type QuoteSubItem,
   type FicClientSnapshot,
 } from '../../../domain/model';
@@ -53,6 +58,14 @@ import { formReader, hours, moneyInputValue } from '@/lib/format';
 import type { TravelInput, SimpleSubInput } from '@/hooks/use-quote-controller';
 import type { AppState } from '../../state';
 
+function notifyRouteError(error: CashError) {
+  toast.add({
+    type: 'error',
+    title: error.message,
+    description: error.action,
+  });
+}
+
 export function SubItemDialog({
   sub,
   initialKind,
@@ -88,6 +101,21 @@ export function SubItemDialog({
   const [destinationSiteId, setDestinationSiteId] = useState(
     travel?.destination?.sourceId ?? defaultDestinationSiteId ?? '',
   );
+  const automaticName = defaultTravelName(
+    doc.sites.find((site) => site.id === departureSiteId),
+    doc.sites.find((site) => site.id === destinationSiteId),
+  );
+  const [travelDescription, setTravelDescription] = useState<
+    string | undefined
+  >(() => {
+    const description = sub?.description ?? initialDescription ?? '';
+    const previousName = travel
+      ? defaultTravelName(travel.departure, travel.destination)
+      : automaticName;
+    return !description.trim() || description === previousName
+      ? undefined
+      : description;
+  });
   const [vehicleId, setVehicleId] = useState(
     travel?.vehicleId ?? doc.settings.defaultVehicleId ?? '',
   );
@@ -107,6 +135,8 @@ export function SubItemDialog({
     'route' | 'manual' | undefined
   >(travel?.durationSource);
   const [siteOpen, setSiteOpen] = useState(false);
+  const [editingSiteId, setEditingSiteId] = useState<string>();
+  const editingSite = doc.sites.find((site) => site.id === editingSiteId);
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [confirmRecalculation, setConfirmRecalculation] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -120,7 +150,7 @@ export function SubItemDialog({
       !siteHasUsableLocation(departure) ||
       !siteHasUsableLocation(destination)
     ) {
-      appState.setError({
+      notifyRouteError({
         code: 'MISSING_DATA',
         source: 'OpenRouteService',
         message: 'Partenza e Destinazione devono avere coordinate risolte.',
@@ -136,22 +166,33 @@ export function SubItemDialog({
       return;
     }
     setBusy(true);
-    const result = await window.cash.ors.route({
-      departure: departure.location!.coordinates,
-      destination: destination.location!.coordinates,
-    });
-    if (!result.ok) appState.setError(result.error);
-    else {
+    try {
+      const result = await window.cash.ors.route({
+        departure: departure.location!.coordinates,
+        destination: destination.location!.coordinates,
+      });
+      if (!result.ok) {
+        notifyRouteError(result.error);
+        return;
+      }
       const values = valuesFromRoute(result.value, roundTrip);
-      if (!values.ok) appState.setError(values.error);
+      if (!values.ok) notifyRouteError(values.error);
       else {
         setDistance(values.value.distanceKmPerOccurrence);
         setMinutes(String(values.value.travelMinutesPerOccurrence));
         setDistanceSource('route');
         setDurationSource('route');
       }
+    } catch {
+      notifyRouteError({
+        code: 'IO',
+        message:
+          'Comunicazione con il servizio di calcolo percorso interrotta.',
+        action: 'Riprova a calcolare il percorso.',
+      });
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -376,7 +417,21 @@ export function SubItemDialog({
             <Input
               id="sub-description"
               name="description"
-              defaultValue={sub?.description ?? initialDescription}
+              defaultValue={
+                kind === 'travel'
+                  ? undefined
+                  : (sub?.description ?? initialDescription)
+              }
+              value={
+                kind === 'travel'
+                  ? (travelDescription ?? automaticName)
+                  : undefined
+              }
+              onChange={
+                kind === 'travel'
+                  ? (event) => setTravelDescription(event.target.value)
+                  : undefined
+              }
               autoFocus
               required={kind !== 'travel'}
             />
@@ -428,7 +483,9 @@ export function SubItemDialog({
                   <FieldLabel htmlFor="travel-departure">Partenza</FieldLabel>
                   <SearchableSelect
                     id="travel-departure"
+                    disabled={disabled || busy}
                     value={departureSiteId}
+                    onEditOption={(option) => setEditingSiteId(option.value)}
                     onValueChange={(value) => setDepartureSiteId(value)}
                     options={[
                       { value: '', label: 'Scegli sede' },
@@ -442,7 +499,9 @@ export function SubItemDialog({
                   </FieldLabel>
                   <SearchableSelect
                     id="travel-destination"
+                    disabled={disabled || busy}
                     value={destinationSiteId}
+                    onEditOption={(option) => setEditingSiteId(option.value)}
                     onValueChange={(value) => setDestinationSiteId(value)}
                     options={[
                       { value: '', label: 'Scegli sede' },
@@ -618,6 +677,18 @@ export function SubItemDialog({
           </DialogContent>
         </Dialog>
       )}
+      {editingSite ? (
+        <SiteDialog
+          key={editingSite.id}
+          open
+          site={editingSite}
+          appState={appState}
+          doc={doc}
+          onOpenChange={(open) => {
+            if (!open) setEditingSiteId(undefined);
+          }}
+        />
+      ) : null}
       {siteOpen ? (
         <div role={inline ? 'row' : undefined}>
           <div

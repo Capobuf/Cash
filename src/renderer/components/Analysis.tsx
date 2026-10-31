@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { PartialBadge } from '@/components/PartialBadge';
 import type { PartialMetric } from '@/lib/quote-analysis-navigation';
 import { eur, hours } from '@/lib/format';
-import { quoteColumns } from '@/components/quotes/QuoteItemRow';
 
 type AnalysisValue =
   ReturnType<typeof calculateItem> | ReturnType<typeof calculateQuote>;
@@ -32,62 +31,48 @@ export function Analysis({
       <section
         data-quote-totals
         aria-label="Analisi economica"
-        className="min-w-0 border-t-2 bg-muted/20"
+        className="min-w-0 overflow-hidden rounded-xl border bg-card"
       >
-        <div
-          className="overflow-x-auto"
-          role="region"
-          aria-label="Totali del preventivo"
-          tabIndex={0}
-        >
-          <div
-            role="table"
-            aria-label="Totali del preventivo"
-            className="min-w-[920px]"
-          >
-            <div role="row" className={`${quoteColumns} min-h-20 py-2`}>
-              <div role="cell" />
-              <div role="cell" className="text-sm font-semibold">
-                Totali preventivo
-              </div>
-              <TotalMetric
-                label="Tempo"
-                value={hours(value.minutes)}
-                partial={value.minutes !== undefined && value.minutesPartial}
-                onShowMissing={() => onShowMissing?.('minutes')}
-              />
-              <TotalMetric
-                label="Spese"
-                value={eur(value.expenses)}
-                partial={value.expenses !== undefined && value.expensesPartial}
-                onShowMissing={() => onShowMissing?.('expenses')}
-              />
-              <TotalMetric
-                label="Valore teorico"
-                value={eur(value.theoreticalValue)}
-                partial={value.theoreticalPartial}
-                missing={
-                  value.theoreticalValue === undefined
-                    ? 'Non calcolabile'
-                    : undefined
-                }
-                onShowMissing={() => onShowMissing?.('theoretical')}
-              />
-              <TotalMetric
-                label="Prezzo scelto"
-                value={eur(selected)}
-                partial={'chosenPartial' in value && value.chosenPartial}
-                missing={selected === undefined ? 'Non inserito' : undefined}
-                onShowMissing={() => onShowMissing?.('chosen')}
-              />
-              <div role="cell" />
-            </div>
-          </div>
-        </div>
-        <dl className="flex flex-wrap justify-end gap-x-8 gap-y-2 border-t px-4 py-3 text-sm">
+        <h3 className="border-b px-5 py-4 text-sm font-medium">
+          Totali preventivo
+        </h3>
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-6 p-5 lg:grid-cols-4">
+          <TotalMetric
+            label="Tempo"
+            value={hours(value.minutes)}
+            partial={value.minutes !== undefined && value.minutesPartial}
+            onShowMissing={() => onShowMissing?.('minutes')}
+          />
+          <TotalMetric
+            label="Spese"
+            value={eur(value.expenses)}
+            partial={value.expenses !== undefined && value.expensesPartial}
+            onShowMissing={() => onShowMissing?.('expenses')}
+          />
+          <TotalMetric
+            label="Valore teorico"
+            value={eur(value.theoreticalValue)}
+            partial={value.theoreticalPartial}
+            missing={
+              value.theoreticalValue === undefined
+                ? 'Non calcolabile'
+                : undefined
+            }
+            onShowMissing={() => onShowMissing?.('theoretical')}
+          />
+          <TotalMetric
+            label="Prezzo scelto"
+            emphasized
+            value={eur(selected)}
+            partial={'chosenPartial' in value && value.chosenPartial}
+            missing={selected === undefined ? 'Non inserito' : undefined}
+            onShowMissing={() => onShowMissing?.('chosen')}
+          />
+        </dl>
+        <dl className="grid gap-4 border-t bg-muted/15 px-5 py-4 text-sm sm:grid-cols-3">
           <div>
             <dt className="text-xs text-muted-foreground">Resa prevista</dt>
-            <dd className="tabular-nums">
+            <dd className="mt-1 tabular-nums">
               {value.yieldPerHour !== undefined
                 ? `${eur(value.yieldPerHour)}/h`
                 : '—'}
@@ -97,7 +82,7 @@ export function Analysis({
             <dt className="text-xs text-muted-foreground">
               Scostamento dall’obiettivo
             </dt>
-            <dd className="tabular-nums">
+            <dd className="mt-1 tabular-nums">
               {value.deviationPercent !== undefined
                 ? `${value.deviationPercent}% · ${Number(value.deviationPercent) >= 0 ? 'Sopra obiettivo' : 'Sotto obiettivo'}`
                 : '—'}
@@ -105,17 +90,19 @@ export function Analysis({
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Tempo coerente</dt>
-            <dd className="tabular-nums">{hours(value.coherentMinutes)}</dd>
+            <dd className="mt-1 tabular-nums">
+              {hours(value.coherentMinutes)}
+            </dd>
           </div>
         </dl>
         {value.deficit ? (
-          <p className="px-4 pb-3 text-sm text-destructive">
+          <p className="border-t px-5 py-3 text-sm text-destructive">
             Prezzo inferiore alle spese · Disavanzo previsto:{' '}
             {eur(value.deficit)}. Non esiste un tempo positivo coerente.
           </p>
         ) : null}
         {value.blockers.length ? (
-          <details className="border-t px-4 py-2 text-xs text-muted-foreground">
+          <details className="border-t px-5 py-3 text-xs text-muted-foreground">
             <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring">
               Dati tecnici da completare ({value.blockers.length})
             </summary>
@@ -237,21 +224,33 @@ function TotalMetric({
   partial,
   missing,
   onShowMissing,
+  emphasized = false,
 }: {
   label: string;
   value: string;
   partial?: boolean;
   missing?: string;
   onShowMissing: () => void;
+  emphasized?: boolean;
 }) {
   return (
-    <div role="cell" className="space-y-1 text-right">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold tabular-nums">{value}</p>
+    <div className={`min-w-0 space-y-2 ${emphasized ? 'border-l pl-5' : ''}`}>
+      <dt
+        className={`text-xs ${emphasized ? 'font-medium' : 'text-muted-foreground'}`}
+      >
+        {label}
+      </dt>
+      <dd
+        className={`break-words font-semibold tracking-tight tabular-nums ${emphasized ? 'text-2xl' : 'text-xl'}`}
+      >
+        {value}
+      </dd>
       {partial ? (
-        <PartialBadge label={label} onClick={onShowMissing} />
+        <dd>
+          <PartialBadge label={label} onClick={onShowMissing} />
+        </dd>
       ) : missing ? (
-        <span className="text-xs text-muted-foreground">{missing}</span>
+        <dd className="text-xs text-muted-foreground">{missing}</dd>
       ) : null}
     </div>
   );

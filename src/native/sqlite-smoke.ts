@@ -101,6 +101,16 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
       (await restoreArchiveCopy(staged.path, cleanRestore.path)).ok,
       false,
     );
+    const changedRestore = structuredClone(cleanRestore.document!);
+    changedRestore.settings.fuelTerritory = 'Sicilia';
+    unwrap(
+      await saveArchive(cleanRestore.path, changedRestore, cleanRestore.token),
+    );
+    const replaced = unwrap(
+      await restoreArchiveCopy(staged.path, cleanRestore.path, true),
+    );
+    assert.deepEqual(replaced.document, saved.document);
+    assert.deepEqual(replaced.token, saved.token);
     const db = new DatabaseSync(path, { readOnly: true });
     try {
       assert.equal(
@@ -163,6 +173,7 @@ export async function runSqliteSmoke(directory: string): Promise<void> {
             'manual backup and safe rotation',
             'clean installation restore preserving identity and revision',
             'restore refuses overwrite',
+            'restore into existing default archive preserves identity and revision',
           ],
         },
         null,

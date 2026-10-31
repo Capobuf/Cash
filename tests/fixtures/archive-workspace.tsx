@@ -490,7 +490,7 @@ export async function runWorkspaceChecks() {
     );
     check(row, 'Quote list row missing');
     await act(async () => {
-      row!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      row!.click();
     });
     const savedBeforeCustomerSearch = counts.saves;
     await click('Inserisci template');

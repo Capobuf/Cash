@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/ui/data-table';
 import {
   ArrowLeft,
   Database,
@@ -44,14 +45,6 @@ import {
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 
@@ -150,92 +143,108 @@ export function SettingsView({
               </CardHeader>
               <CardContent>
                 {doc.profiles.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Anno</TableHead>
-                        <TableHead>Revisione</TableHead>
-                        <TableHead>Stato</TableHead>
-                        <TableHead className="w-12" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {[...doc.profiles]
-                        .sort((a, b) => b.year - a.year)
-                        .map((entry) => {
-                          const imported =
-                            ficTaxProfileYear(fic.taxProfile?.acquiredAt) ===
-                            entry.year;
-                          return (
-                            <TableRow key={entry.id}>
-                              <TableCell className="font-medium">
-                                {entry.year}
-                              </TableCell>
-                              <TableCell>{entry.revision}</TableCell>
-                              <TableCell>
-                                <div className="flex gap-1.5">
-                                  <Badge
-                                    variant={
-                                      entry.confirmed ? 'default' : 'secondary'
-                                    }
-                                  >
-                                    {entry.confirmed
-                                      ? 'Confermato'
-                                      : imported
-                                        ? 'Da completare'
-                                        : 'Da verificare'}
-                                  </Badge>
-                                  {imported ? (
-                                    <Badge variant="outline">
-                                      Fatture in Cloud
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger
-                                    render={
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        aria-label={`Azioni profilo ${entry.year}`}
-                                      />
-                                    }
-                                  >
-                                    <MoreHorizontal />
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                      onClick={() => onEditProfile(entry.id)}
-                                    >
-                                      Apri editor
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => onCopyProfile(entry.id)}
-                                    >
-                                      Copia per nuovo anno
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      variant="destructive"
-                                      onClick={() =>
-                                        requestDelete({
-                                          kind: 'profile',
-                                          id: entry.id,
-                                          label: `Profilo ${entry.year}`,
-                                        })
-                                      }
-                                    >
-                                      Elimina
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                    </TableBody>
-                  </Table>
+                  <DataTable
+                    preferencesKey="annual-profiles"
+                    data={[...doc.profiles]
+                      .sort((a, b) => b.year - a.year)
+                      .map((entry) => ({
+                        ...entry,
+                        imported:
+                          ficTaxProfileYear(fic.taxProfile?.acquiredAt) ===
+                          entry.year,
+                      }))}
+                    getRowKey={(entry) => entry.id}
+                    emptyMessage="Nessun risultato."
+                    columns={[
+                      {
+                        id: 'year',
+                        header: 'Anno',
+                        value: (entry) => entry.year,
+                        className: 'font-medium',
+                        cell: (entry) => entry.year,
+                      },
+                      {
+                        id: 'revision',
+                        header: 'Revisione',
+                        value: (entry) => entry.revision,
+                        cell: (entry) => entry.revision,
+                      },
+                      {
+                        id: 'status',
+                        header: 'Stato',
+                        value: (entry) =>
+                          entry.confirmed
+                            ? 'Confermato'
+                            : entry.imported
+                              ? 'Da completare'
+                              : 'Da verificare',
+                        cell: (entry) => (
+                          <div className="flex gap-1.5">
+                            <Badge
+                              variant={
+                                entry.confirmed ? 'default' : 'secondary'
+                              }
+                            >
+                              {entry.confirmed
+                                ? 'Confermato'
+                                : entry.imported
+                                  ? 'Da completare'
+                                  : 'Da verificare'}
+                            </Badge>
+                            {entry.imported ? (
+                              <Badge variant="outline">Fatture in Cloud</Badge>
+                            ) : null}
+                          </div>
+                        ),
+                      },
+                      {
+                        id: 'actions',
+                        header: 'Azioni',
+                        value: () => undefined,
+                        sortable: false,
+                        configurable: false,
+                        cell: (entry) => (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={`Azioni profilo ${entry.year}`}
+                                />
+                              }
+                            >
+                              <MoreHorizontal />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => onEditProfile(entry.id)}
+                              >
+                                Apri editor
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => onCopyProfile(entry.id)}
+                              >
+                                Copia per nuovo anno
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() =>
+                                  requestDelete({
+                                    kind: 'profile',
+                                    id: entry.id,
+                                    label: `Profilo ${entry.year}`,
+                                  })
+                                }
+                              >
+                                Elimina
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ),
+                      },
+                    ]}
+                  />
                 ) : (
                   <div className="grid min-h-56 place-items-center rounded-lg border border-dashed text-center">
                     <div>

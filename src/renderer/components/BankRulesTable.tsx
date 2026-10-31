@@ -1,30 +1,17 @@
 import { SelectField } from '@/components/ui/selection-field';
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import type { BankExpenseRule, CashDocument } from '../../domain/model';
 import {
   bankRuleList,
   type BankRuleMatchFilter,
   type BankRuleSort,
-  type BankRuleSortColumn,
 } from '../lib/bank-rule-list';
 import { BankCategoryCombobox } from '@/components/BankCategoryCombobox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
 
-const columns: { column: BankRuleSortColumn; label: string }[] = [
-  { column: 'text', label: 'Testo riconosciuto' },
-  { column: 'category', label: 'Categoria' },
-  { column: 'matches', label: 'Corrispondenze' },
-];
 const defaultSort: BankRuleSort = { column: 'text', direction: 'ascending' };
 
 export function BankRulesTable({
@@ -41,29 +28,15 @@ export function BankRulesTable({
   const [query, setQuery] = useState('');
   const [categoryId, setCategoryId] = useState('all');
   const [matches, setMatches] = useState<BankRuleMatchFilter>('all');
-  const [sort, setSort] = useState<BankRuleSort>(defaultSort);
   const rows = useMemo(
-    () => bankRuleList(doc, query, categoryId, matches, sort),
-    [doc, query, categoryId, matches, sort],
+    () => bankRuleList(doc, query, categoryId, matches, defaultSort),
+    [doc, query, categoryId, matches],
   );
   const reset = () => {
     setQuery('');
     setCategoryId('all');
     setMatches('all');
-    setSort(defaultSort);
   };
-  const changeSort = (column: BankRuleSortColumn) =>
-    setSort((current) => ({
-      column,
-      direction:
-        current.column === column
-          ? current.direction === 'ascending'
-            ? 'descending'
-            : 'ascending'
-          : column === 'matches'
-            ? 'descending'
-            : 'ascending',
-    }));
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -120,98 +93,79 @@ export function BankRulesTable({
         {rows.length} di {doc.bankExpenseRules.length} regole · Corrispondenze
         su tutti gli anni, incluse le spese escluse dai conteggi.
       </p>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map(({ column, label }) => {
-              const active = sort.column === column;
-              const Icon = !active
-                ? ArrowUpDown
-                : sort.direction === 'ascending'
-                  ? ArrowUp
-                  : ArrowDown;
-              return (
-                <TableHead
-                  key={column}
-                  aria-sort={active ? sort.direction : 'none'}
-                  className={column === 'matches' ? 'text-right' : undefined}
+      <DataTable
+        preferencesKey="bank-rules"
+        initialSort={{ id: 'text', direction: 'asc' }}
+        data={rows}
+        longTableThreshold={Infinity}
+        getRowKey={({ rule }) => rule.id}
+        emptyMessage={
+          doc.bankExpenseRules.length ? (
+            <div className="space-y-3">
+              <p>
+                Nessuna regola corrisponde alla ricerca e ai filtri selezionati.
+              </p>
+              <Button variant="outline" onClick={reset}>
+                Azzera ricerca e filtri
+              </Button>
+            </div>
+          ) : (
+            'Nessuna regola automatica. Puoi crearne una anche dalla lista Movimenti.'
+          )
+        }
+        columns={[
+          {
+            id: 'text',
+            header: 'Testo riconosciuto',
+            value: ({ rule }) => rule.matchText,
+            className: 'whitespace-normal break-words',
+          },
+          {
+            id: 'category',
+            header: 'Categoria',
+            value: (row) => row.categoryLabel,
+            className: 'whitespace-normal',
+          },
+          {
+            id: 'matches',
+            header: 'Corrispondenze',
+            value: (row) => row.count,
+            className: 'text-right',
+            headClassName: 'text-right',
+          },
+          {
+            id: 'actions',
+            header: 'Azioni',
+            value: () => undefined,
+            sortable: false,
+            configurable: false,
+            cell: ({ rule }) => (
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={readOnly}
+                  aria-label={`Modifica regola ${rule.matchText}`}
+                  onClick={() => onEdit(rule)}
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => changeSort(column)}
-                    aria-label={`Ordina per ${label.toLocaleLowerCase('it')}`}
-                  >
-                    {label}
-                    <Icon />
-                  </Button>
-                </TableHead>
-              );
-            })}
-            <TableHead>Azioni</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map(({ rule, categoryLabel, count }) => (
-            <TableRow key={rule.id}>
-              <TableCell className="whitespace-normal break-words">
-                {rule.matchText}
-              </TableCell>
-              <TableCell className="whitespace-normal">
-                {categoryLabel}
-              </TableCell>
-              <TableCell className="text-right">{count}</TableCell>
-              <TableCell>
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={readOnly}
-                    aria-label={`Modifica regola ${rule.matchText}`}
-                    onClick={() => onEdit(rule)}
-                  >
-                    <Pencil />
-                    Modifica
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={readOnly}
-                    aria-label={`Elimina regola ${rule.matchText}`}
-                    onClick={() => onDelete(rule)}
-                  >
-                    <Trash2 />
-                    Elimina
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-          {!rows.length ? (
-            <TableRow>
-              <TableCell
-                colSpan={4}
-                className="py-8 text-center text-muted-foreground"
-              >
-                {doc.bankExpenseRules.length ? (
-                  <div className="space-y-3">
-                    <p>
-                      Nessuna regola corrisponde alla ricerca e ai filtri
-                      selezionati.
-                    </p>
-                    <Button type="button" variant="outline" onClick={reset}>
-                      Azzera ricerca e filtri
-                    </Button>
-                  </div>
-                ) : (
-                  'Nessuna regola automatica. Puoi crearne una anche dalla lista Movimenti.'
-                )}
-              </TableCell>
-            </TableRow>
-          ) : null}
-        </TableBody>
-      </Table>
+                  <Pencil />
+                  Modifica
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={readOnly}
+                  aria-label={`Elimina regola ${rule.matchText}`}
+                  onClick={() => onDelete(rule)}
+                >
+                  <Trash2 />
+                  Elimina
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
