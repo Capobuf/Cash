@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Info, Maximize2, Minimize2 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { buildBankExpenseFlow } from '../../domain/bank-expense-flow';
@@ -25,16 +25,16 @@ import {
   ChartTooltipContent,
 } from '@/components/ui/chart';
 import { Progress } from '@/components/ui/progress';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
 import { eur, formatNumber } from '@/lib/format';
 import { ExpenseCategoryChart } from '@/components/ExpenseCategoryChart';
+
+type CategoryRow = ReturnType<
+  typeof summarizeBankExpenses
+>['categories'][number]['children'][number] & {
+  child?: boolean;
+  children?: CategoryRow[];
+};
 
 const months = [
   'Gen',
@@ -331,60 +331,69 @@ export function BankSummaryView({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Categoria</TableHead>
-                <TableHead className="text-right">Movimenti</TableHead>
-                <TableHead className="text-right">Importo</TableHead>
-                <TableHead className="text-right">% totale</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {summary.categories.map((category) => (
-                <Fragment key={category.id}>
-                  <TableRow className="font-medium">
-                    <TableCell>{category.name}</TableCell>
-                    <TableCell className="text-right">
-                      {category.count}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {eur(category.amount)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatNumber(category.percentage, 1)}%
-                    </TableCell>
-                  </TableRow>
-                  {category.children.map((child) => (
-                    <TableRow key={child.id} className="text-muted-foreground">
-                      <TableCell className="pl-8">{child.name}</TableCell>
-                      <TableCell className="text-right">
-                        {child.count}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {eur(child.amount)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatNumber(child.percentage, 1)}%
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </Fragment>
-              ))}
-              <TableRow>
-                <TableCell>Senza categoria</TableCell>
-                <TableCell className="text-right">
-                  {summary.uncategorized.count}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {eur(summary.uncategorized.amount)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {formatNumber(summary.uncategorized.percentage, 1)}%
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+          <DataTable<CategoryRow>
+            preferencesKey="bank-category-summary"
+            longTableThreshold={Infinity}
+            data={[
+              ...summary.categories.map((category) => ({
+                ...category,
+                children: category.children.map((child) => ({
+                  ...child,
+                  child: true,
+                })),
+              })),
+              {
+                id: 'uncategorized',
+                name: 'Senza categoria',
+                ...summary.uncategorized,
+              },
+            ]}
+            getSubRows={(row) => row.children ?? []}
+            getRowClassName={(row) =>
+              row.child
+                ? 'text-muted-foreground'
+                : row.children
+                  ? 'font-medium'
+                  : undefined
+            }
+            getRowKey={(row) => row.id}
+            emptyMessage="Nessuna categoria."
+            columns={[
+              {
+                id: 'name',
+                header: 'Categoria',
+                value: (row) => row.name,
+                cell: (row) => (
+                  <span className={row.child ? 'pl-6' : undefined}>
+                    {row.name}
+                  </span>
+                ),
+              },
+              {
+                id: 'count',
+                header: 'Movimenti',
+                value: (row) => row.count,
+                className: 'text-right',
+                headClassName: 'text-right',
+              },
+              {
+                id: 'amount',
+                header: 'Importo',
+                value: (row) => Number(row.amount),
+                cell: (row) => eur(row.amount),
+                className: 'text-right tabular-nums',
+                headClassName: 'text-right',
+              },
+              {
+                id: 'percentage',
+                header: '% totale',
+                value: (row) => Number(row.percentage),
+                cell: (row) => <>{formatNumber(row.percentage, 1)}%</>,
+                className: 'text-right',
+                headClassName: 'text-right',
+              },
+            ]}
+          />
         </CardContent>
       </Card>
     </div>

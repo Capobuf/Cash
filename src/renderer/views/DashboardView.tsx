@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/ui/data-table';
 import { useId } from 'react';
 import {
   AlertTriangle,
@@ -29,14 +30,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { dateIt, eur, formatNumber, hours } from '@/lib/format';
 import type { AppState } from '../state';
 
@@ -244,49 +237,66 @@ export function DashboardView({
           </CardHeader>
           <CardContent>
             {doc.quotes.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Preventivo</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead className="text-right">Voci</TableHead>
-                    <TableHead className="w-24" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentQuotes.map((quote) => (
-                    <TableRow key={quote.id}>
-                      <TableCell className="max-w-64 min-w-40 font-medium whitespace-normal">
-                        {quoteTitle(quote)}
-                      </TableCell>
-                      <TableCell className="max-w-48 text-foreground/75 whitespace-normal">
-                        {quote.client?.displayName ?? 'Nessun cliente'}
-                      </TableCell>
-                      <TableCell className="text-xs tabular-nums">
-                        {dateIt(quote.date)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {quote.items.length}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Apri ${quoteTitle(quote)} del ${dateIt(quote.date)}`}
-                          onClick={() => onOpenQuote(quote.id)}
-                        >
-                          Apri{' '}
-                          <ArrowRight
-                            aria-hidden="true"
-                            className="transition-transform duration-200 motion-safe:group-hover/button:translate-x-0.5"
-                          />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <DataTable
+                preferencesKey="recent-quotes"
+                data={recentQuotes}
+                getRowKey={(quote) => quote.id}
+                emptyMessage="Nessun risultato."
+                columns={[
+                  {
+                    id: 'title',
+                    header: 'Preventivo',
+                    value: (quote) => quoteTitle(quote),
+                    className:
+                      'max-w-64 min-w-40 font-medium whitespace-normal',
+                    cell: (quote) => quoteTitle(quote),
+                  },
+                  {
+                    id: 'client',
+                    header: 'Cliente',
+                    value: (quote) => quote.client?.displayName,
+                    className: 'max-w-48 text-foreground/75 whitespace-normal',
+                    cell: (quote) =>
+                      quote.client?.displayName ?? 'Nessun cliente',
+                  },
+                  {
+                    id: 'date',
+                    header: 'Data',
+                    value: (quote) => quote.date,
+                    className: 'text-xs tabular-nums',
+                    cell: (quote) => dateIt(quote.date),
+                  },
+                  {
+                    id: 'items',
+                    header: 'Voci',
+                    value: (quote) => quote.items.length,
+                    headClassName: 'text-right',
+                    className: 'text-right tabular-nums',
+                    cell: (quote) => quote.items.length,
+                  },
+                  {
+                    id: 'actions',
+                    header: 'Azioni',
+                    value: () => undefined,
+                    sortable: false,
+                    configurable: false,
+                    cell: (quote) => (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Apri ${quoteTitle(quote)} del ${dateIt(quote.date)}`}
+                        onClick={() => onOpenQuote(quote.id)}
+                      >
+                        Apri{' '}
+                        <ArrowRight
+                          aria-hidden="true"
+                          className="transition-transform duration-200 motion-safe:group-hover/button:translate-x-0.5"
+                        />
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
             ) : (
               <div className="grid min-h-44 place-items-center rounded-lg border border-dashed bg-muted/30 p-5 text-center">
                 <div className="max-w-sm">

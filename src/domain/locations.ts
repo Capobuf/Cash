@@ -77,6 +77,13 @@ export function snapshotSite(site: Site): SiteSnapshot {
   };
 }
 
+export function defaultTravelName(
+  departure?: Pick<Site, 'name'>,
+  destination?: Pick<Site, 'name'>,
+): string {
+  return `Trasferta - ${departure?.name.trim() || 'Partenza'} <--> ${destination?.name.trim() || 'Destinazione'}`;
+}
+
 export function siteHasUsableLocation(site: Site): boolean {
   if (!site.location) return false;
   if (site.location.inputKind === 'address')

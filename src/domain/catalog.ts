@@ -81,6 +81,37 @@ export function cloneTemplateItem(source: TemplateItem): TemplateItem {
   };
 }
 
+export function cloneQuoteItem(source: QuoteItem): QuoteItem {
+  const copy = { ...structuredClone(source), ...meta() };
+  copy.variantGroups = source.variantGroups.map(copyGroup);
+  const ids = new Map<string, string>();
+  source.variantGroups.forEach((group, index) => {
+    const clonedGroup = copy.variantGroups[index]!;
+    ids.set(group.id, clonedGroup.id);
+    group.options.forEach((option, optionIndex) => {
+      ids.set(option.id, clonedGroup.options[optionIndex]!.id);
+    });
+  });
+  copy.variantSelections = source.variantSelections.map((selection) => ({
+    groupId: ids.get(selection.groupId)!,
+    optionId: ids.get(selection.optionId)!,
+  }));
+  copy.subItems = copy.subItems.map((sub) => ({
+    ...sub,
+    ...meta(),
+    ...(sub.variantOwner
+      ? {
+          variantOwner: {
+            ...sub.variantOwner,
+            groupId: ids.get(sub.variantOwner.groupId)!,
+            optionId: ids.get(sub.variantOwner.optionId)!,
+          },
+        }
+      : {}),
+  }));
+  return copy;
+}
+
 type CompleteQuoteSubItem =
   | (Extract<QuoteSubItem, { kind: 'time' }> & { minutes: number })
   | (Extract<QuoteSubItem, { kind: 'expense' }> & { amount: string })

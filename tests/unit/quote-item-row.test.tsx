@@ -43,6 +43,8 @@ function actions(): QuoteItemActions {
     changeVariant: vi.fn(),
     addSub: vi.fn(),
     addCatalog: vi.fn(),
+    duplicate: vi.fn(),
+    changeKind: vi.fn(),
     requestDelete: vi.fn(),
   };
 }
@@ -184,6 +186,8 @@ describe('azioni della voce del preventivo', () => {
           changeVariant: vi.fn(),
           addSub: vi.fn(),
           addCatalog: vi.fn(),
+          duplicate: vi.fn(),
+          changeKind: vi.fn(),
           requestDelete: vi.fn(),
         }}
       />,

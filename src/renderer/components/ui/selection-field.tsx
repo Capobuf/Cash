@@ -1,4 +1,5 @@
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
+import { Pencil } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from './button';
 import {
@@ -112,9 +113,13 @@ export function SearchableSelect({
   readOnly,
   disabled,
   onValueChange,
+  onEditOption,
   size,
   ...triggerProps
-}: Omit<SelectionProps, 'defaultValue'>) {
+}: Omit<SelectionProps, 'defaultValue'> & {
+  onEditOption?: (option: SelectionOption) => void;
+}) {
+  const [open, setOpen] = useState(false);
   const groups = options.some((option) => option.group)
     ? [...new Set(options.map((option) => option.group ?? ''))].map(
         (label) => ({
@@ -123,13 +128,43 @@ export function SearchableSelect({
         }),
       )
     : undefined;
-  const renderOption = (option: SelectionOption) => (
-    <ComboboxItem key={option.value} value={option} disabled={option.disabled}>
-      {option.label}
-    </ComboboxItem>
-  );
+  const renderOption = (option: SelectionOption) => {
+    const item = (
+      <ComboboxItem
+        key={option.value}
+        value={option}
+        disabled={option.disabled}
+      >
+        {option.label}
+      </ComboboxItem>
+    );
+    return onEditOption && option.value ? (
+      <div key={option.value} className="flex items-center gap-1">
+        {item}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          aria-label={`Modifica ${option.label}`}
+          title="Modifica"
+          disabled={disabled || readOnly || option.disabled}
+          onClick={() => {
+            setOpen(false);
+            onEditOption(option);
+          }}
+        >
+          <Pencil />
+        </Button>
+      </div>
+    ) : (
+      item
+    );
+  };
   return (
     <Combobox<SelectionOption>
+      open={open}
+      onOpenChange={setOpen}
       items={groups ?? options}
       value={options.find((option) => option.value === String(value)) ?? null}
       name={name}

@@ -72,9 +72,11 @@ describe('ricerca, filtri e ordinamento delle regole bancarie', () => {
     expect(
       html.match(/<input[^>]*id="bank-rule-search"[^>]*>/)?.[0],
     ).not.toContain('disabled=""');
-    expect(
-      html.match(/<button[^>]*aria-label="Ordina per categoria"[^>]*>/)?.[0],
-    ).not.toContain('disabled=""');
+    const categorySort = html.match(
+      /<button[^>]*aria-label="Ordina per Categoria"[^>]*>/,
+    )?.[0];
+    expect(categorySort).toBeDefined();
+    expect(categorySort).not.toContain('disabled=""');
   });
   it('cerca testo, percorso categoria e numero di corrispondenze senza mutare l’archivio', () => {
     const { doc } = fixture();

@@ -56,14 +56,7 @@ import {
   InputGroupText,
 } from '@/components/ui/input-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
 import { eur, formReader, moneyInputValue } from '@/lib/format';
 import type { AppState } from '../state';
 
@@ -383,46 +376,69 @@ export function ProfileEditor({
                     Aggiungi festività locale
                   </Button>
                 </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead className="w-12" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {nationalHolidays.map((holiday) => (
-                      <TableRow key={`national-${holiday.date}`}>
-                        <TableCell className="font-medium">
-                          {holiday.name}
-                        </TableCell>
-                        <TableCell>
+                <DataTable
+                  preferencesKey="profile-holidays"
+                  data={[
+                    ...nationalHolidays.map((holiday) => ({
+                      id: `national-${holiday.date}`,
+                      name: holiday.name,
+                      type: 'Nazionale',
+                      date: holiday.date,
+                      displayDate: holiday.date.split('-').reverse().join('/'),
+                      index: undefined as number | undefined,
+                    })),
+                    ...holidays.map((holiday, index) => ({
+                      id: `local-${index}`,
+                      name: holiday.name,
+                      type:
+                        holiday.kind === 'recurring'
+                          ? 'Locale ricorrente'
+                          : 'Locale specifica',
+                      date:
+                        holiday.kind === 'recurring'
+                          ? `${calendarYear}-${String(holiday.month).padStart(2, '0')}-${String(holiday.day).padStart(2, '0')}`
+                          : holiday.date,
+                      displayDate:
+                        holiday.kind === 'recurring'
+                          ? `${String(holiday.day).padStart(2, '0')}/${String(holiday.month).padStart(2, '0')}`
+                          : holiday.date.split('-').reverse().join('/'),
+                      index,
+                    })),
+                  ]}
+                  getRowKey={(row) => row.id}
+                  emptyMessage="Nessuna festività."
+                  columns={[
+                    {
+                      id: 'name',
+                      header: 'Nome',
+                      value: (row) => row.name,
+                      className: 'font-medium',
+                    },
+                    {
+                      id: 'type',
+                      header: 'Tipo',
+                      value: (row) => row.type,
+                      cell: (row) =>
+                        row.index === undefined ? (
                           <Badge variant="outline">Nazionale</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {holiday.date.split('-').reverse().join('/')}
-                        </TableCell>
-                        <TableCell />
-                      </TableRow>
-                    ))}
-                    {holidays.map((holiday, index) => (
-                      <TableRow key={`${holiday.name}-${index}`}>
-                        <TableCell className="font-medium">
-                          {holiday.name}
-                        </TableCell>
-                        <TableCell>
-                          {holiday.kind === 'recurring'
-                            ? 'Locale ricorrente'
-                            : 'Locale specifica'}
-                        </TableCell>
-                        <TableCell>
-                          {holiday.kind === 'recurring'
-                            ? `${String(holiday.day).padStart(2, '0')}/${String(holiday.month).padStart(2, '0')}`
-                            : holiday.date.split('-').reverse().join('/')}
-                        </TableCell>
-                        <TableCell>
+                        ) : (
+                          row.type
+                        ),
+                    },
+                    {
+                      id: 'date',
+                      header: 'Data',
+                      value: (row) => row.date,
+                      cell: (row) => row.displayDate,
+                    },
+                    {
+                      id: 'actions',
+                      header: 'Azioni',
+                      value: () => undefined,
+                      sortable: false,
+                      configurable: false,
+                      cell: ({ index, name }) =>
+                        index === undefined ? null : (
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={
@@ -430,7 +446,7 @@ export function ProfileEditor({
                                   type="button"
                                   variant="ghost"
                                   size="icon-sm"
-                                  aria-label={`Azioni per ${holiday.name}`}
+                                  aria-label={`Azioni per ${name}`}
                                 />
                               }
                             >
@@ -456,11 +472,10 @@ export function ProfileEditor({
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        ),
+                    },
+                  ]}
+                />
               </div>
             </TabsContent>
             <TabsContent value="fiscal" keepMounted className="space-y-4">

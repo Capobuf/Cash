@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/ui/data-table';
 import { useState } from 'react';
 import { FolderOpen, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { BackupConfig, BackupState } from '../../shared/backup';
@@ -21,14 +22,6 @@ import { SelectField } from './ui/selection-field';
 import { Skeleton } from './ui/skeleton';
 import { Spinner } from './ui/spinner';
 import { Switch } from './ui/switch';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table';
 import { toast } from './ui/toast';
 
 const phaseLabels = {
@@ -413,78 +406,97 @@ export function BackupSettingsPanel({ appState }: { appState: AppState }) {
             Verifica file backup
           </Button>
           {backup?.entries.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Dimensione</TableHead>
-                  <TableHead>Revisione</TableHead>
-                  <TableHead>Verifica</TableHead>
-                  <TableHead>Azioni</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {backup.entries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{date(entry.completedAt)}</TableCell>
-                    <TableCell>{size(entry.size)}</TableCell>
-                    <TableCell>{entry.revision}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          entry.verification === 'valid'
-                            ? 'outline'
-                            : 'destructive'
+            <DataTable
+              preferencesKey="backup-history"
+              data={backup.entries}
+              getRowKey={(entry) => entry.id}
+              emptyMessage="Nessun risultato."
+              columns={[
+                {
+                  id: 'date',
+                  header: 'Data',
+                  value: (entry) => entry.completedAt,
+                  cell: (entry) => date(entry.completedAt),
+                },
+                {
+                  id: 'size',
+                  header: 'Dimensione',
+                  value: (entry) => entry.size,
+                  cell: (entry) => size(entry.size),
+                },
+                {
+                  id: 'revision',
+                  header: 'Revisione',
+                  value: (entry) => entry.revision,
+                  cell: (entry) => entry.revision,
+                },
+                {
+                  id: 'verification',
+                  header: 'Verifica',
+                  value: (entry) =>
+                    entry.verification === 'valid'
+                      ? 'Verificato'
+                      : 'Non valido',
+                  cell: (entry) => (
+                    <Badge
+                      variant={
+                        entry.verification === 'valid'
+                          ? 'outline'
+                          : 'destructive'
+                      }
+                    >
+                      {entry.verification === 'valid'
+                        ? 'Verificato'
+                        : 'Non valido'}
+                    </Badge>
+                  ),
+                },
+                {
+                  id: 'actions',
+                  header: 'Azioni',
+                  value: () => undefined,
+                  sortable: false,
+                  configurable: false,
+                  cell: (entry) => (
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() =>
+                          void action(
+                            () => window.cash.backup.verify(entry.id),
+                            'Copia verificata',
+                          )
                         }
                       >
-                        {entry.verification === 'valid'
-                          ? 'Verificato'
-                          : 'Non valido'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            void action(
-                              () => window.cash.backup.verify(entry.id),
-                              'Copia verificata',
-                            )
-                          }
-                        >
-                          Verifica
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy || entry.verification !== 'valid'}
-                          onClick={() =>
-                            void appState.restoreFromBackup(entry.id)
-                          }
-                        >
-                          Ripristina
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            void action(() =>
-                              window.cash.backup.reveal(entry.id),
-                            )
-                          }
-                        >
-                          Mostra nel filesystem
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                        Verifica
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy || entry.verification !== 'valid'}
+                        onClick={() =>
+                          void appState.restoreFromBackup(entry.id)
+                        }
+                      >
+                        Ripristina
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() =>
+                          void action(() => window.cash.backup.reveal(entry.id))
+                        }
+                      >
+                        Mostra nel filesystem
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           ) : (
             <Empty>
               <EmptyHeader>

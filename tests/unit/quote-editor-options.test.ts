@@ -62,7 +62,7 @@ describe('ricerca e sedi dell’editor operativo', () => {
     expect(templateSearchText(template)).not.toContain('inesistente');
   });
 
-  it('distingue sedi omonime, separa il cliente corrente e conserva gli altri clienti nelle trasferte', () => {
+  it('mostra solo le sedi del cliente corrente e quelle senza cliente, distinguendo le sedi omonime', () => {
     const client: FicClientSnapshot = {
       source: 'fatture_in_cloud',
       companyId: '1',
@@ -78,24 +78,29 @@ describe('ricerca e sedi dell’editor operativo', () => {
         address: 'Via Altra 3',
         client: { ...client, companyId: '9', displayName: 'Beta' },
       },
+      {
+        ...meta(),
+        name: 'Ufficio',
+        address: 'Via Altro Cliente 4',
+        client: { ...client, clientId: '3', displayName: 'Gamma' },
+      },
     ];
-    const main = siteOptions(sites, client, true);
-    expect(main.map((option) => option.value)).toEqual([
+    const options = siteOptions(sites, client);
+    expect(options.map((option) => option.value)).toEqual([
       sites[1]!.id,
       sites[0]!.id,
     ]);
-    expect(main.map((option) => option.group)).toEqual([
+    expect(options.map((option) => option.group)).toEqual([
       'Sedi del Cliente selezionato',
       'Altre sedi senza Cliente',
     ]);
-    const all = siteOptions(sites, client);
-    expect(all).toHaveLength(3);
-    expect(new Set(all.map((option) => option.label)).size).toBe(3);
-    expect(all[0]!.label).toContain('Via Cliente 2 · Cliente corrente: Alfa');
-    expect(all[1]!.label).toContain('Via Altra 3 · Cliente: Beta');
-    expect(all[2]!.label).toContain('Senza Cliente');
-    expect(
-      siteOptions(sites, undefined, true).map((option) => option.value),
-    ).toEqual([sites[0]!.id]);
+    expect(new Set(options.map((option) => option.label)).size).toBe(2);
+    expect(options[0]!.label).toContain(
+      'Via Cliente 2 · Cliente corrente: Alfa',
+    );
+    expect(options[1]!.label).toContain('Senza Cliente');
+    expect(siteOptions(sites).map((option) => option.value)).toEqual([
+      sites[0]!.id,
+    ]);
   });
 });

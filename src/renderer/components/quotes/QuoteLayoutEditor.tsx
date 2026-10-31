@@ -1,13 +1,19 @@
-import { DragDropProvider, useDroppable } from '@dnd-kit/react';
+import {
+  DragDropProvider,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+} from '@dnd-kit/react';
+import { PointerActivationConstraints } from '@dnd-kit/dom';
 import { useSortable } from '@dnd-kit/react/sortable';
 import { move } from '@dnd-kit/helpers';
-import { BookOpen, FolderPlus, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { FolderPlus, Trash2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { meta, type Quote, type QuoteLayoutEntry } from '../../../domain/model';
 import { quoteLayout } from '../../../domain/quote-layout';
 import type { QuoteInsertionPoint } from '@/lib/quote-insertion';
-import { QuoteTableHeader } from './QuoteItemRow';
+import { QuoteTableHeader, type QuoteRowDragProps } from './QuoteItemRow';
 import { commitActiveQuoteInput, InlineQuoteInput } from './InlineQuoteInput';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,12 +25,6 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
 
 const ROOT = 'quote-root';
 const groupId = (id?: string) => (id ? `container-${id}` : ROOT);
@@ -36,7 +36,7 @@ interface Props {
   hasTemplates: boolean;
   renderItem: (
     id: string,
-    handle: ReactNode,
+    dragProps: QuoteRowDragProps,
     insertAfter: () => void,
     insertTemplateAfter: () => void,
   ) => ReactNode;
@@ -102,11 +102,13 @@ export function QuoteLayoutEditor(props: Props) {
         </Button>
       </div>
       <p id="quote-drag-help" className="sr-only">
-        Trascina dalla maniglia. Da tastiera: Spazio per iniziare, frecce per
-        spostare, Spazio per confermare, Esc per annullare.
+        Trascina dagli spazi liberi della riga. Da tastiera: seleziona la riga
+        con Tab, Spazio per iniziare, frecce per spostare, Spazio per
+        confermare, Esc per annullare.
       </p>
       <div aria-label="Editor operativo del preventivo">
         <DragDropProvider
+          sensors={rowSensors}
           onDragStart={() => {
             pending.current = quoteLayout(quote);
             commit.current = onSave;
@@ -166,36 +168,53 @@ export function QuoteLayoutEditor(props: Props) {
           }}
         >
           <div data-quote-layout className="space-y-4">
-            {sections.map(({ container, start, ids }) =>
-              container ? (
-                <ContainerCard
-                  key={container.id}
-                  container={container}
-                  index={start}
-                  {...props}
-                />
-              ) : (
+            {sections.map(({ container, start, ids }) => {
+              if (container)
+                return (
+                  <ContainerCard
+                    key={container.id}
+                    container={container}
+                    index={start}
+                    {...props}
+                  />
+                );
+              const insertion = props.renderInsertion(
+                {
+                  afterItemId:
+                    start + ids.length === layout.length
+                      ? undefined
+                      : ids.at(-1),
+                },
+                undefined,
+                `root-${start}`,
+              );
+              return (
                 <section key={`root-${start}`} className="min-w-0">
-                  <div className="py-1 font-semibold">
-                    <InlineQuoteInput
-                      label="Titolo del contenitore iniziale"
-                      value=""
-                      placeholder="Titolo contenitore"
-                      disabled={disabled}
-                      onCommit={(name) => {
-                        if (!name.trim()) return true;
-                        const next = [...layout];
-                        next.splice(start, ids.length, {
-                          kind: 'container',
-                          id: meta().id,
-                          name: name.trim(),
-                          itemIds: ids,
-                        });
-                        return onSave(next);
-                      }}
-                    />
-                  </div>
-                  <QuoteTable label="Voci non raggruppate">
+                  {ids.length > 0 || layout.length === 0 ? (
+                    <div className="py-1 font-semibold">
+                      <InlineQuoteInput
+                        label="Titolo del contenitore iniziale"
+                        value=""
+                        placeholder="Titolo contenitore"
+                        disabled={disabled}
+                        onCommit={(name) => {
+                          if (!name.trim()) return true;
+                          const next = [...layout];
+                          next.splice(start, ids.length, {
+                            kind: 'container',
+                            id: meta().id,
+                            name: name.trim(),
+                            itemIds: ids,
+                          });
+                          return onSave(next);
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <QuoteTable
+                    label="Voci non raggruppate"
+                    compact={!ids.length && layout.length > 0}
+                  >
                     {ids.map((id, index) => (
                       <SortableItem
                         key={id}
@@ -212,23 +231,17 @@ export function QuoteLayoutEditor(props: Props) {
                     {start + ids.length === layout.length ? (
                       <DropZone
                         disabled={disabled}
-                        label="Sposta fuori dai contenitori"
-                      />
-                    ) : null}
-                    {props.renderInsertion(
-                      {
-                        afterItemId:
-                          start + ids.length === layout.length
-                            ? undefined
-                            : ids.at(-1),
-                      },
-                      undefined,
-                      `root-${start}`,
+                        label="Voci fuori dai contenitori"
+                      >
+                        {insertion}
+                      </DropZone>
+                    ) : (
+                      insertion
                     )}
                   </QuoteTable>
                 </section>
-              ),
-            )}
+              );
+            })}
           </div>
         </DragDropProvider>
       </div>
@@ -239,64 +252,91 @@ export function QuoteLayoutEditor(props: Props) {
 function QuoteTable({
   label,
   children,
+  compact = false,
 }: {
   label: string;
   children: ReactNode;
+  compact?: boolean;
 }) {
   return (
     <div
-      className="overflow-x-auto rounded-md border"
+      className={
+        compact ? 'overflow-x-auto' : 'overflow-x-auto rounded-md border'
+      }
       role="region"
       aria-label={label}
       tabIndex={0}
     >
       <div role="table" aria-label={label} className="min-w-[920px]">
-        <QuoteTableHeader />
+        {compact ? null : <QuoteTableHeader />}
         <div role="rowgroup">{children}</div>
       </div>
     </div>
   );
 }
 
-function Handle({
-  handleRef,
-  label,
-  disabled,
-}: {
-  handleRef: (element: Element | null) => void;
-  label: string;
-  disabled: boolean;
-}) {
-  return (
-    <Button
-      ref={handleRef}
-      variant="ghost"
-      size="icon-sm"
-      disabled={disabled}
-      className="shrink-0 touch-none cursor-grab active:cursor-grabbing"
-      aria-label={label}
-      aria-describedby="quote-drag-help"
-      data-quote-drag-handle
-      onPointerDownCapture={(event) => {
-        // The drag sensor prevents the browser's normal focus change. Commit
-        // an active cell before capturing the guarded layout transaction.
-        let saved = false;
-        flushSync(() => {
-          saved = commitActiveQuoteInput();
-        });
-        if (!saved) {
-          event.preventDefault();
-          event.stopPropagation();
-        } else {
-          // The pointer sensor suppresses native focus changes. Move focus to
-          // the handle so an input cannot consume Escape during the gesture.
-          event.currentTarget.focus();
-        }
-      }}
-    >
-      <GripVertical />
-    </Button>
-  );
+const rowDragClassName =
+  'touch-none cursor-grab active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 [&_input]:cursor-text [&_button]:cursor-pointer';
+const dropTargetClassName =
+  'relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-primary';
+
+const interactiveSelector =
+  'input, textarea, select, button, a, label, [role="button"], [role="checkbox"], [role="combobox"], [role="switch"], [contenteditable]:not([contenteditable="false"])';
+const isInteractive = (
+  target: EventTarget | null,
+  row: Element | null | undefined,
+) => {
+  const control =
+    target instanceof Element ? target.closest(interactiveSelector) : null;
+  return Boolean(control && control !== row);
+};
+const rowSensors = [
+  PointerSensor.configure({
+    activationConstraints: () => [
+      new PointerActivationConstraints.Distance({ value: 6 }),
+    ],
+    preventActivation: (event, source) =>
+      isInteractive(event.target, source.handle),
+  }),
+  KeyboardSensor.configure({
+    preventActivation: (event, source) => event.target !== source.handle,
+  }),
+];
+
+function rowDragProps(
+  handleRef: (element: Element | null) => void,
+  label: string,
+  disabled: boolean,
+): QuoteRowDragProps {
+  return {
+    ref: handleRef,
+    tabIndex: disabled ? -1 : 0,
+    'aria-disabled': disabled,
+    'aria-label': label,
+    'aria-describedby': 'quote-drag-help',
+    'data-quote-drag-row': true,
+    className: disabled ? undefined : rowDragClassName,
+    onPointerDownCapture: (event) => {
+      if (
+        disabled ||
+        !event.isPrimary ||
+        event.button !== 0 ||
+        isInteractive(event.target, event.currentTarget)
+      )
+        return;
+      // Commit before the sensor captures the layout transaction or reparents a row.
+      let saved = false;
+      flushSync(() => {
+        saved = commitActiveQuoteInput();
+      });
+      if (!saved) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        event.currentTarget.focus({ preventScroll: true });
+      }
+    },
+  };
 }
 
 function SortableItem({
@@ -333,15 +373,15 @@ function SortableItem({
     <div
       ref={ref}
       data-quote-item={id}
-      className={`min-w-0 ${isDragSource ? 'opacity-50' : ''} ${isDropTarget ? 'ring-2 ring-inset ring-primary' : ''}`}
+      className={`min-w-0 ${isDragSource ? 'opacity-50' : ''} ${isDropTarget ? dropTargetClassName : ''}`}
     >
       {renderItem(
         id,
-        <Handle
-          handleRef={handleRef}
-          label={`Sposta voce ${name.trim() || 'senza nome'}`}
-          disabled={disabled}
-        />,
+        rowDragProps(
+          handleRef,
+          `Sposta voce ${name.trim() || 'senza nome'}`,
+          disabled,
+        ),
         () => {
           onInsertRow({ containerId, afterItemId: id }, `after-${id}`);
         },
@@ -360,10 +400,12 @@ function DropZone({
   containerId,
   disabled,
   label,
+  children,
 }: {
   containerId?: string;
   disabled: boolean;
   label: string;
+  children: ReactNode;
 }) {
   const { ref, isDropTarget } = useDroppable({
     id: groupId(containerId),
@@ -375,12 +417,14 @@ function DropZone({
     <div
       ref={ref}
       data-quote-drop={containerId ?? ROOT}
-      role="row"
-      className={`flex min-h-7 items-center justify-center border-b border-dashed px-3 py-1 text-center text-xs ${isDropTarget ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary' : 'border-border text-muted-foreground'}`}
+      aria-label={label}
+      className={
+        isDropTarget
+          ? 'ring-2 ring-inset ring-primary bg-primary/10'
+          : undefined
+      }
     >
-      <span role="cell" aria-colspan={7}>
-        {label}
-      </span>
+      {children}
     </div>
   );
 }
@@ -410,14 +454,16 @@ function ContainerCard({
     >
       <div
         ref={targetRef}
-        className={isDropTarget ? 'ring-2 ring-inset ring-primary' : undefined}
+        className={isDropTarget ? dropTargetClassName : undefined}
       >
-        <div className="flex min-w-0 items-center gap-2 py-1">
-          <Handle
-            handleRef={handleRef}
-            label={`Sposta contenitore ${container.name}`}
-            disabled={disabled}
-          />
+        <div
+          {...rowDragProps(
+            handleRef,
+            `Sposta contenitore ${container.name}`,
+            disabled,
+          )}
+          className={`flex min-w-0 items-center gap-2 py-1 ${disabled ? '' : rowDragClassName}`}
+        >
           <div className="min-w-0 flex-1 font-semibold">
             <InlineQuoteInput
               label={`Titolo contenitore ${container.name}`}
@@ -426,42 +472,6 @@ function ContainerCard({
               onCommit={(name) => props.onRenameContainer(container.id, name)}
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm" disabled={disabled} />
-              }
-            >
-              <Plus />
-              Aggiungi
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem
-                onClick={() =>
-                  props.onInsertRow(
-                    { containerId: container.id },
-                    `container-${container.id}`,
-                  )
-                }
-              >
-                <Plus />
-                Aggiungi riga
-              </DropdownMenuItem>
-              {props.hasTemplates ? (
-                <DropdownMenuItem
-                  onClick={() => {
-                    props.onInsertTemplate(
-                      { containerId: container.id },
-                      `container-${container.id}`,
-                    );
-                  }}
-                >
-                  <BookOpen />
-                  Da template
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -491,17 +501,14 @@ function ContainerCard({
         <DropZone
           containerId={container.id}
           disabled={disabled}
-          label={
-            container.itemIds.length
-              ? `Aggiungi in fondo a ${container.name}`
-              : `Trascina una voce in ${container.name}`
-          }
-        />
-        {props.renderInsertion(
-          { containerId: container.id },
-          undefined,
-          `container-${container.id}`,
-        )}
+          label={`Voci di ${container.name}`}
+        >
+          {props.renderInsertion(
+            { containerId: container.id },
+            undefined,
+            `container-${container.id}`,
+          )}
+        </DropZone>
       </QuoteTable>
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>

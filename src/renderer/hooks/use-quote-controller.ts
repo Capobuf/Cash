@@ -7,12 +7,17 @@ import {
 } from '../../domain/calculations';
 import {
   cloneTemplate,
+  cloneQuoteItem,
   canReuseQuoteSubItem,
   reusableFromQuoteSubItem,
   templateFromQuote,
 } from '../../domain/catalog';
 import { buildExportLines, createPendingAttempt } from '../../domain/export';
-import { siteMatchesClient, snapshotSite } from '../../domain/locations';
+import {
+  defaultTravelName,
+  siteMatchesClient,
+  snapshotSite,
+} from '../../domain/locations';
 import {
   meta,
   touch,
@@ -36,7 +41,11 @@ import { applyVariantSelections, changeVariant } from '../../domain/variants';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 import { decimalInputValue } from '../lib/format';
-import { canInsertAt, insertQuoteItems } from '../lib/quote-insertion';
+import {
+  canInsertAt,
+  insertQuoteItems,
+  type QuoteInsertionPoint,
+} from '../lib/quote-insertion';
 
 export interface TravelInput {
   description: string;
@@ -147,7 +156,9 @@ export function useQuoteController({
     const travel: Extract<QuoteSubItem, { kind: 'travel' }> = {
       ...meta(),
       kind: 'travel',
-      description: definition.description.trim(),
+      description:
+        definition.description.trim() ||
+        defaultTravelName(departure, destination),
       ...(departure ? { departure: snapshotSite(departure) } : {}),
       ...(destination ? { destination: snapshotSite(destination) } : {}),
       ...(vehicle ? { vehicleId: vehicle.id, vehicleName: vehicle.name } : {}),
@@ -451,6 +462,29 @@ export function useQuoteController({
     });
   };
 
+  const duplicateItem = (itemId: string) => {
+    if (!quote || !guardQuoteContext(quote, false)()) return false;
+    const current = appState.document!.quotes.find(
+      (entry) => entry.id === quote.id,
+    )!;
+    const source = current.items.find((item) => item.id === itemId);
+    if (!source) return false;
+    const container = quoteLayout(current).find(
+      (entry) => entry.kind === 'container' && entry.itemIds.includes(itemId),
+    );
+    const copy = cloneQuoteItem(source);
+    const saved = appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      insertQuoteItems(target, [copy], {
+        afterItemId: itemId,
+        containerId: container?.kind === 'container' ? container.id : undefined,
+      });
+    });
+    return saved ? copy.id : false;
+  };
+
   const renameItem = (itemId: string, name: string) => {
     if (!quote || !guardQuoteContext(quote, false)()) return false;
     return appState.mutate((document) => {
@@ -728,6 +762,44 @@ export function useQuoteController({
     return saved ? converted.id : false;
   };
 
+  const changeItemKind = async (
+    itemId: string,
+    kind: 'generic' | 'time' | 'expense' | 'travel',
+  ) => {
+    if (!quote || appState.archiveOperationPending) return false;
+    const isCurrent = guardQuoteContext();
+    const item = quote.items.find((entry) => entry.id === itemId);
+    if (!item || !isCurrent()) return false;
+    const description =
+      item.subItems.length === 1 ? item.subItems[0]!.description : item.name;
+    const sub: QuoteSubItem | undefined =
+      kind === 'generic'
+        ? undefined
+        : kind === 'travel'
+          ? await materializeTravel(
+              { description, roundTrip: true, occurrences: 1 },
+              quote,
+            )
+          : { ...meta(), kind, description };
+    if (
+      (kind !== 'generic' && !sub) ||
+      !isCurrent() ||
+      appState.archiveOperationPending
+    )
+      return false;
+    return appState.mutate((document) => {
+      const target = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      const current = touch(target.items.find((entry) => entry.id === itemId)!);
+      current.subItems = sub ? [sub] : [];
+      current.variantGroups = [];
+      current.variantSelections = [];
+      if (sub?.kind === 'travel' && !current.name.trim())
+        current.name = sub.description;
+    });
+  };
+
   const saveSimpleSub = (
     itemId: string,
     input: SimpleSubInput,
@@ -787,6 +859,22 @@ export function useQuoteController({
         ).items.find((entry) => entry.id === itemId)!,
       );
       const index = item.subItems.findIndex((entry) => entry.id === subId);
+      const oldTravel = previous?.kind === 'travel' ? previous : undefined;
+      const previousName = oldTravel
+        ? defaultTravelName(oldTravel.departure, oldTravel.destination)
+        : defaultTravelName(
+            doc.sites.find(
+              (site) => site.id === doc.settings.defaultDepartureSiteId,
+            ),
+            doc.sites.find((site) => site.id === quote.mainSite?.sourceId),
+          );
+      if (
+        !item.variantGroups.length &&
+        (item.subItems.length === 0 ||
+          (item.subItems.length === 1 && index === 0)) &&
+        (!item.name.trim() || item.name === previousName)
+      )
+        item.name = built.description;
       if (index >= 0) {
         const previous = item.subItems[index]!;
         item.subItems[index] = {
@@ -803,11 +891,13 @@ export function useQuoteController({
   };
 
   const addReusable = async (
-    itemId: string,
+    target: string | QuoteInsertionPoint,
     reusable: ReusableSubItem,
     context?: TravelContext,
+    replaceItem = false,
   ) => {
     if (!quote) return false;
+    if (typeof target !== 'string' && !canInsertAt(quote, target)) return false;
     const isCurrent = guardQuoteContext();
     if (!isCurrent()) return false;
     let sub: QuoteSubItem | undefined;
@@ -828,13 +918,36 @@ export function useQuoteController({
     else sub = await materializeTravel(reusable, quote, context);
     if (!isCurrent()) return false;
     if (!sub) return false;
-    return appState.mutate((document) =>
-      touch(
-        touch(
-          document.quotes.find((entry) => entry.id === quote.id)!,
-        ).items.find((entry) => entry.id === itemId)!,
-      ).subItems.push(sub!),
-    );
+    return appState.mutate((document) => {
+      const currentQuote = touch(
+        document.quotes.find((entry) => entry.id === quote.id)!,
+      );
+      if (typeof target !== 'string') {
+        insertQuoteItems(
+          currentQuote,
+          [
+            {
+              ...meta(),
+              name: reusable.description,
+              subItems: [sub!],
+              variantGroups: [],
+              variantSelections: [],
+            },
+          ],
+          target,
+        );
+        return;
+      }
+      const item = touch(
+        currentQuote.items.find((entry) => entry.id === target)!,
+      );
+      if (replaceItem) {
+        item.name = reusable.description;
+        item.subItems = [sub!];
+        item.variantGroups = [];
+        item.variantSelections = [];
+      } else item.subItems.push(sub!);
+    });
   };
 
   const saveSubToCatalog = (itemId: string, subId: string) => {
@@ -915,11 +1028,15 @@ export function useQuoteController({
     containerId?: string,
     afterItemId?: string,
     replacement?: QuoteItem,
+    singleRow = false,
   ) => {
+    const replaceItemId = replacement?.id;
     if (
       !quote ||
       appState.archiveOperationPending ||
-      !canInsertAt(quote, { containerId, afterItemId })
+      (replaceItemId
+        ? !quote.items.some((item) => item.id === replaceItemId)
+        : !canInsertAt(quote, { containerId, afterItemId }))
     )
       return false;
     const isCurrent = guardQuoteContext();
@@ -940,8 +1057,7 @@ export function useQuoteController({
     const sourceTemplate = doc.catalog.templates.find(
       (entry) => entry.id === templateId,
     );
-    if (!sourceTemplate || (replacement && !sourceTemplate.items.length))
-      return false;
+    if (!sourceTemplate?.items.length) return false;
     // The dialog returns IDs from the catalog template. Cloning deliberately
     // regenerates every group/option ID, so preserve the user's choices by
     // position and resolve them against the cloned identities below.
@@ -1027,34 +1143,65 @@ export function useQuoteController({
       }
       prepared.push(applied.value);
     }
+    if (replaceItemId || singleRow) {
+      // Group names are unique within a row; different template items may reuse them.
+      const groups = prepared.flatMap((item) => item.variantGroups);
+      const normalize = (name: string) => name.trim().toLocaleLowerCase('it');
+      const originalNames = groups.map((group) => normalize(group.name));
+      const names = new Set(groups.map((group) => normalize(group.name)));
+      for (const item of prepared) {
+        for (const group of item.variantGroups) {
+          if (
+            originalNames.filter((name) => name === normalize(group.name))
+              .length < 2
+          )
+            continue;
+          const base = `${item.name} · ${group.name}`;
+          let name = base;
+          let suffix = 2;
+          while (names.has(normalize(name))) name = `${base} (${suffix++})`;
+          group.name = name;
+          names.add(normalize(name));
+        }
+      }
+    }
     if (!isCurrent() || appState.archiveOperationPending) return false;
     return appState.mutate((document) => {
       const target = touch(
         document.quotes.find((entry) => entry.id === quote.id)!,
       );
-      if (replacement) {
-        const first = prepared[0]!;
-        first.id = replacement.id;
-        first.createdAt = replacement.createdAt;
-        first.chosenPrice = replacement.chosenPrice;
-        // Keep the first identity and its layout reference; append the remaining
-        // template rows directly after it in the same container.
-        const container = quoteLayout(target).find(
-          (entry) =>
-            entry.kind === 'container' &&
-            entry.itemIds.includes(replacement.id),
+      if (replaceItemId || singleRow) {
+        const item: QuoteItem = replaceItemId
+          ? touch(target.items.find((entry) => entry.id === replaceItemId)!)
+          : {
+              ...meta(),
+              name: '',
+              subItems: [],
+              variantGroups: [],
+              variantSelections: [],
+            };
+        item.name = template.name;
+        item.subItems = prepared.flatMap((entry) => entry.subItems);
+        item.variantGroups = prepared.flatMap((entry) => entry.variantGroups);
+        item.variantSelections = prepared.flatMap(
+          (entry) => entry.variantSelections,
         );
-        target.items[
-          target.items.findIndex((entry) => entry.id === replacement.id)
-        ] = first;
-        if (prepared.length > 1)
-          insertQuoteItems(target, prepared.slice(1), {
-            containerId:
-              container?.kind === 'container' ? container.id : undefined,
-            afterItemId: first.id,
-          });
+        if (!replaceItemId)
+          insertQuoteItems(target, [item], { containerId, afterItemId });
       } else insertQuoteItems(target, prepared, { containerId, afterItemId });
     });
+  };
+
+  const applyTemplateToItem = (
+    itemId: string,
+    templateId: string,
+    choices: Record<string, string>,
+    context: TravelContext,
+  ) => {
+    const item = quote?.items.find((entry) => entry.id === itemId);
+    return item
+      ? insertTemplate(templateId, choices, context, undefined, undefined, item)
+      : Promise.resolve(false);
   };
 
   const saveTemplate = (name: string, itemIds: string[]) => {
@@ -1316,6 +1463,7 @@ export function useQuoteController({
     updateClient,
     searchRemoteClients,
     addItem,
+    duplicateItem,
     addContainer,
     renameContainer,
     deleteContainer,
@@ -1324,6 +1472,7 @@ export function useQuoteController({
     updateChosenPrice,
     updateReferencePrice,
     saveSimpleSub,
+    changeItemKind,
     changeItemType,
     makeItemGeneric,
     addSubItem,
@@ -1332,6 +1481,7 @@ export function useQuoteController({
     saveSubToCatalog,
     switchVariant,
     insertTemplate,
+    applyTemplateToItem,
     saveTemplate,
     performRefresh,
     performExport,

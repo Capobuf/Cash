@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 
 // A pointer sensor can suppress blur and reparent (unmount) the active row.
-// Register mounted cells so a handle can commit before that gesture starts.
+// Register mounted cells so a draggable row can commit before that gesture starts.
 const pendingInputs = new WeakMap<Element, () => boolean>();
 export function commitActiveQuoteInput() {
   const active = document.activeElement;
@@ -61,7 +61,7 @@ export function InlineQuoteInput({
           : label
       }
       disabled={disabled}
-      className={`h-8 min-w-0 border-transparent bg-transparent text-foreground shadow-none hover:border-input focus-visible:border-primary focus-visible:ring-2 ${decimal || alignRight ? 'text-right tabular-nums' : ''}`}
+      className={`h-9 min-w-0 rounded-md border-transparent bg-transparent px-3 text-foreground shadow-none hover:border-border hover:bg-muted/30 focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:bg-transparent dark:bg-transparent dark:focus-visible:ring-foreground/15 dark:disabled:bg-transparent ${decimal || alignRight ? 'text-right tabular-nums' : ''}`}
       inputMode={decimal ? 'decimal' : undefined}
       placeholder={placeholder}
       value={draft ?? value}

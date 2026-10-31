@@ -261,7 +261,7 @@ describe('conversione del tipo di righe e sottorighe', () => {
   });
 
   it.each(['implicit', 'root', 'container'] as const)(
-    'sostituisce con un template multiriga mantenendo posizione e prezzo (%s)',
+    'accorpa un template in una riga mantenendo identita, posizione e prezzo (%s)',
     async (position) => {
       const { controller, state, document, item, save } = setup(true, (doc) => {
         const quote = doc.quotes[0]!;
@@ -308,23 +308,24 @@ describe('conversione del tipo di righe e sottorighe', () => {
       ).toBe(true);
       const after = state.document!.quotes[0]!;
       const first = after.items.find((entry) => entry.id === item.id)!;
-      const second = after.items.find((entry) => entry.name === 'Seconda')!;
       expect(first).toMatchObject({
-        name: 'Prima',
+        id: item.id,
+        name: 'Modello',
         chosenPrice: '100.00',
         createdAt: item.createdAt,
         variantGroups: [],
-        subItems: [{ kind: 'time', minutes: 30 }],
+        subItems: [
+          { kind: 'time', description: 'Prima', minutes: 30 },
+          { kind: 'time', description: 'Seconda', minutes: 30 },
+        ],
       });
-      expect(second.chosenPrice).toBeUndefined();
-      const order = after.layout!.flatMap((entry) =>
-        entry.kind === 'item' ? [entry.itemId] : entry.itemIds,
-      );
-      expect(order).toEqual([
-        item.id,
-        second.id,
-        document.quotes[0]!.items[1]!.id,
-      ]);
+      expect(after.items).toHaveLength(2);
+      const order = after.layout
+        ? after.layout.flatMap((entry) =>
+            entry.kind === 'item' ? [entry.itemId] : entry.itemIds,
+          )
+        : after.items.map((entry) => entry.id);
+      expect(order).toEqual([item.id, document.quotes[0]!.items[1]!.id]);
       if (position === 'container') expect(after.layout).toHaveLength(1);
       await state.save();
       expect(save.mock.calls.at(-1)![1].quotes[0]!.layout).toEqual(
@@ -1037,7 +1038,7 @@ describe('esito delle modifiche ai preventivi', () => {
     ).toMatchObject({ amount: '20.25' });
   });
 
-  it('salva una voce senza nome e una trasferta senza descrizione', async () => {
+  it('salva una voce senza nome e propone il nome del percorso per una trasferta senza descrizione', async () => {
     const { controller, item, state } = setup();
 
     expect(
@@ -1049,7 +1050,7 @@ describe('esito delle modifiche ai preventivi', () => {
     ).toBe(true);
     expect(state.document!.quotes[0]!.items[0]!.subItems.at(-1)).toMatchObject({
       kind: 'travel',
-      description: '',
+      description: 'Trasferta - Partenza <--> Destinazione',
     });
 
     expect(controller.addItem('   ')).toBe(true);

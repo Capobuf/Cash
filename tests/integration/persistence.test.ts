@@ -110,10 +110,24 @@ describe('importazione JSON read-only', () => {
         await saveArchive(destination, imported.document!, imported.token),
       );
       expect(saved.token.revision).toBe(43);
+      const existingBytes = await readFile(destination);
+      const sqliteBackup = await readFile(backupPathFor(destination));
       expect(await importJsonArchive(source, destination)).toMatchObject({
         ok: false,
-        error: { code: 'CONFLICT' },
+        error: {
+          code: 'CONFLICT',
+          field: 'path',
+          message: expect.stringContaining('esiste già'),
+          action: expect.stringContaining('Scegli un altro nome'),
+        },
       });
+      expect(await readFile(source, 'utf8')).toBe(bytes);
+      expect(await readFile(oldBackup, 'utf8')).toBe('preexisting backup');
+      expect(await readFile(destination)).toEqual(existingBytes);
+      expect(await readFile(backupPathFor(destination))).toEqual(sqliteBackup);
+      expect((await readdir(dir)).some((name) => name.endsWith('.tmp'))).toBe(
+        false,
+      );
       closeArchive(destination);
       expect(unwrap(await openArchive(destination)).document).toEqual(
         saved.document,
@@ -469,6 +483,30 @@ describe('transazioni, revisioni, backup e recovery', () => {
     expect((await readdir(dir)).some((name) => name.endsWith('.tmp'))).toBe(
       false,
     );
+  });
+
+  it('segnala la copia automatica assente dopo l’importazione senza modificare l’archivio', async () => {
+    const dir = await directory();
+    const source = join(dir, 'Cash.json');
+    const path = join(dir, 'Cash-importato.sqlite');
+    const bytes = JSON.stringify(createEmptyDocument());
+    await writeFile(source, bytes);
+    const imported = unwrap(await importJsonArchive(source, path));
+    const originalBytes = await readFile(path);
+    const originalFiles = (await readdir(dir)).sort();
+    expect(await restoreBackup(path, imported.token)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'FILE_NOT_FOUND',
+        message: expect.stringContaining('versione precedente'),
+        action: expect.stringContaining('Ripristina da backup'),
+        details: [backupPathFor(path)],
+      },
+    });
+    expect(await readFile(path)).toEqual(originalBytes);
+    expect(await readFile(source, 'utf8')).toBe(bytes);
+    expect((await readdir(dir)).sort()).toEqual(originalFiles);
+    expect(unwrap(await openArchive(path)).document).toEqual(imported.document);
   });
 
   it('ripristina esplicitamente, conserva copie datate e recupera anche dati dirty', async () => {

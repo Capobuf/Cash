@@ -556,10 +556,15 @@ function FiscalProjection({ overview: o }: { overview: FinancialOverview }) {
         ['Totale acconti', f.totalAdvances],
       ]
     : [];
-  const projectionTable = (title: string, rows: (string | undefined)[][]) => (
+  const projectionTable = (
+    preferencesKey: string,
+    title: string,
+    rows: (string | undefined)[][],
+  ) => (
     <section className="min-w-0 space-y-2">
       <h3 className="text-sm font-semibold">{title}</h3>
       <DataTable
+        preferencesKey={preferencesKey}
         data={rows.map(([label, value], index) => ({
           label: label ?? '—',
           value,
@@ -615,8 +620,12 @@ function FiscalProjection({ overview: o }: { overview: FinancialOverview }) {
         ))}
         {f ? (
           <div className="grid gap-6 lg:grid-cols-2">
-            {projectionTable(`Stima ${o.year}`, yearRows)}
-            {projectionTable(`Acconti stimati ${o.year + 1}`, advanceRows)}
+            {projectionTable('fiscal-year', `Stima ${o.year}`, yearRows)}
+            {projectionTable(
+              'fiscal-advances',
+              `Acconti stimati ${o.year + 1}`,
+              advanceRows,
+            )}
           </div>
         ) : null}
         <p className="text-xs text-muted-foreground">
@@ -663,6 +672,7 @@ function SourceComparison({ overview: o }: { overview: FinancialOverview }) {
       </CardHeader>
       <CardContent>
         <DataTable
+          preferencesKey="financial-sources"
           data={rows}
           columns={[
             {
@@ -727,6 +737,7 @@ function MonthlyDetail({ overview: o }: { overview: FinancialOverview }) {
       </CardHeader>
       <CardContent>
         <DataTable
+          preferencesKey="financial-months"
           data={data}
           columns={[
             {

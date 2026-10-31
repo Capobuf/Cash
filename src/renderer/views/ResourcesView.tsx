@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/ui/data-table';
 import {
   Building2,
   Car,
@@ -39,14 +40,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { dateIt, eur, formatNumber } from '@/lib/format';
 import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
@@ -167,42 +160,56 @@ export function ResourcesView({
             </CardHeader>
             <CardContent>
               {doc.businessCosts.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Categoria</TableHead>
-                      <TableHead>Descrizione</TableHead>
-                      <TableHead>Mensile</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {doc.businessCosts.map((cost) => (
-                      <TableRow key={cost.id}>
-                        <TableCell>
-                          <Badge variant="secondary">{cost.category}</Badge>
-                        </TableCell>
-                        <TableCell>{cost.description}</TableCell>
-                        <TableCell>{eur(cost.monthlyAmount)}</TableCell>
-                        <TableCell>
-                          <RowMenu
-                            label={cost.description}
-                            onEdit={() =>
-                              setEditor({ kind: 'cost', id: cost.id })
-                            }
-                            onDelete={() =>
-                              requestDelete({
-                                kind: 'cost',
-                                id: cost.id,
-                                label: cost.description,
-                              })
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <DataTable
+                  preferencesKey="business-costs"
+                  data={doc.businessCosts}
+                  getRowKey={(cost) => cost.id}
+                  emptyMessage="Nessun risultato."
+                  columns={[
+                    {
+                      id: 'category',
+                      header: 'Categoria',
+                      value: (cost) => cost.category,
+                      cell: (cost) => (
+                        <Badge variant="secondary">{cost.category}</Badge>
+                      ),
+                    },
+                    {
+                      id: 'description',
+                      header: 'Descrizione',
+                      value: (cost) => cost.description,
+                      cell: (cost) => cost.description,
+                    },
+                    {
+                      id: 'monthly',
+                      header: 'Mensile',
+                      value: (cost) => Number(cost.monthlyAmount),
+                      cell: (cost) => eur(cost.monthlyAmount),
+                    },
+                    {
+                      id: 'actions',
+                      header: 'Azioni',
+                      value: () => undefined,
+                      sortable: false,
+                      configurable: false,
+                      cell: (cost) => (
+                        <RowMenu
+                          label={cost.description}
+                          onEdit={() =>
+                            setEditor({ kind: 'cost', id: cost.id })
+                          }
+                          onDelete={() =>
+                            requestDelete({
+                              kind: 'cost',
+                              id: cost.id,
+                              label: cost.description,
+                            })
+                          }
+                        />
+                      ),
+                    },
+                  ]}
+                />
               ) : (
                 <Empty
                   title="Nessun costo aziendale"
@@ -238,92 +245,111 @@ export function ResourcesView({
                 </AlertDescription>
               </Alert>
               {doc.vehicles.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Veicolo</TableHead>
-                      <TableHead>Consumo</TableHead>
-                      <TableHead>Costo/km</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {doc.vehicles.map((vehicle) => {
-                      const savedPreview = vehicleCostPreviews[vehicle.id];
-                      const preview =
-                        savedPreview?.inputs ===
-                          vehicleCostInputs(
-                            vehicle,
-                            doc.settings.fuelTerritory,
-                          ) &&
-                        savedPreview.archiveContext === appState.archiveContext
-                          ? savedPreview
-                          : undefined;
-                      return (
-                        <TableRow key={vehicle.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <span className="font-medium">
-                                {vehicle.name}
+                <DataTable
+                  preferencesKey="vehicles"
+                  data={doc.vehicles.map((vehicle) => {
+                    const savedPreview = vehicleCostPreviews[vehicle.id];
+                    const preview =
+                      savedPreview?.inputs ===
+                        vehicleCostInputs(
+                          vehicle,
+                          doc.settings.fuelTerritory,
+                        ) &&
+                      savedPreview.archiveContext === appState.archiveContext
+                        ? savedPreview
+                        : undefined;
+                    return { ...vehicle, preview };
+                  })}
+                  getRowKey={(vehicle) => vehicle.id}
+                  emptyMessage={'Nessun risultato.'}
+                  columns={[
+                    {
+                      id: 'name',
+                      header: 'Veicolo',
+                      value: (vehicle) => vehicle.name,
+                      cell: (vehicle) => (
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium">{vehicle.name}</span>
+                          <DefaultStar
+                            selected={
+                              doc.settings.defaultVehicleId === vehicle.id
+                            }
+                            label={`Veicolo predefinito: ${vehicle.name}`}
+                            onClick={() =>
+                              appState.mutate((document) => {
+                                document.settings.defaultVehicleId =
+                                  document.settings.defaultVehicleId ===
+                                  vehicle.id
+                                    ? undefined
+                                    : vehicle.id;
+                              })
+                            }
+                          />
+                        </div>
+                      ),
+                    },
+                    {
+                      id: 'consumption',
+                      header: 'Consumo',
+                      value: (vehicle) => Number(vehicle.consumption),
+                      cell: (vehicle) => (
+                        <>
+                          {formatNumber(vehicle.consumption, 2)}{' '}
+                          {vehicle.consumptionUnit}
+                        </>
+                      ),
+                    },
+                    {
+                      id: 'cost',
+                      header: 'Costo/km',
+                      value: (vehicle) =>
+                        vehicle.preview
+                          ? Number(vehicle.preview.costPerKm)
+                          : undefined,
+                      cell: (vehicle) => (
+                        <>
+                          {vehicle.preview ? (
+                            <>
+                              {vehicle.preview.costPerKm} €/km{' '}
+                              <span className="text-xs text-muted-foreground">
+                                MIMIT {dateIt(vehicle.preview.referenceDate)}
                               </span>
-                              <DefaultStar
-                                selected={
-                                  doc.settings.defaultVehicleId === vehicle.id
-                                }
-                                label={`Veicolo predefinito: ${vehicle.name}`}
-                                onClick={() =>
-                                  appState.mutate((document) => {
-                                    document.settings.defaultVehicleId =
-                                      document.settings.defaultVehicleId ===
-                                      vehicle.id
-                                        ? undefined
-                                        : vehicle.id;
-                                  })
-                                }
-                              />
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {formatNumber(vehicle.consumption, 2)}{' '}
-                            {vehicle.consumptionUnit}
-                          </TableCell>
-                          <TableCell>
-                            {preview ? (
-                              <>
-                                {preview.costPerKm} €/km{' '}
-                                <span className="text-xs text-muted-foreground">
-                                  MIMIT {dateIt(preview.referenceDate)}
-                                </span>
-                              </>
-                            ) : null}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void checkVehicleCost(vehicle.id)}
-                            >
-                              Verifica ora
-                            </Button>
-                          </TableCell>
-                          <TableCell>
-                            <RowMenu
-                              label={vehicle.name}
-                              onEdit={() =>
-                                setEditor({ kind: 'vehicle', id: vehicle.id })
-                              }
-                              onDelete={() =>
-                                requestDelete({
-                                  kind: 'vehicle',
-                                  id: vehicle.id,
-                                  label: vehicle.name,
-                                })
-                              }
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                            </>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void checkVehicleCost(vehicle.id)}
+                          >
+                            Verifica ora
+                          </Button>
+                        </>
+                      ),
+                    },
+                    {
+                      id: 'actions',
+                      header: 'Azioni',
+                      value: () => undefined,
+                      sortable: false,
+                      configurable: false,
+                      cell: (vehicle) => (
+                        <RowMenu
+                          label={vehicle.name}
+                          onEdit={() =>
+                            setEditor({ kind: 'vehicle', id: vehicle.id })
+                          }
+                          onDelete={() =>
+                            requestDelete({
+                              kind: 'vehicle',
+                              id: vehicle.id,
+                              label: vehicle.name,
+                            })
+                          }
+                        />
+                      ),
+                    },
+                  ]}
+                />
               ) : (
                 <Empty
                   title="Nessun veicolo"
@@ -356,70 +382,87 @@ export function ResourcesView({
                 <section key={label} className="space-y-3">
                   <h3 className="font-medium">{label}</h3>
                   {sites.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Nome</TableHead>
-                          <TableHead>Cliente (riferimento salvato)</TableHead>
-                          <TableHead>Indirizzo</TableHead>
-                          <TableHead>Coordinate</TableHead>
-                          <TableHead />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sites.map((site) => (
-                          <TableRow key={site.id}>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                <span className="font-medium">{site.name}</span>
-                                <DefaultStar
-                                  selected={
-                                    doc.settings.defaultDepartureSiteId ===
-                                    site.id
-                                  }
-                                  label={`Partenza predefinita: ${site.name}`}
-                                  onClick={() =>
-                                    appState.mutate((document) => {
-                                      document.settings.defaultDepartureSiteId =
-                                        document.settings
-                                          .defaultDepartureSiteId === site.id
-                                          ? undefined
-                                          : site.id;
-                                    })
-                                  }
-                                />
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {site.client?.displayName ?? 'Nessuno'}
-                            </TableCell>
-                            <TableCell>
-                              {site.address ?? 'Non indicato'}
-                            </TableCell>
-                            <TableCell>
-                              {site.location
-                                ? coordinatesInput(site.location.coordinates)
-                                : 'Da localizzare'}
-                            </TableCell>
-                            <TableCell>
-                              <RowMenu
-                                label={site.name}
-                                onEdit={() =>
-                                  setEditor({ kind: 'site', id: site.id })
+                    <DataTable
+                      preferencesKey={`sites:${label}`}
+                      data={sites}
+                      getRowKey={(site) => site.id}
+                      emptyMessage={'Nessun risultato.'}
+                      columns={[
+                        {
+                          id: 'name',
+                          header: 'Nome',
+                          value: (site) => site.name,
+                          cell: (site) => (
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">{site.name}</span>
+                              <DefaultStar
+                                selected={
+                                  doc.settings.defaultDepartureSiteId ===
+                                  site.id
                                 }
-                                onDelete={() =>
-                                  requestDelete({
-                                    kind: 'site',
-                                    id: site.id,
-                                    label: site.name,
+                                label={`Partenza predefinita: ${site.name}`}
+                                onClick={() =>
+                                  appState.mutate((document) => {
+                                    document.settings.defaultDepartureSiteId =
+                                      document.settings
+                                        .defaultDepartureSiteId === site.id
+                                        ? undefined
+                                        : site.id;
                                   })
                                 }
                               />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            </div>
+                          ),
+                        },
+                        {
+                          id: 'client',
+                          header: 'Cliente (riferimento salvato)',
+                          value: (site) =>
+                            site.client?.displayName ?? 'Nessuno',
+                          cell: (site) => site.client?.displayName ?? 'Nessuno',
+                        },
+                        {
+                          id: 'address',
+                          header: 'Indirizzo',
+                          value: (site) => site.address,
+                          cell: (site) => site.address ?? 'Non indicato',
+                        },
+                        {
+                          id: 'coordinates',
+                          header: 'Coordinate',
+                          value: (site) =>
+                            site.location
+                              ? coordinatesInput(site.location.coordinates)
+                              : undefined,
+                          cell: (site) =>
+                            site.location
+                              ? coordinatesInput(site.location.coordinates)
+                              : 'Da localizzare',
+                        },
+                        {
+                          id: 'actions',
+                          header: 'Azioni',
+                          value: () => undefined,
+                          sortable: false,
+                          configurable: false,
+                          cell: (site) => (
+                            <RowMenu
+                              label={site.name}
+                              onEdit={() =>
+                                setEditor({ kind: 'site', id: site.id })
+                              }
+                              onDelete={() =>
+                                requestDelete({
+                                  kind: 'site',
+                                  id: site.id,
+                                  label: site.name,
+                                })
+                              }
+                            />
+                          ),
+                        },
+                      ]}
+                    />
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       Nessuna sede in questo gruppo.

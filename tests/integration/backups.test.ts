@@ -19,7 +19,9 @@ import { createEmptyDocument, type Result } from '../../src/domain/model';
 import { BackupManager } from '../../src/native/backups';
 import {
   createArchive,
+  closeArchive,
   closeAllArchives,
+  backupPathFor,
   saveArchive,
   restoreArchiveCopy,
   verifyArchiveCopy,
@@ -575,6 +577,124 @@ it('keeps origin identity when the current archive changes during transfer', asy
   unwrap(await manager.refresh());
   expect(manager.snapshot.entries).toHaveLength(0);
 });
+it('restores a selected SQLite file when the active archive has no automatic previous-version copy', async () => {
+  const active = current!;
+  const source = join(root, 'selected-backup.sqlite');
+  const selected = unwrap(await createArchive(source, createEmptyDocument()));
+  closeArchive(source);
+  const sourceBytes = await readFile(source);
+  const activeBytes = await readFile(active.path);
+  await expect(readFile(backupPathFor(active.path))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+  const staged = unwrap(await manager.stageRestore(source));
+  const restored = unwrap(
+    await restoreArchiveCopy(staged.path, join(root, 'restored.sqlite')),
+  );
+  expect(restored.document).toEqual(selected.document);
+  expect(restored.token).toEqual(selected.token);
+  expect(restored.token.documentId).not.toBe(active.token.documentId);
+  expect(await readFile(source)).toEqual(sourceBytes);
+  expect(await readFile(active.path)).toEqual(activeBytes);
+  await manager.releaseRestore(staged.path);
+});
+
+it.each([false, true])(
+  'restores repeatedly into the default destination and preserves its previous data (already open: %s)',
+  async (alreadyOpen) => {
+    const destination = current!.path;
+    const changed = structuredClone(current!.document!);
+    changed.settings.fuelTerritory = 'Lazio';
+    current = unwrap(await saveArchive(destination, changed, current!.token));
+    const previous = structuredClone(current.document);
+    const backupDocument = createEmptyDocument();
+    backupDocument.settings.fuelTerritory = 'Sicilia';
+    const source = join(root, 'selected.sqlite');
+    const selected = unwrap(await createArchive(source, backupDocument));
+    closeArchive(source);
+    const sourceBytes = await readFile(source);
+    if (!alreadyOpen) closeArchive(destination);
+    const staged = unwrap(await manager.stageRestore(source));
+    const restored = unwrap(
+      await restoreArchiveCopy(staged.path, destination, true),
+    );
+    expect(restored.path).toBe(destination);
+    expect(restored.token).toEqual(selected.token);
+    expect(restored.document).toEqual(selected.document);
+    const safety = (await readdir(root)).find((file) =>
+      file.includes('.prima-ripristino.'),
+    )!;
+    expect(safety).toBeDefined();
+    expect(
+      unwrap(await persistence.openArchive(join(root, safety))).document,
+    ).toEqual(previous);
+    expect(unwrap(await persistence.openArchive(destination)).document).toEqual(
+      selected.document,
+    );
+    expect((await restoreArchiveCopy(staged.path, destination, true)).ok).toBe(
+      true,
+    );
+    expect(
+      (await readdir(root)).filter(
+        (file) =>
+          file.includes('.prima-ripristino.') && file.endsWith('.sqlite'),
+      ),
+    ).toHaveLength(2);
+    expect(await readFile(source)).toEqual(sourceBytes);
+    expect(unwrap(await verifyArchiveCopy(destination)).header).toMatchObject(
+      selected.token,
+    );
+    await manager.releaseRestore(staged.path);
+  },
+);
+
+it('rolls back an existing destination if applying the selected backup fails', async () => {
+  const destination = current!.path;
+  const previous = structuredClone(current!.document);
+  const backupDocument = createEmptyDocument();
+  backupDocument.settings.fuelTerritory = 'Sicilia';
+  const source = join(root, 'selected.sqlite');
+  unwrap(await createArchive(source, backupDocument));
+  closeArchive(source);
+  const sourceBytes = await readFile(source);
+  const db = new DatabaseSync(destination);
+  db.exec(
+    "CREATE TRIGGER fail_restore BEFORE UPDATE ON archive_metadata BEGIN SELECT RAISE(ABORT, 'restore failed'); END",
+  );
+  const staged = unwrap(await manager.stageRestore(source));
+  try {
+    expect(
+      await restoreArchiveCopy(staged.path, destination, true),
+    ).toMatchObject({ ok: false, error: { code: 'IO' } });
+    expect(unwrap(await persistence.openArchive(destination)).document).toEqual(
+      previous,
+    );
+    expect(await readFile(source)).toEqual(sourceBytes);
+  } finally {
+    db.exec('DROP TRIGGER fail_restore');
+    db.close();
+    await manager.releaseRestore(staged.path);
+  }
+  expect(
+    (await saveArchive(destination, current!.document!, current!.token)).ok,
+  ).toBe(true);
+});
+
+it('creates the default archive when restoring on a clean installation', async () => {
+  const source = current!.path;
+  const token = current!.token;
+  const sourceBytes = await readFile(source);
+  closeArchive(source);
+  current = null;
+  const staged = unwrap(await manager.stageRestore(source));
+  const destination = join(root, 'Cash.sqlite');
+  expect(
+    unwrap(await restoreArchiveCopy(staged.path, destination, true)).token,
+  ).toEqual(token);
+  expect(await readFile(source)).toEqual(sourceBytes);
+  await manager.releaseRestore(staged.path);
+});
+
 it('restores a verified copy with original identity/revision on a clean installation and never overwrites a destination', async () => {
   current = unwrap(
     await saveArchive(current!.path, current!.document!, current!.token),

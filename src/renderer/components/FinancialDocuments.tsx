@@ -378,6 +378,7 @@ export function FinancialDocuments({
               <TabsContent key={group.id} value={group.id}>
                 {group.documents.length ? (
                   <DataTable
+                    preferencesKey={`financial-documents:${group.id}`}
                     data={group.documents}
                     columns={registeredColumns(group.id)}
                     getRowKey={(document) => `${document.type}:${document.id}`}
@@ -422,6 +423,7 @@ export function FinancialDocuments({
               </div>
               {pending.length ? (
                 <DataTable
+                  preferencesKey="financial-pending"
                   data={pending}
                   columns={pendingColumns}
                   getRowKey={(document) => `${document.source}:${document.id}`}
@@ -473,6 +475,7 @@ export function FinancialDocuments({
                   <h3 className="mb-2 font-medium">Pagamenti e scadenze</h3>
                   {selected.document.payments.length ? (
                     <DataTable
+                      preferencesKey="financial-payments"
                       data={selected.document.payments}
                       columns={[
                         {
