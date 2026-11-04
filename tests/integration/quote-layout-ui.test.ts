@@ -273,6 +273,46 @@ app.whenReady().then(async () => {
     assert.deepEqual((await info()).quote, beforeSwitch);
     const visibleOrder = (await info()).order;
     assert.deepEqual(await js('Checks.showExport()'), visibleOrder, 'export follows visible order');
+    assert.equal(await js('Checks.runExportComposerChecks()'), 'EXPORT_COMPOSER_UI_OK');
+    assert.equal(await js('document.querySelector(' + JSON.stringify('[aria-label="Prodotti disponibili"] button') + ').getBoundingClientRect().height >= 40'), true, 'product action has a full-height click target');
+    const exportBeforeDrag = (await info()).quote;
+    const exportSource = (name) => '[aria-label="Trascina ' + name + '"]';
+    const exportTarget = 'article[data-export-drop]';
+    await click('Rimuovi Router dalla riga 1');
+    await drag(exportSource('Router'), exportTarget, true);
+    assert.equal(await js('document.querySelectorAll("[data-export-item]").length'), 1, 'cancel preserves available voice');
+    await drag(exportSource('Router'), exportTarget);
+    assert.equal(await js('document.querySelectorAll("[data-export-item]").length'), 0, 'drop removes source from Cash');
+    assert.equal(await js('document.querySelector("article").textContent.includes("100,00")'), true, 'drop updates row amount');
+    await click('Rimuovi Switch dalla riga 2');
+    await click('Rimuovi Firewall dalla riga 2');
+    await click('Seleziona disponibili');
+    await drag(exportSource('Switch'), exportTarget);
+    assert.equal(await js('document.querySelectorAll("[data-export-item]").length'), 0, 'drop moves all selected voices');
+    assert.equal(await js('document.querySelector("article").textContent.includes("300,00")'), true, 'drop sums selected amounts');
+    await click('Rimuovi Router dalla riga 1');
+    await js('document.querySelector("[data-export-item] [role=checkbox]").focus()');
+    await key('Space');
+    await js('Array.from(document.querySelector("article").querySelectorAll("button")).find(button => button.textContent.startsWith("Aggiungi qui")).focus()');
+    await key('Space');
+    await js('Checks.settle()');
+    assert.equal(await js('document.querySelectorAll("[data-export-item]").length'), 0, 'keyboard controls assign voice');
+    assert.deepEqual((await info()).quote, exportBeforeDrag, 'drag does not alter source quote');
+    await click('Elimina riga 2');
+    win.setContentSize(1600, 1000);
+    await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await js('Checks.settle()');
+    assert.equal(await js('Math.round(document.querySelector("[data-slot=dialog-content]").getBoundingClientRect().width)'), 1568, 'dialog uses viewport width');
+
+    if (process.env.CASH_UI_SCREENSHOTS) {
+      const rect = await js('(() => { const r = document.querySelector("[data-slot=dialog-content]").getBoundingClientRect(); return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.width), height: Math.ceil(r.height) }; })()');
+      writeFileSync(join(process.env.CASH_UI_SCREENSHOTS, 'quote-export-composer.png'), (await win.webContents.capturePage(rect)).toPNG());
+    }
+    await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 600, height: 900, deviceScaleFactor: 1, mobile: false });
+    await js('Checks.settle()');
+    assert.equal(await js('(() => { const dialog = document.querySelector("[data-slot=dialog-content]"); return dialog.scrollWidth <= dialog.clientWidth && dialog.getBoundingClientRect().width <= window.innerWidth; })()'), true, 'narrow dialog has no horizontal overflow');
+    win.setContentSize(1200, 2400);
+    await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1200, height: 2400, deviceScaleFactor: 1, mobile: false });
     assert.equal(await js('Checks.runOperationalChecks()'), 'OPERATIONAL_UI_OK');
     if (process.env.CASH_UI_SCREENSHOTS) {
       if (await js('Array.from(document.querySelectorAll("button")).find(e => e.getAttribute("aria-label") === "Apri o chiudi Storage")?.getAttribute("aria-expanded") === "false"')) await click('Apri o chiudi Storage');

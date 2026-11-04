@@ -426,6 +426,7 @@ describe('fonti ufficiali', () => {
       {
         companyId: '1',
         clientId: '9',
+        clientName: 'Mario Rossi',
         productId: '2',
         product: { id: '2', name: 'Consulenza', vat: { id: '3', value: 0 } },
         lines: [
@@ -445,6 +446,7 @@ describe('fonti ufficiali', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     const init = vi.mocked(fetcher).mock.calls[0]?.[1] as RequestInit;
     const payload = JSON.parse(String(init.body));
+    expect(payload.data.entity).toEqual({ id: 9, name: 'Mario Rossi' });
     expect(payload.data.items_list).toEqual([
       {
         product_id: 2,
@@ -482,6 +484,7 @@ describe('fonti ufficiali', () => {
         {
           companyId: '1',
           clientId: '9',
+          clientName: 'Mario Rossi',
           productId: '2',
           product: { id: '2', name: 'Consulenza', vat: { id: '3' } },
           lines: [],
@@ -774,6 +777,32 @@ describe('fonti ufficiali', () => {
     expect(result.error.details?.[0]).not.toContain('key');
   });
 });
+it('blocca un cliente senza nome prima della POST', async () => {
+  const fetcher = vi.fn<typeof fetch>();
+  const result = await exportQuote(
+    {
+      companyId: '1',
+      clientId: '2',
+      clientName: '   ',
+      productId: '3',
+      product: { id: '3', name: 'Consulenza', vat: { id: '0' } },
+      lines: [],
+      attemptId: 'attempt',
+    },
+    'token',
+    fetcher,
+  );
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      outcome: 'rejected',
+      requestSent: false,
+      error: { field: 'client.displayName' },
+    },
+  });
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
 it.each([422, 500])(
   'retains the useful FIC error message alongside HTTP %s',
   async (status) => {
@@ -781,6 +810,7 @@ it.each([422, 500])(
       {
         companyId: '1',
         clientId: '2',
+        clientName: 'Mario Rossi',
         productId: '3',
         product: { id: '3', name: 'Consulenza', vat: { id: '0' } },
         lines: [],

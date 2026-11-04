@@ -23,6 +23,7 @@ const response = (
 const exportInput = {
   companyId: '1',
   clientId: '2',
+  clientName: 'Mario Rossi',
   productId: '3',
   attemptId: 'attempt',
   lines: [],

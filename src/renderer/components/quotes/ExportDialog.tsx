@@ -1,16 +1,17 @@
 import { Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { orderedQuoteItems } from '../../../domain/quote-layout';
+import { useState } from 'react';
+import Decimal from 'decimal.js';
+import { ExportComposer, type ExportRow } from './ExportComposer';
 import { buildExportLines, needsRepeatWarning } from '../../../domain/export';
 import {
   type CashDocument,
+  type ExportGroup,
   type CashError,
   type FicClientSnapshot,
   type Quote,
 } from '../../../domain/model';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -19,15 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -60,7 +58,7 @@ export function ExportDialog({
   error?: CashError | null;
   onExport: (
     client: FicClientSnapshot,
-    groups: Array<{ itemIds: string[]; description: string }>,
+    groups: ExportGroup[],
   ) => Promise<boolean>;
 }) {
   const companyId = doc.settings.fic.company?.id;
@@ -74,36 +72,24 @@ export function ExportDialog({
     currentRemote,
   );
   const [searching, setSearching] = useState(false);
-  const [groupAll, setGroupAll] = useState(false);
-  const items = useMemo(() => orderedQuoteItems(quote), [quote]);
-  const [selectedIds, setSelectedIds] = useState(() =>
-    items.map((item) => item.id),
-  );
-  const selectedItems = useMemo(
-    () => items.filter((item) => selectedIds.includes(item.id)),
-    [items, selectedIds],
-  );
-  const [descriptions, setDescriptions] = useState<Record<string, string>>(() =>
-    Object.fromEntries(quote.items.map((item) => [item.id, item.name])),
-  );
-  const [allDescription, setAllDescription] = useState<string>();
-  const groupDescription =
-    allDescription ?? selectedItems.map((item) => item.name).join(' + ');
+  const [rows, setRows] = useState<ExportRow[]>([]);
   const [busy, setBusy] = useState(false);
-  const groups = useMemo(
-    () =>
-      groupAll
-        ? [
-            {
-              itemIds: selectedItems.map((item) => item.id),
-              description: groupDescription,
-            },
-          ]
-        : selectedItems.map((item) => ({
-            itemIds: [item.id],
-            description: descriptions[item.id] ?? item.name,
-          })),
-    [groupDescription, descriptions, groupAll, selectedItems],
+  const groups: ExportGroup[] = rows.map((row) => ({
+    product: row.product,
+    itemIds: row.itemIds,
+    description: [
+      row.description.trim(),
+      ...row.itemIds.map(
+        (id) =>
+          quote.items.find((item) => item.id === id)?.name.trim() ||
+          'Voce senza nome',
+      ),
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  }));
+  const unassigned = quote.items.filter(
+    (item) => !rows.some((row) => row.itemIds.includes(item.id)),
   );
   const preview = client
     ? buildExportLines({ ...quote, client }, groups, companyId)
@@ -121,10 +107,13 @@ export function ExportDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !busy) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none overflow-y-auto sm:max-w-none"
+        showCloseButton={!busy}
+      >
         <DialogHeader>
           <DialogTitle>Esporta verso Fatture in Cloud</DialogTitle>
           <DialogDescription>
@@ -206,73 +195,15 @@ export function ExportDialog({
             ) : null}
           </div>
         ) : null}
-        {step === 2 ? (
-          <div className="space-y-4">
-            <div className="space-y-3 rounded-lg border p-4">
-              <p className="font-medium">Voci da esportare</p>
-              {items.map((item) => (
-                <Field key={item.id} orientation="horizontal">
-                  <Checkbox
-                    id={`export-select-${item.id}`}
-                    checked={selectedIds.includes(item.id)}
-                    onCheckedChange={(checked) =>
-                      setSelectedIds((current) =>
-                        checked
-                          ? [...current, item.id]
-                          : current.filter((id) => id !== item.id),
-                      )
-                    }
-                  />
-                  <FieldLabel htmlFor={`export-select-${item.id}`}>
-                    {item.name.trim() || 'Voce senza nome'} ·{' '}
-                    {eur(item.chosenPrice)}
-                  </FieldLabel>
-                </Field>
-              ))}
-            </div>
-            <div className="flex items-center justify-between rounded-lg border p-4">
-              <div>
-                <p className="font-medium">Raggruppa le voci selezionate</p>
-                <p className="text-sm text-muted-foreground">
-                  Influisce soltanto sulle righe esportate, non sul preventivo.
-                </p>
-              </div>
-              <Switch checked={groupAll} onCheckedChange={setGroupAll} />
-            </div>
-            {groupAll ? (
-              <Field>
-                <FieldLabel htmlFor="export-all-description">
-                  Descrizione riga
-                </FieldLabel>
-                <Input
-                  id="export-all-description"
-                  value={groupDescription}
-                  onChange={(event) => setAllDescription(event.target.value)}
-                />
-              </Field>
-            ) : (
-              <div className="space-y-3">
-                {selectedItems.map((item) => (
-                  <Field key={item.id}>
-                    <FieldLabel htmlFor={`export-${item.id}`}>
-                      {item.name.trim() || 'Voce senza nome'} ·{' '}
-                      {eur(item.chosenPrice)}
-                    </FieldLabel>
-                    <Input
-                      id={`export-${item.id}`}
-                      value={descriptions[item.id] ?? ''}
-                      onChange={(event) =>
-                        setDescriptions((current) => ({
-                          ...current,
-                          [item.id]: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                ))}
-              </div>
-            )}
-          </div>
+        {step === 2 && companyId ? (
+          <ExportComposer
+            key={companyId}
+            quote={quote}
+            companyId={companyId}
+            defaultProduct={doc.settings.fic.product}
+            rows={rows}
+            onChange={setRows}
+          />
         ) : null}
         {step === 3 ? (
           <div className="space-y-4">
@@ -291,7 +222,7 @@ export function ExportDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Descrizione</TableHead>
+                      <TableHead>Prodotto e descrizione</TableHead>
                       <TableHead className="text-right">Quantità</TableHead>
                       <TableHead className="text-right">Prezzo netto</TableHead>
                     </TableRow>
@@ -300,7 +231,10 @@ export function ExportDialog({
                     {preview.value.map((line) => (
                       <TableRow key={line.itemIds.join('-')}>
                         <TableCell className="font-medium">
-                          {line.description}
+                          <p>{line.product?.name}</p>
+                          <p className="whitespace-pre-line font-normal text-muted-foreground">
+                            {line.description}
+                          </p>
                         </TableCell>
                         <TableCell className="text-right">1</TableCell>
                         <TableCell className="text-right tabular-nums">
@@ -321,15 +255,31 @@ export function ExportDialog({
                 </AlertDescription>
               </Alert>
             )}
-            <p className="text-xs text-muted-foreground">
-              Prodotto: Consulenza · le sottovoci, le spese interne e la
-              provvigione non vengono esportate come righe autonome.
+            {preview?.ok ? (
+              <p className="text-right font-semibold">
+                Totale netto:{' '}
+                {eur(
+                  preview.value
+                    .reduce(
+                      (total, line) => total.plus(line.amount),
+                      new Decimal(0),
+                    )
+                    .toFixed(2),
+                )}
+              </p>
+            ) : null}
+            <p className="text-sm text-muted-foreground">
+              {unassigned.length > 0
+                ? `${unassigned.length} voci Cash non assegnate: non saranno esportate. `
+                : 'Tutte le voci Cash sono assegnate. '}
+              Ogni riga ha quantità 1; le ore non vengono esportate.
             </p>
           </div>
         ) : null}
         <DialogFooter className="justify-between">
           <Button
             variant="outline"
+            disabled={busy}
             onClick={() =>
               step === 1 ? onClose() : setStep((current) => current - 1)
             }
@@ -338,12 +288,7 @@ export function ExportDialog({
           </Button>
           {step < 3 ? (
             <Button
-              disabled={
-                (step === 1 && !client) ||
-                (step === 2 &&
-                  (selectedItems.length === 0 ||
-                    groups.some((group) => !group.description.trim())))
-              }
+              disabled={(step === 1 && !client) || (step === 2 && !preview?.ok)}
               onClick={() => setStep((current) => current + 1)}
             >
               Continua

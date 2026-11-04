@@ -7,6 +7,7 @@ import {
   createFiscalPreset2026,
   meta,
   ok,
+  type ExportGroup,
 } from '../../src/domain/model';
 import { snapshotProfile } from '../../src/domain/refresh';
 import { addQuote } from '../../src/domain/quotes';
@@ -29,6 +30,7 @@ let rootQuoteId = '';
 let originalItems = '';
 let originalTotal = '';
 let deleteRequests = 0;
+let exportedGroups: ExportGroup[] = [];
 export const settle = () =>
   new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -296,7 +298,9 @@ export async function fill(selector: string, value: string) {
   const input = document.querySelector<HTMLInputElement>(selector)!;
   input.focus();
   Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
+    input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype,
     'value',
   )!.set!.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -362,7 +366,10 @@ export async function showExport() {
           results={[]}
           onSearch={async () => {}}
           onClose={() => {}}
-          onExport={async () => false}
+          onExport={async (_client, groups) => {
+            exportedGroups = groups;
+            return false;
+          }}
         />
       </CSPProvider>,
     ),
@@ -371,6 +378,121 @@ export async function showExport() {
   return [...document.querySelectorAll('label[for^="export-select-"]')].map(
     (label) => label.textContent?.split(' ·')[0],
   );
+}
+
+export async function runExportComposerChecks() {
+  await setup();
+  const original = JSON.stringify(state.document!.quotes[0]!.items);
+  Object.assign(window.cash, {
+    fic: {
+      searchProducts: async () =>
+        ok({
+          products: [
+            { id: '42', name: 'Installazione' },
+            { id: '43', name: 'Supporto' },
+          ],
+          page: 1,
+        }),
+    },
+  });
+  await showExport();
+  const assert = (condition: unknown, message: string) => {
+    if (!condition) throw new Error(message);
+  };
+  const selectItem = async (name: string) => {
+    const item = state.document!.quotes[0]!.items.find(
+      (item) => item.name === name,
+    )!;
+    document
+      .querySelector<HTMLElement>(`label[for="export-select-${item.id}"]`)!
+      .click();
+    await settle();
+  };
+  const continueButton = () =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Continua',
+    )!;
+  assert(continueButton().disabled, 'empty composition blocks export');
+  await click('Cerca');
+  await selectItem('Router');
+  await selectItem('Switch');
+  await click('Aggiungi riga · Installazione');
+  assert(
+    document.querySelectorAll('article').length === 1,
+    'created first row',
+  );
+  assert(
+    document.querySelector('article')!.textContent!.includes('200,00'),
+    'sum uses chosen prices',
+  );
+  assert(
+    document.querySelectorAll('[data-export-item]').length === 1,
+    'assigned items disappear from Cash',
+  );
+  await click('Aggiungi riga · Supporto');
+  assert(continueButton().disabled, 'empty row blocks export');
+  await selectItem('Firewall');
+  const second = document.querySelectorAll('article')[1]!;
+  [...second.querySelectorAll<HTMLButtonElement>('button')]
+    .find((button) => button.textContent?.startsWith('Aggiungi qui'))!
+    .click();
+  await settle();
+  await click('Rimuovi Switch dalla riga 1');
+  assert(
+    document.querySelectorAll('[data-export-item]').length === 1,
+    'removed item returns to Cash',
+  );
+  await selectItem('Switch');
+  [...second.querySelectorAll<HTMLButtonElement>('button')]
+    .find((button) => button.textContent?.startsWith('Aggiungi qui'))!
+    .click();
+  await settle();
+  await click('Elimina riga 2');
+  assert(
+    document.body.textContent!.includes('2 da assegnare'),
+    'deletion returns items to Cash',
+  );
+  assert(
+    document.querySelectorAll('[data-export-item]').length === 2,
+    'deleted row returns its items to Cash',
+  );
+  await selectItem('Switch');
+  await selectItem('Firewall');
+  await click('Aggiungi riga · Supporto');
+  await fill('textarea', 'Servizio completo');
+  await click('Continua');
+  assert(
+    document.querySelector('table')!.textContent!.includes('Installazione'),
+    'preview includes selected product',
+  );
+  await click('Indietro');
+  assert(
+    document.querySelectorAll('article').length === 2,
+    'back preserves composition',
+  );
+  await click('Continua');
+  await click('Invia preventivo');
+  assert(exportedGroups.length === 2, 'exports two groups');
+  assert(exportedGroups[0]!.product!.id === '42', 'first product preserved');
+  assert(
+    exportedGroups[0]!.description === 'Servizio completo\nRouter',
+    'description includes Cash item',
+  );
+  assert(
+    exportedGroups[1]!.product!.id === '43' &&
+      exportedGroups[1]!.itemIds.length === 2,
+    'second product groups two items',
+  );
+  assert(
+    exportedGroups[1]!.description === 'Switch\nFirewall',
+    'all grouped names exported',
+  );
+  assert(
+    JSON.stringify(state.document!.quotes[0]!.items) === original,
+    'composition does not alter Cash items',
+  );
+  await click('Indietro');
+  return 'EXPORT_COMPOSER_UI_OK';
 }
 
 export async function runQuickEntryChecks() {

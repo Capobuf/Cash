@@ -18,6 +18,7 @@ import { quoteTitle } from '../../src/domain/quotes';
 import type { ArchiveSession } from '../../src/shared/archive';
 import { AppState } from '../../src/renderer/state';
 import { useQuoteController } from '../../src/renderer/hooks/use-quote-controller';
+import { toast } from '../../src/renderer/components/ui/toast';
 
 function session(document: CashDocument, path = 'Cash.json'): ArchiveSession {
   return {
@@ -794,6 +795,37 @@ describe('persistenza dell’esito export', () => {
     });
     expect(test.state.error).toEqual(error);
     expect(test.exportQuote).toHaveBeenCalledOnce();
+  });
+
+  it('mostra il rifiuto nel modale senza una seconda notifica sul retro', async () => {
+    const test = setup();
+    const addToast = vi.spyOn(toast, 'add');
+    try {
+      const error = {
+        code: 'VALIDATION' as const,
+        source: 'FattureInCloud' as const,
+        message: 'Operazione rifiutata: dati non validi. (HTTP 422)',
+        details: ['entity.name: The entity.name field must not be empty.'],
+      };
+      test.exportQuote.mockResolvedValue(
+        ok({
+          outcome: 'rejected',
+          requestSent: true,
+          error,
+          diagnostic: error.message,
+        }),
+      );
+      expect(await test.operations.performExport()).toBe(false);
+      expect(test.state.error).toEqual(error);
+      expect(addToast).not.toHaveBeenCalled();
+      expect(test.state.document?.quotes[0]?.exportAttempts[0]?.outcome).toBe(
+        'rejected',
+      );
+      test.state.setError(error);
+      expect(addToast).toHaveBeenCalledOnce();
+    } finally {
+      addToast.mockRestore();
+    }
   });
 
   it('restituisce successo solo dopo il salvataggio finale e registra la data della risposta', async () => {

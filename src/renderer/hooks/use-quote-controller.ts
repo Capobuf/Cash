@@ -22,6 +22,8 @@ import {
   meta,
   touch,
   type CashDocument,
+  type CashError,
+  type ExportGroup,
   type FicClientSnapshot,
   type Quote,
   type QuoteItem,
@@ -1258,10 +1260,14 @@ export function useQuoteController({
 
   const performExport = async (
     client: FicClientSnapshot,
-    groups: Array<{ itemIds: string[]; description: string }>,
+    groups: ExportGroup[],
   ) => {
+    if (!quote) return false;
+    let isCurrent = guardQuoteContext();
+    const reportExportError = (error: CashError) =>
+      appState.setError(error, { notify: !isCurrent() });
     if (!hasToken) {
-      appState.setError({
+      reportExportError({
         code: 'CREDENTIALS',
         source: 'FattureInCloud',
         message:
@@ -1269,12 +1275,10 @@ export function useQuoteController({
       });
       return false;
     }
-    if (!quote) return false;
-    let isCurrent = guardQuoteContext();
     if (!isCurrent()) return false;
     const fic = doc.settings.fic;
     if (!fic.enabled || !fic.company || !fic.product) {
-      appState.setError({
+      reportExportError({
         code: 'MISSING_DATA',
         source: 'FattureInCloud',
         message: 'Fatture in Cloud non è configurato.',
@@ -1285,7 +1289,7 @@ export function useQuoteController({
     const exportSnapshot = { ...quote, client };
     const built = buildExportLines(exportSnapshot, groups, fic.company.id);
     if (!built.ok) {
-      appState.setError(built.error);
+      reportExportError(built.error);
       return false;
     }
     if (
@@ -1305,7 +1309,7 @@ export function useQuoteController({
       attempt = await createPendingAttempt(fic.company.id, built.value);
     } catch {
       if (isCurrent())
-        appState.setError({
+        reportExportError({
           code: 'VALIDATION',
           message:
             'Impossibile calcolare il fingerprint del preventivo. Invio non eseguito.',
@@ -1357,7 +1361,7 @@ export function useQuoteController({
         !rejected &&
         sameArchive &&
         appState.markExportForVerification(quote.id, attempt.id);
-      appState.setError({
+      reportExportError({
         code: rejected ? 'IO' : 'EXPORT_UNCERTAIN',
         source: 'FattureInCloud',
         message: rejected
@@ -1408,7 +1412,7 @@ export function useQuoteController({
     try {
       await appState.save();
     } catch (cause) {
-      appState.setError({
+      reportExportError({
         code: 'IO',
         source: 'archive',
         message: 'Salvataggio dell’esito export interrotto.',
@@ -1419,7 +1423,7 @@ export function useQuoteController({
     if (appState.status !== 'Salvato' || !isCurrent())
       return reportUnpersistedOutcome();
     if (!sent.ok || sent.value.outcome === 'uncertain') {
-      appState.setError({
+      reportExportError({
         code: 'EXPORT_UNCERTAIN',
         source: 'FattureInCloud',
         message:
@@ -1432,7 +1436,7 @@ export function useQuoteController({
         ],
       });
     } else if (sent.value.outcome === 'rejected') {
-      appState.setError(
+      reportExportError(
         sent.value.error ?? {
           code: 'VALIDATION',
           source: 'FattureInCloud',

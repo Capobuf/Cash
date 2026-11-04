@@ -48,6 +48,8 @@ import {
   listCompanies,
   listConsultingProducts,
   searchClients,
+  searchProducts,
+  type VerifiedProduct,
   syncFinancialData,
   verifyActivation,
   verifyProduct,
@@ -942,6 +944,30 @@ function registerHandlers(): void {
     },
   );
   const exportingAttempts = new Set<string>();
+  ipcMain.handle(
+    IPC.ficSearchProducts,
+    async (
+      _event,
+      input: { companyId: string; query: string; page?: number },
+    ) => {
+      if (!activeFicCompany(input.companyId))
+        return err({
+          code: 'VALIDATION',
+          source: 'FattureInCloud',
+          message: 'Azienda Fatture in Cloud non attiva.',
+        });
+      const token = await readFicToken();
+      return token.ok
+        ? searchProducts(
+            input.companyId,
+            input.query,
+            token.value,
+            fetch,
+            input.page,
+          )
+        : token;
+    },
+  );
   ipcMain.handle(IPC.ficExport, async (_event, input) => {
     const notSent = (error: import('../domain/model').CashError) =>
       ok({
@@ -982,12 +1008,21 @@ function registerHandlers(): void {
     try {
       const token = await readFicToken();
       if (!token.ok) return notSent(token.error);
-      const product = await verifyProduct(
-        input.companyId,
-        input.productId,
-        token.value,
-      );
-      if (!product.ok) return notSent(product.error);
+      const products: VerifiedProduct[] = [];
+      for (const id of new Set(
+        attempt.lines.map((line) => line.product?.id ?? input.productId),
+      )) {
+        const product = await verifyProduct(
+          input.companyId,
+          id,
+          token.value,
+          fetch,
+          undefined,
+          false,
+        );
+        if (!product.ok) return notSent(product.error);
+        products.push(product.value);
+      }
       // Only dispatch after authoritative verification and a still-current saved attempt.
       if (current !== session || dirty || !activeFicCompany(input.companyId))
         return notSent({
@@ -996,7 +1031,12 @@ function registerHandlers(): void {
           message: 'Archivio o collegamento cambiato prima dell’invio.',
         });
       return await exportQuote(
-        { ...input, product: product.value },
+        {
+          ...input,
+          clientName: quote.client.displayName,
+          product: products[0]!,
+          products,
+        },
         token.value,
       );
     } finally {

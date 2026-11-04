@@ -919,6 +919,10 @@ it('esporta con una sola verifica prodotto e una POST, con IVA corrente', async 
   const { input } = await prepareFicExport();
   const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
     if (init?.method === 'POST') {
+      expect(JSON.parse(String(init.body)).data.entity).toEqual({
+        id: 3,
+        name: 'Cliente',
+      });
       expect(JSON.parse(String(init.body)).data.items_list[0].vat.id).toBe(8);
       return new Response(JSON.stringify({ data: { id: 90 } }));
     }
@@ -934,6 +938,90 @@ it('esporta con una sola verifica prodotto e una POST, con IVA corrente', async 
     value: { outcome: 'success', remoteDocumentId: '90' },
   });
   expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it('verifica ciascun prodotto distinto e invia le righe con nome e IVA correnti', async () => {
+  const { input } = await prepareFicExport();
+  input.lines[0]!.product = { id: '10', name: 'Nome precedente' };
+  input.lines.push({
+    ...input.lines[0]!,
+    itemIds: ['second'],
+    product: { id: '11', name: 'Supporto' },
+  });
+  input.lines.push({ ...input.lines[0]!, itemIds: ['third'] });
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (init?.method === 'POST') {
+      expect(JSON.parse(String(init.body)).data.items_list).toEqual([
+        {
+          product_id: 10,
+          name: 'Installazione',
+          description: 'Servizio',
+          qty: 1,
+          net_price: 100,
+          vat: { id: 8 },
+        },
+        {
+          product_id: 11,
+          name: 'Supporto',
+          description: 'Servizio',
+          qty: 1,
+          net_price: 100,
+          vat: { id: 9 },
+        },
+        {
+          product_id: 10,
+          name: 'Installazione',
+          description: 'Servizio',
+          qty: 1,
+          net_price: 100,
+          vat: { id: 8 },
+        },
+      ]);
+      return new Response(JSON.stringify({ data: { id: 91 } }));
+    }
+    const second = String(url).includes('/products/11?');
+    return new Response(
+      JSON.stringify({
+        data: {
+          id: second ? 11 : 10,
+          name: second ? 'Supporto' : 'Installazione',
+          default_vat: { id: second ? 9 : 8 },
+        },
+      }),
+    );
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect(await native.handlers.get(IPC.ficExport)!({}, input)).toMatchObject({
+    ok: true,
+    value: { outcome: 'success' },
+  });
+  expect(fetcher).toHaveBeenCalledTimes(3);
+});
+
+it('non invia nessuna riga se un prodotto del gruppo non è più disponibile', async () => {
+  const { input } = await prepareFicExport();
+  input.lines.push({
+    ...input.lines[0]!,
+    itemIds: ['second'],
+    product: { id: '11', name: 'Supporto' },
+  });
+  const fetcher = vi.fn<typeof fetch>(async (url) =>
+    String(url).includes('/products/11?')
+      ? new Response('{}', { status: 404 })
+      : new Response(
+          JSON.stringify({
+            data: { id: 2, name: 'Consulenza', default_vat: { id: 8 } },
+          }),
+        ),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  expect(await native.handlers.get(IPC.ficExport)!({}, input)).toMatchObject({
+    ok: true,
+    value: { outcome: 'rejected', requestSent: false },
+  });
+  expect(fetcher.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(
+    true,
+  );
 });
 
 it.each([404, 422, 403])(

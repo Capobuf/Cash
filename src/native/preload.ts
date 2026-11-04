@@ -83,6 +83,7 @@ const api: CashNativeApi = {
       ipcRenderer.invoke(IPC.ficClientDetails, input),
     verifyProduct: (input) => ipcRenderer.invoke(IPC.ficProduct, input),
     exportQuote: (input) => ipcRenderer.invoke(IPC.ficExport, input),
+    searchProducts: (input) => ipcRenderer.invoke(IPC.ficSearchProducts, input),
   },
   updates: {
     getStatus: () => ipcRenderer.invoke(IPC.updateStatus),
