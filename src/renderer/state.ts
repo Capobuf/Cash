@@ -628,9 +628,9 @@ export class AppState {
   notifyFicSuccess(title: string, description: string): void {
     toast.add({ type: 'success', title, description });
   }
-  setError(error: CashError): void {
+  setError(error: CashError, options: { notify?: boolean } = {}): void {
     this.error = error;
-    if (error.source === 'FattureInCloud') {
+    if (error.source === 'FattureInCloud' && options.notify !== false) {
       const persistent = ['EXPORT_UNCERTAIN', 'IO', 'CONFLICT'].includes(
         error.code,
       );

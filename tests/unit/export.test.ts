@@ -5,7 +5,8 @@ import {
   needsRepeatWarning,
   sha256Text,
 } from '../../src/domain/export';
-import { meta, type Quote } from '../../src/domain/model';
+import { createEmptyDocument, meta, type Quote } from '../../src/domain/model';
+import { cashDocumentSchema } from '../../src/domain/schema';
 
 const quote: Quote = {
   number: 1,
@@ -40,6 +41,43 @@ const quote: Quote = {
   ],
 };
 describe('esportazione deliberata', () => {
+  it('somma importi senza ore e conserva prodotti distinti nel tentativo salvato', async () => {
+    const source = structuredClone(quote);
+    source.items[0]!.subItems = [
+      { ...meta(), kind: 'time', description: 'Lavoro interno', minutes: 480 },
+    ];
+    const built = buildExportLines(source, [
+      {
+        product: { id: '42', name: 'Installazione' },
+        itemIds: source.items.map((item) => item.id),
+        description: 'A\nB',
+      },
+    ]);
+    expect(built).toMatchObject({
+      ok: true,
+      value: [
+        {
+          product: { id: '42', name: 'Installazione' },
+          amount: '150.00',
+          quantity: 1,
+          description: 'A\nB',
+        },
+      ],
+    });
+    if (!built.ok) throw new Error('lines');
+    const attempt = await createPendingAttempt('1', built.value);
+    const doc = createEmptyDocument();
+    doc.quotes.push({ ...source, exportAttempts: [attempt] });
+    doc.nextQuoteNumber = 2;
+    expect(
+      cashDocumentSchema.parse(doc).quotes[0]!.exportAttempts[0]!.lines,
+    ).toEqual(built.value);
+    const other = await createPendingAttempt('1', [
+      { ...built.value[0]!, product: { id: '43', name: 'Supporto' } },
+    ]);
+    expect(other.payloadHash).not.toBe(attempt.payloadHash);
+    expect(JSON.stringify(attempt.lines)).not.toContain('minutes');
+  });
   it('conserva le righe commerciali esportate con un titolo personalizzato', () => {
     expect(
       buildExportLines({

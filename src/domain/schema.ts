@@ -479,6 +479,7 @@ const quoteItemSchema = z
   });
 const exportLineSchema = z.object({
   itemIds: z.array(uuid).min(1),
+  product: z.object({ id: nonBlank, name: nonBlank }).optional(),
   description: nonBlank,
   amount: moneyInput,
   quantity: z.literal(1),

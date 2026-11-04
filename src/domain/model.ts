@@ -304,8 +304,14 @@ export interface QuoteItem extends EntityMeta {
 }
 
 export type ExportOutcome = 'pending' | 'success' | 'rejected' | 'uncertain';
+export interface ExportGroup {
+  itemIds: string[];
+  description: string;
+  product?: { id: string; name: string };
+}
 export interface ExportLine {
   itemIds: string[];
+  product?: { id: string; name: string };
   description: string;
   amount: DecimalString;
   quantity: 1;

@@ -63,6 +63,7 @@ export const IPC = {
   ficFinancialSync: 'cash:fic:financial-sync',
   ficVerifyPermissions: 'cash:fic:verify-permissions',
   ficProduct: 'cash:fic:product',
+  ficSearchProducts: 'cash:fic:search-products',
   ficExport: 'cash:fic:export',
   ficWizardCompanies: 'cash:fic:wizard-companies',
   ficWizardProducts: 'cash:fic:wizard-products',
@@ -212,6 +213,17 @@ export interface CashNativeApi {
       companyId: string;
       productId: string;
     }): Promise<Result<{ id: string; name: string }>>;
+    searchProducts(input: {
+      companyId: string;
+      query: string;
+      page?: number;
+    }): Promise<
+      Result<{
+        products: Array<{ id: string; name: string }>;
+        page: number;
+        nextPage?: number;
+      }>
+    >;
     exportQuote(input: {
       companyId: string;
       clientId: string;

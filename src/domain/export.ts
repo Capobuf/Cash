@@ -5,6 +5,7 @@ import {
   meta,
   ok,
   type ExportAttempt,
+  type ExportGroup,
   type ExportLine,
   type Quote,
   type Result,
@@ -12,7 +13,7 @@ import {
 
 export function buildExportLines(
   quote: Quote,
-  groups?: Array<{ itemIds: string[]; description: string }>,
+  groups?: ExportGroup[],
   companyId?: string,
 ): Result<ExportLine[]> {
   if (!quote.client || quote.client.source !== 'fatture_in_cloud')
@@ -28,7 +29,7 @@ export function buildExportLines(
       message: 'Il cliente appartiene a un’altra azienda Fatture in Cloud.',
     });
   const byId = new Map(quote.items.map((item) => [item.id, item]));
-  const selectedGroups =
+  const selectedGroups: ExportGroup[] =
     groups ??
     orderedQuoteItems(quote).map((item) => ({
       itemIds: [item.id],
@@ -43,6 +44,15 @@ export function buildExportLines(
   const used = new Set<string>();
   const lines: ExportLine[] = [];
   for (const group of selectedGroups) {
+    if (
+      group.product &&
+      (!group.product.id.trim() || !group.product.name.trim())
+    )
+      return err({
+        code: 'VALIDATION',
+        field: 'export.product',
+        message: 'Seleziona un prodotto Fatture in Cloud per ogni riga.',
+      });
     if (!group.description.trim() || group.itemIds.length === 0)
       return err({
         code: 'VALIDATION',
@@ -69,6 +79,7 @@ export function buildExportLines(
     }
     lines.push({
       itemIds: [...group.itemIds],
+      ...(group.product ? { product: { ...group.product } } : {}),
       description: group.description.trim(),
       amount: amount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
       quantity: 1,

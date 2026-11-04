@@ -730,6 +730,63 @@ export async function listConsultingProducts(
   }
 }
 
+export async function searchProducts(
+  companyId: string,
+  query: string,
+  token: string,
+  fetcher: typeof fetch = fetch,
+  page = 1,
+): Promise<
+  Result<{
+    products: Array<{ id: string; name: string }>;
+    page: number;
+    nextPage?: number;
+  }>
+> {
+  if (!Number.isSafeInteger(page) || page < 1)
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Pagina prodotti non valida.',
+    });
+  const filter = query.trim()
+    ? `&q=${encodeURIComponent(`name contains ${queryString(query.trim())}`)}`
+    : '';
+  const response = await ficFetch(
+    `/c/${encodeURIComponent(companyId)}/products?per_page=100&fields=id,name&page=${page}${filter}`,
+    token,
+    {},
+    fetcher,
+  );
+  if (!response.ok) return response;
+  try {
+    const result = z
+      .object({
+        data: z.array(productSummarySchema),
+        current_page: z.number().int().positive(),
+        last_page: z.number().int().positive(),
+      })
+      .parse(await response.value.json());
+    if (result.current_page !== page || result.last_page < page)
+      throw new Error('Paginazione prodotti incoerente.');
+    return ok({
+      products: result.data.map((product) => ({
+        id: String(product.id),
+        name: product.name,
+      })),
+      page,
+      ...(page < result.last_page ? { nextPage: page + 1 } : {}),
+    });
+  } catch (cause) {
+    return err({
+      code: 'SOURCE_INVALID',
+      source: 'FattureInCloud',
+      message: 'Risposta prodotti non valida.',
+      details: [String(cause)],
+    });
+  }
+}
+
 export async function createClient(
   companyId: string,
   input: FicCreateClientInput,
@@ -895,6 +952,7 @@ export async function verifyProduct(
   token: string,
   fetcher: typeof fetch = fetch,
   companyDefaultVat?: VerifiedProduct['vat'],
+  requireConsulting = true,
 ): Promise<Result<VerifiedProduct>> {
   const response = await ficFetch(
     `/c/${encodeURIComponent(companyId)}/products/${encodeURIComponent(productId)}?fields=id,name,default_vat`,
@@ -908,7 +966,10 @@ export async function verifyProduct(
     const product = productSchema.parse(json.data);
     if (String(product.id) !== productId)
       throw new Error('Prodotto diverso da quello richiesto.');
-    if (product.name.trim().toLocaleLowerCase('it') !== 'consulenza')
+    if (
+      requireConsulting &&
+      product.name.trim().toLocaleLowerCase('it') !== 'consulenza'
+    )
       return err({
         code: 'VALIDATION',
         source: 'FattureInCloud',
@@ -928,8 +989,7 @@ export async function verifyProduct(
         code: 'MISSING_DATA',
         source: 'FattureInCloud',
         field: 'product.default_vat',
-        message:
-          'Né il prodotto “Consulenza” né l’azienda hanno un’IVA predefinita.',
+        message: `Né il prodotto “${product.name}” né l’azienda hanno un’IVA predefinita.`,
         action:
           'Configura l’IVA predefinita del prodotto o del profilo fiscale in Fatture in Cloud, salva e poi ripeti la verifica.',
       });
@@ -1282,27 +1342,63 @@ export async function exportQuote(
   input: {
     companyId: string;
     clientId: string;
+    clientName: string;
     productId: string;
     product: VerifiedProduct;
+    products?: VerifiedProduct[];
     lines: ExportLine[];
     attemptId: string;
   },
   token: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Result<FicExportResult>> {
+  if (!input.clientName.trim()) {
+    const error: CashError = {
+      code: 'MISSING_DATA',
+      source: 'FattureInCloud',
+      field: 'client.displayName',
+      message:
+        'Il nome del cliente è obbligatorio per esportare il preventivo.',
+      action: 'Seleziona nuovamente il cliente prima di inviare.',
+    };
+    return ok({
+      outcome: 'rejected',
+      requestSent: false,
+      error,
+      diagnostic: error.message,
+    });
+  }
+  const products = new Map(
+    [input.product, ...(input.products ?? [])].map((product) => [
+      product.id,
+      product,
+    ]),
+  );
+  if (
+    input.lines.some(
+      (line) => !products.has(line.product?.id ?? input.productId),
+    )
+  )
+    return err({
+      code: 'VALIDATION',
+      source: 'FattureInCloud',
+      message: 'Prodotto non verificato. Invio non eseguito.',
+    });
   const payload = {
     data: {
       type: 'quote',
-      entity: { id: Number(input.clientId) },
-      items_list: input.lines.map((line) => ({
-        product_id: Number(input.productId),
-        name: 'Consulenza',
-        description: line.description,
-        qty: 1,
-        net_price: Number(line.amount),
-        vat: { id: Number(input.product.vat.id) },
-      })),
-      notes: `Cash attempt ${input.attemptId}`,
+      entity: { id: Number(input.clientId), name: input.clientName.trim() },
+      items_list: input.lines.map((line) => {
+        const product = products.get(line.product?.id ?? input.productId)!;
+        return {
+          product_id: Number(product.id),
+          name: product.name,
+          description: line.description,
+          qty: 1,
+          net_price: Number(line.amount),
+          vat: { id: Number(product.vat.id) },
+        };
+      }),
     },
   };
   const response = await ficFetch(
