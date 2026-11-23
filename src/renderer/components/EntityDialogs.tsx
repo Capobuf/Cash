@@ -172,12 +172,9 @@ export function SiteDialog({
   site?: Site;
   fixedClient?: FicClientSnapshot;
 }) {
-  const [mode, setMode] = useState<'address' | 'coordinates'>(
-    site?.location?.inputKind ?? 'address',
-  );
-  const [address, setAddress] = useState(site?.address ?? '');
-  const [coordinateText, setCoordinateText] = useState(
-    site?.location ? coordinatesInput(site.location.coordinates) : '',
+  const [address, setAddress] = useState(
+    site?.address ??
+      (site?.location ? coordinatesInput(site.location.coordinates) : ''),
   );
   const [resolved, setResolved] = useState<ResolvedLocation | undefined>(() =>
     site?.location?.inputKind === 'coordinates'
@@ -197,7 +194,6 @@ export function SiteDialog({
 
   const choose = (result: GeocodingResult) => {
     setAddress(result.label);
-    setCoordinateText(coordinatesInput(result.coordinates));
     setResolved({
       coordinates: result.coordinates,
       inputKind: 'address',
@@ -210,10 +206,8 @@ export function SiteDialog({
     setSearching(true);
     setSearchError('');
     setResults([]);
-    const parsed = parseCoordinates(
-      mode === 'coordinates' ? coordinateText : address,
-    );
-    if (mode === 'address' && !parsed.ok) {
+    const parsed = parseCoordinates(address);
+    if (!parsed.ok) {
       const response = await window.cash.ors.searchAddress(address);
       setSearching(false);
       if (!response.ok) {
@@ -227,26 +221,15 @@ export function SiteDialog({
       setResults(response.value);
       return;
     }
-    if (!parsed.ok) {
-      setSearching(false);
-      setSearchError(parsed.error.message);
-      return;
-    }
-    if (mode === 'address') {
-      setMode('coordinates');
-      setCoordinateText(coordinatesInput(parsed.value));
-      setAddress('');
-    }
     const response = await window.cash.ors.reverseCoordinates(parsed.value);
     setSearching(false);
     if (!response.ok) {
       setSearchError(response.error.message);
       return;
     }
-    const label = response.value[0]?.label;
-    if (label) setAddress(label);
     const normalized = coordinatesInput(parsed.value);
-    setCoordinateText(normalized);
+    // The field shows the reverse-geocoded label; coordinates stay in `resolved`.
+    setAddress(response.value[0]?.label ?? normalized);
     setResolved({
       coordinates: parsed.value,
       inputKind: 'coordinates',
@@ -266,41 +249,20 @@ export function SiteDialog({
       });
       return;
     }
-    let location = resolved;
-    const parsed = parseCoordinates(
-      mode === 'coordinates' ? coordinateText : address,
-    );
-    if (mode === 'coordinates' || parsed.ok) {
-      if (!parsed.ok) {
-        appState.setError(parsed.error);
-        return;
-      }
-      location = {
-        coordinates: parsed.value,
-        inputKind: 'coordinates',
-        inputValue: coordinatesInput(parsed.value),
-      };
-    }
-    if (
-      location?.inputKind === 'address' &&
-      location.inputValue !== address.trim()
-    )
-      location = undefined;
-    if (
-      mode !== 'coordinates' &&
-      !parsed.ok &&
-      location?.inputKind === 'coordinates' &&
-      location.inputValue !== coordinateText.trim()
-    )
-      location = undefined;
+    // Editing the field clears `resolved`, so it always matches the shown text.
+    const parsed = parseCoordinates(address);
+    const location: ResolvedLocation | undefined = parsed.ok
+      ? {
+          coordinates: parsed.value,
+          inputKind: 'coordinates',
+          inputValue: coordinatesInput(parsed.value),
+        }
+      : resolved;
     if (
       !appState.mutate((document) => {
         const values = {
           name,
-          address:
-            mode === 'address' && parsed.ok
-              ? undefined
-              : address.trim() || undefined,
+          address: parsed.ok ? undefined : address.trim() || undefined,
           location,
           client: fixedClient
             ? {
@@ -365,54 +327,24 @@ export function SiteDialog({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="site-mode">Cerca tramite</FieldLabel>
-            <SelectField
-              id="site-mode"
-              value={mode}
-              onValueChange={(value) => setMode(value as typeof mode)}
-              options={[
-                { value: 'address', label: 'Indirizzo o coordinate' },
-                { value: 'coordinates', label: 'Coordinate' },
-              ]}
+            <FieldLabel htmlFor="site-address">
+              Indirizzo o coordinate
+            </FieldLabel>
+            <Input
+              id="site-address"
+              value={address}
+              onChange={(event) => {
+                setAddress(event.target.value);
+                setResolved(undefined);
+              }}
+              placeholder="Via, città oppure 41.9028, 12.4964"
             />
+            <FieldDescription>
+              Le coordinate nel formato latitudine, longitudine vengono
+              riconosciute automaticamente. Per un indirizzo, premi Cerca e
+              scegli un risultato.
+            </FieldDescription>
           </Field>
-          {mode === 'address' ? (
-            <Field>
-              <FieldLabel htmlFor="site-address">
-                Indirizzo o coordinate
-              </FieldLabel>
-              <Input
-                id="site-address"
-                value={address}
-                onChange={(event) => {
-                  setAddress(event.target.value);
-                  setResolved(undefined);
-                }}
-                placeholder="Via, città oppure 41.9028, 12.4964"
-              />
-              <FieldDescription>
-                Le coordinate nel formato latitudine, longitudine vengono
-                riconosciute automaticamente. Per un indirizzo, premi Cerca e
-                scegli un risultato.
-              </FieldDescription>
-            </Field>
-          ) : (
-            <Field>
-              <FieldLabel htmlFor="site-coordinates">Coordinate</FieldLabel>
-              <Input
-                id="site-coordinates"
-                value={coordinateText}
-                onChange={(event) => {
-                  setCoordinateText(event.target.value);
-                  setResolved(undefined);
-                }}
-                placeholder="41.4682252, 14.5621986"
-              />
-              <FieldDescription>
-                Formato Google Maps: latitudine, longitudine.
-              </FieldDescription>
-            </Field>
-          )}
           <Button
             type="button"
             variant="secondary"

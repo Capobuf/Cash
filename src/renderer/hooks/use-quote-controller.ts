@@ -160,7 +160,7 @@ export function useQuoteController({
       kind: 'travel',
       description:
         definition.description.trim() ||
-        defaultTravelName(departure, destination),
+        defaultTravelName(departure, destination, definition.roundTrip),
       ...(departure ? { departure: snapshotSite(departure) } : {}),
       ...(destination ? { destination: snapshotSite(destination) } : {}),
       ...(vehicle ? { vehicleId: vehicle.id, vehicleName: vehicle.name } : {}),
@@ -863,7 +863,11 @@ export function useQuoteController({
       const index = item.subItems.findIndex((entry) => entry.id === subId);
       const oldTravel = previous?.kind === 'travel' ? previous : undefined;
       const previousName = oldTravel
-        ? defaultTravelName(oldTravel.departure, oldTravel.destination)
+        ? defaultTravelName(
+            oldTravel.departure,
+            oldTravel.destination,
+            oldTravel.roundTrip,
+          )
         : defaultTravelName(
             doc.sites.find(
               (site) => site.id === doc.settings.defaultDepartureSiteId,

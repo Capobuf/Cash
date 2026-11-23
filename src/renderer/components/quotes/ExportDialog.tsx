@@ -94,7 +94,8 @@ export function ExportDialog({
   const preview = client
     ? buildExportLines({ ...quote, client }, groups, companyId)
     : undefined;
-  const repeat = needsRepeatWarning(quote);
+  // The send itself stores a pending attempt first; it is not a previous export.
+  const repeat = !busy && needsRepeatWarning(quote);
   const send = () => {
     if (!client) return;
     setBusy(true);

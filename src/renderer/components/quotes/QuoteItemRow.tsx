@@ -156,7 +156,7 @@ export function QuoteVariantRow(props: VariantControlProps) {
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pl-2">
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {props.value ? 'Nessuna sottoriga' : 'Scegli una variante'}
+          {props.group.name}
         </span>
         <QuoteVariantSelect {...props} />
       </div>

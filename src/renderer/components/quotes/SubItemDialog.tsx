@@ -101,16 +101,22 @@ export function SubItemDialog({
   const [destinationSiteId, setDestinationSiteId] = useState(
     travel?.destination?.sourceId ?? defaultDestinationSiteId ?? '',
   );
+  const [roundTrip, setRoundTrip] = useState(travel?.roundTrip ?? true);
   const automaticName = defaultTravelName(
     doc.sites.find((site) => site.id === departureSiteId),
     doc.sites.find((site) => site.id === destinationSiteId),
+    roundTrip,
   );
   const [travelDescription, setTravelDescription] = useState<
     string | undefined
   >(() => {
     const description = sub?.description ?? initialDescription ?? '';
     const previousName = travel
-      ? defaultTravelName(travel.departure, travel.destination)
+      ? defaultTravelName(
+          travel.departure,
+          travel.destination,
+          travel.roundTrip,
+        )
       : automaticName;
     return !description.trim() || description === previousName
       ? undefined
@@ -119,7 +125,6 @@ export function SubItemDialog({
   const [vehicleId, setVehicleId] = useState(
     travel?.vehicleId ?? doc.settings.defaultVehicleId ?? '',
   );
-  const [roundTrip, setRoundTrip] = useState(travel?.roundTrip ?? true);
   const [distance, setDistance] = useState(
     travel?.distanceKmPerOccurrence ?? '',
   );
