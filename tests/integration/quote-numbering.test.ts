@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { downgradeToStorageV2 } from '../fixtures/storage-v2';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createEmptyDocument, type Result } from '../../src/domain/model';
 import { addQuote, quoteTitle } from '../../src/domain/quotes';
@@ -41,6 +42,7 @@ afterEach(async () => {
 function downgrade(path: string) {
   const db = new DatabaseSync(path);
   try {
+    downgradeToStorageV2(db);
     db.exec(`
       BEGIN IMMEDIATE;
       CREATE TABLE old_quotes (id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, position INTEGER NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL) STRICT;
@@ -189,7 +191,7 @@ describe('numerazione persistente dei preventivi', () => {
     downgrade(path);
     const migrated = unwrap(await openArchive(path));
     expect(migrated.document).toEqual(document);
-    expect(migrated.storageVersion).toBe(2);
+    expect(migrated.storageVersion).toBe(3);
     const backups = (await readdir(dir)).filter((name) =>
       name.includes('.schema-v1.'),
     );

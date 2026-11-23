@@ -27,6 +27,7 @@ import { FinancialAnalysisView } from '../../src/renderer/views/FinancialAnalysi
 import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
 import { calculateFinancialOverview } from '../../src/domain/financial-overview';
 import { BankMovementsView } from '../../src/renderer/views/BankMovementsView';
+import { BankAccountsSettings } from '../../src/renderer/components/BankAccounts';
 import { BankRulesTable } from '../../src/renderer/components/BankRulesTable';
 import { CustomerDialog } from '../../src/renderer/components/quotes/CustomerDialog';
 import {
@@ -1278,12 +1279,15 @@ export async function runUiChecks() {
     await render(null);
     results.push('backup-controls');
 
+    doc.bankAccounts = [{ ...meta(), name: 'Fineco' }];
     appState.bankExpenseImporting = true;
     appState.bankExpenseImportSummary = {
       imported: 1,
+      accountName: 'Fineco',
       duplicates: 2,
       repeatedInFile: 0,
       ignoredIncome: 3,
+      skippedPending: 0,
     };
     await render(
       <BankMovementsView doc={doc} appState={appState} year={2026} />,
@@ -1292,8 +1296,17 @@ export async function runUiChecks() {
       document.querySelector('[data-slot=spinner]') &&
         document.body.innerText.includes('Importazione in corso') &&
         document.body.innerText.includes('1 movimenti importati') &&
-        document.body.innerText.includes('Adobe'),
+        document.body.innerText.includes('Adobe') &&
+        document.body.innerText.includes('Importa dai conti'),
       'Import feedback hid bank rows or original summary',
+    );
+    await render(<BankAccountsSettings doc={doc} appState={appState} />);
+    check(
+      document.body.innerText.includes('Conti bancari') &&
+        document.body.innerText.includes('Fineco') &&
+        document.querySelector('[aria-label="Rinomina Fineco"]') &&
+        !document.body.innerText.includes('Importa dai conti'),
+      'Bank account settings missing account or management controls',
     );
     results.push('bank-import');
     await render(null);

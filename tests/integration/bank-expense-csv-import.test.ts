@@ -41,7 +41,7 @@ afterEach(async () => {
 });
 
 describe('Importazione CSV bancario', () => {
-  it('legge il formato fornito includendo commissioni e movimenti in sospeso, senza modificare il file', async () => {
+  it('legge il formato fornito includendo commissioni, salta i movimenti in sospeso e non modifica il file', async () => {
     const text = [
       headers,
       'Ricarica,Attuale,2026-06-25 16:54:38,2026-06-25 16:54:39,Pagamento da Cliente,1000,0,EUR,COMPLETATO,1000',
@@ -56,6 +56,8 @@ describe('Importazione CSV bancario', () => {
       ok: true,
       value: {
         ignoredIncome: 1,
+        skippedPending: 1,
+        pendingFrom: '2026-10-01',
         rows: [
           {
             date: '2026-06-25',
@@ -63,7 +65,6 @@ describe('Importazione CSV bancario', () => {
             amount: '6.99',
           },
           { date: '2026-06-30', description: 'Negozio', amount: '57.03' },
-          { date: '2026-10-01', description: 'Panificio', amount: '4.40' },
           {
             date: '2026-06-30',
             description: 'Pagamento con commissione',
@@ -83,6 +84,7 @@ describe('Importazione CSV bancario', () => {
       ok: true,
       value: {
         ignoredIncome: 0,
+        skippedPending: 0,
         rows: [
           {
             date: '2026-07-01',
@@ -104,7 +106,7 @@ describe('Importazione CSV bancario', () => {
     ].join('\n');
     expect(await parseBankExpenseCsv(text)).toEqual({
       ok: true,
-      value: { ignoredIncome: 2, rows: [] },
+      value: { ignoredIncome: 2, skippedPending: 0, rows: [] },
     });
   });
 
@@ -149,7 +151,7 @@ describe('Importazione CSV bancario', () => {
   it('accetta intestazioni riordinate e file con sole intestazioni', async () => {
     expect(await parseBankExpenseCsv(headers)).toEqual({
       ok: true,
-      value: { rows: [], ignoredIncome: 0 },
+      value: { rows: [], ignoredIncome: 0, skippedPending: 0 },
     });
     const result = await parseBankExpenseCsv(
       `${headers.split(',').reverse().join(',')}\n${[...payment].reverse().join(',')}`,

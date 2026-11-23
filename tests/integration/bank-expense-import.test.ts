@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 describe('XLSX bancario nativo e archivio corrente', () => {
-  it('legge un vero XLSX con preambolo, date Excel/testo, descrizioni complete/fallback, stati diversi e primo foglio', async () => {
+  it('legge un vero XLSX con preambolo, date Excel/testo, descrizioni complete/fallback, solo movimenti contabilizzati e primo foglio', async () => {
     const { book, sheet } = workbook();
     sheet.addRow([
       '01/01/2027',
@@ -79,14 +79,11 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       ok: true,
       value: {
         ignoredIncome: 1,
+        // Autorizzato and unknown states are skipped; the earliest is remembered.
+        skippedPending: 2,
+        pendingFrom: '2026-09-30',
         rows: [
-          {
-            date: '2026-12-31',
-            amount: '1234.50',
-            description: 'Testo completo banca',
-          },
           { date: '2025-02-01', amount: '11.54', description: 'Fallback' },
-          { date: '2026-09-30', amount: '34.90', description: 'Seriale' },
         ],
       },
     });
@@ -112,12 +109,13 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       '-34,90',
       'Uscita',
       '',
-      'Autorizzato',
+      'Contabilizzato',
     ]);
     expect(parseBankExpenseWorkbook(book)).toEqual({
       ok: true,
       value: {
         ignoredIncome: 6,
+        skippedPending: 0,
         rows: [{ date: '2026-01-01', description: 'Uscita', amount: '34.90' }],
       },
     });
@@ -148,7 +146,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
   it('rifiuta struttura mancante anche se un altro foglio è valido e gestisce calendario 1904', () => {
     const { book, sheet } = workbook();
     book.properties.date1904 = true;
-    sheet.addRow(['', 0, '', '-1.25', 'Inizio', '', '']);
+    sheet.addRow(['', 0, '', '-1.25', 'Inizio', '', 'Contabilizzato']);
     expect(parseBankExpenseWorkbook(book)).toMatchObject({
       ok: true,
       value: { rows: [{ date: '1904-01-01', amount: '1.25' }] },

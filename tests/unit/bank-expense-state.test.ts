@@ -30,6 +30,13 @@ const session = (
 const imported: BankExpenseImport = {
   rows: [{ date: '2026-09-30', description: 'Servizio', amount: '10.00' }],
   ignoredIncome: 2,
+  skippedPending: 0,
+};
+const account = { ...meta(), name: 'Fineco' };
+const withAccount = () => {
+  const document = createEmptyDocument();
+  document.bankAccounts.push(structuredClone(account));
+  return document;
 };
 function setup() {
   const importFile = vi.fn<() => Promise<Result<BankExpenseImport>>>(async () =>
@@ -48,7 +55,7 @@ function setup() {
     clearTimeout,
   });
   const state = new AppState();
-  state.acceptNativeSession(session(createEmptyDocument()));
+  state.acceptNativeSession(session(withAccount()));
   return { state, importFile, save };
 }
 
@@ -61,7 +68,7 @@ describe('import atomico e autosalvataggio spese', () => {
 
   it('autosalva operazioni di massa in un solo passaggio e respinge mutazioni invalide o in sola lettura', async () => {
     const { state, save } = setup();
-    await state.importBankExpenses();
+    await state.importBankExpenses(account.id);
     await vi.runAllTimersAsync();
     const category = { ...meta(), name: 'Software' };
     state.mutate((document) => {
@@ -119,13 +126,15 @@ describe('import atomico e autosalvataggio spese', () => {
   it('applica una sola mutazione, autosalva, ignora reimportazioni e preserva le categorie', async () => {
     const { state, save } = setup();
     const mutate = vi.spyOn(state, 'mutate');
-    await state.importBankExpenses();
+    await state.importBankExpenses(account.id);
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(state.bankExpenseImportSummary).toEqual({
+      accountName: 'Fineco',
       imported: 1,
       duplicates: 0,
       repeatedInFile: 0,
       ignoredIncome: 2,
+      skippedPending: 0,
     });
     await vi.runAllTimersAsync();
     expect(save).toHaveBeenCalledTimes(1);
@@ -139,13 +148,15 @@ describe('import atomico e autosalvataggio spese', () => {
     const before = structuredClone(state.document);
     mutate.mockClear();
     save.mockClear();
-    await state.importBankExpenses();
+    await state.importBankExpenses(account.id);
     await vi.runAllTimersAsync();
     expect(state.bankExpenseImportSummary).toEqual({
+      accountName: 'Fineco',
       imported: 0,
       duplicates: 1,
       repeatedInFile: 0,
       ignoredIncome: 2,
+      skippedPending: 0,
     });
     expect(state.document).toEqual(before);
     expect(mutate).not.toHaveBeenCalled();
@@ -158,7 +169,7 @@ describe('import atomico e autosalvataggio spese', () => {
       const { state, importFile, save } = setup();
       const before = structuredClone(state.document);
       importFile.mockResolvedValueOnce(err({ code, message: 'Errore file' }));
-      await state.importBankExpenses();
+      await state.importBankExpenses(account.id);
       await vi.runAllTimersAsync();
       expect(state.document).toEqual(before);
       expect(save).not.toHaveBeenCalled();
@@ -175,9 +186,10 @@ describe('import atomico e autosalvataggio spese', () => {
           { date: '2026-02-30', description: 'Errore', amount: '1.00' },
         ],
         ignoredIncome: 0,
+        skippedPending: 0,
       }),
     );
-    await state.importBankExpenses();
+    await state.importBankExpenses(account.id);
     await vi.runAllTimersAsync();
     expect(state.document?.bankExpenses).toEqual([]);
     expect(save).not.toHaveBeenCalled();
@@ -193,8 +205,8 @@ describe('import atomico e autosalvataggio spese', () => {
           complete = resolve;
         }),
     );
-    const pending = state.importBankExpenses();
-    await state.importBankExpenses();
+    const pending = state.importBankExpenses(account.id);
+    await state.importBankExpenses(account.id);
     expect(importFile).toHaveBeenCalledTimes(1);
     state.acceptNativeSession(session(createEmptyDocument(), 'C:\\altro.json'));
     complete(ok(imported));
@@ -206,11 +218,11 @@ describe('import atomico e autosalvataggio spese', () => {
   it('non importa in sola lettura o durante un conflitto, anche se il conflitto arriva dopo il dialog', async () => {
     const { state, importFile } = setup();
     state.session!.readOnly = true;
-    await state.importBankExpenses();
+    await state.importBankExpenses(account.id);
     expect(importFile).not.toHaveBeenCalled();
     state.session!.readOnly = false;
     state.status = 'Conflitto esterno';
-    await state.importBankExpenses();
+    await state.importBankExpenses(account.id);
     expect(importFile).not.toHaveBeenCalled();
     state.status = 'Salvato';
     let complete!: (value: Result<BankExpenseImport>) => void;
@@ -220,7 +232,7 @@ describe('import atomico e autosalvataggio spese', () => {
           complete = resolve;
         }),
     );
-    const pending = state.importBankExpenses();
+    const pending = state.importBankExpenses(account.id);
     state.status = 'Conflitto esterno';
     complete(ok(imported));
     await pending;
@@ -237,7 +249,7 @@ describe('import atomico e autosalvataggio spese', () => {
           complete = resolve;
         }),
     );
-    const pending = state.importBankExpenses();
+    const pending = state.importBankExpenses(account.id);
     state.mutate((document) => {
       document.bankExpenseCategories.push({
         ...meta(),
@@ -253,5 +265,28 @@ describe('import atomico e autosalvataggio spese', () => {
       )?.name,
     ).toBe('Durante import');
     expect(state.document?.bankExpenses).toHaveLength(1);
+  });
+
+  it('collega le spese al conto scelto, ricorda i movimenti in attesa e rifiuta un conto inesistente', async () => {
+    const { state, importFile } = setup();
+    importFile.mockResolvedValueOnce(
+      ok({
+        ...structuredClone(imported),
+        skippedPending: 1,
+        pendingFrom: '2026-09-28',
+      }),
+    );
+    await state.importBankExpenses(account.id);
+    await vi.runAllTimersAsync();
+    expect(state.document?.bankExpenses[0]?.accountId).toBe(account.id);
+    expect(state.document?.bankAccounts[0]?.pendingSince).toBe('2026-09-28');
+    expect(state.bankExpenseImportSummary).toMatchObject({
+      accountName: 'Fineco',
+      skippedPending: 1,
+    });
+    importFile.mockClear();
+    await state.importBankExpenses(meta().id);
+    expect(importFile).not.toHaveBeenCalled();
+    expect(state.error?.code).toBe('VALIDATION');
   });
 });

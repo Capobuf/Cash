@@ -15,6 +15,7 @@ import {
 import type { ArchiveSession } from '../shared/archive';
 import type { BackupState } from '../shared/backup';
 import { deduplicateBankExpenses } from '../domain/bank-expenses';
+import { applyBankImport } from '../domain/bank-accounts';
 import { quoteNumberingError } from '../domain/quotes';
 
 export type SaveStatus =
@@ -203,7 +204,7 @@ export class AppState {
   acceptNativeSession(session: ArchiveSession): void {
     this.accept(session);
   }
-  async importBankExpenses(): Promise<void> {
+  async importBankExpenses(accountId: string): Promise<void> {
     if (
       this.bankExpenseImporting ||
       !this.document ||
@@ -211,6 +212,16 @@ export class AppState {
       this.status === 'Conflitto esterno'
     )
       return;
+    const account = this.document.bankAccounts.find(
+      (entry) => entry.id === accountId,
+    );
+    if (!account) {
+      this.setError({
+        code: 'VALIDATION',
+        message: 'Scegli un conto esistente prima di importare.',
+      });
+      return;
+    }
     const context = this.archiveContextVersion;
     const documentId = this.document.documentId;
     const path = this.session?.path;
@@ -250,18 +261,28 @@ export class AppState {
         this.document.bankExpenses,
         parsed.data.rows,
       );
-      if (added.length) {
+      const pendingSince = (document: CashDocument) =>
+        document.bankAccounts.find((entry) => entry.id === accountId)
+          ?.pendingSince;
+      const preview = structuredClone(this.document);
+      applyBankImport(preview, accountId, added, parsed.data);
+      if (
+        added.length ||
+        pendingSince(preview) !== pendingSince(this.document)
+      ) {
         const before = this.mutationVersion;
-        this.mutate((document) => {
-          document.bankExpenses = document.bankExpenses.concat(added);
-        });
+        this.mutate((document) =>
+          applyBankImport(document, accountId, added, parsed.data),
+        );
         if (before === this.mutationVersion) return;
       }
       this.bankExpenseImportSummary = {
+        accountName: account.name,
         imported: added.length,
         duplicates,
         repeatedInFile,
         ignoredIncome: parsed.data.ignoredIncome,
+        skippedPending: parsed.data.skippedPending,
       };
     } catch {
       this.setError({

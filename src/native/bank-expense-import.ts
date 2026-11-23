@@ -82,6 +82,23 @@ function expenseAmount(value: unknown): string | undefined {
   return amount.abs().toFixed(2);
 }
 
+// Only booked movements are imported: pending ones change date or description
+// when the bank books them, so they would be imported twice.
+function keepBooked(
+  result: BankExpenseImport,
+  row: BankExpenseImport['rows'][number],
+  state: unknown,
+  booked: string,
+): void {
+  if (typeof state === 'string' && state.trim() === booked) {
+    result.rows.push(row);
+    return;
+  }
+  result.skippedPending++;
+  if (!result.pendingFrom || row.date < result.pendingFrom)
+    result.pendingFrom = row.date;
+}
+
 export function parseBankExpenseWorkbook(
   workbook: ExcelJS.Workbook,
 ): Result<BankExpenseImport> {
@@ -111,7 +128,11 @@ export function parseBankExpenseWorkbook(
       message: 'Intestazione bancaria non trovata nel primo foglio.',
       details: [`Colonne richieste: ${headers.join(', ')}.`],
     });
-  const result: BankExpenseImport = { rows: [], ignoredIncome: 0 };
+  const result: BankExpenseImport = {
+    rows: [],
+    ignoredIncome: 0,
+    skippedPending: 0,
+  };
   for (let index = headerRow + 1; index <= sheet.rowCount; index++) {
     const row = sheet.getRow(index);
     const raw = (header: Header) => row.getCell(columns!.get(header)!).value;
@@ -144,7 +165,12 @@ export function parseBankExpenseWorkbook(
             .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
             .join('; '),
         );
-      result.rows.push(parsed.data);
+      keepBooked(
+        result,
+        parsed.data,
+        cellValue(raw('Stato')),
+        'Contabilizzato',
+      );
     } catch (cause) {
       return err({
         code: 'SOURCE_INVALID',
@@ -241,7 +267,11 @@ export async function parseBankExpenseCsv(
       details: [`Colonne richieste: ${csvHeaders.join(', ')}.`],
     });
   }
-  const result: BankExpenseImport = { rows: [], ignoredIncome: 0 };
+  const result: BankExpenseImport = {
+    rows: [],
+    ignoredIncome: 0,
+    skippedPending: 0,
+  };
   for (let index = 2; index <= sheet.rowCount; index++) {
     const row = sheet.getRow(index);
     if (
@@ -278,7 +308,7 @@ export async function parseBankExpenseCsv(
             .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
             .join('; '),
         );
-      result.rows.push(parsed.data);
+      keepBooked(result, parsed.data, raw('State'), 'COMPLETATO');
     } catch (cause) {
       return err({
         code: 'SOURCE_INVALID',

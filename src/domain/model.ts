@@ -432,6 +432,13 @@ export interface BankExpense extends EntityMeta {
   amount: DecimalString;
   categoryIds: string[];
   excludedFromCalculations?: boolean;
+  accountId?: string;
+}
+
+export interface BankAccount extends EntityMeta {
+  name: string;
+  /** Earliest pending movement skipped by the last import into this account. */
+  pendingSince?: string;
 }
 
 export interface BankExpenseCategory extends EntityMeta {
@@ -453,12 +460,16 @@ export type BankExpenseRow = Pick<
 export interface BankExpenseImport {
   rows: BankExpenseRow[];
   ignoredIncome: number;
+  skippedPending: number;
+  pendingFrom?: string;
 }
 export interface BankExpenseImportSummary {
+  accountName: string;
   imported: number;
   duplicates: number;
   repeatedInFile: number;
   ignoredIncome: number;
+  skippedPending: number;
 }
 
 export interface CashDocument {
@@ -477,6 +488,7 @@ export interface CashDocument {
   nextQuoteNumber: number;
   financialSnapshot?: FicFinancialSnapshot;
   fiscalPaymentOverrides?: { year: number; total: DecimalString }[];
+  bankAccounts: BankAccount[];
   bankExpenseCategories: BankExpenseCategory[];
   bankExpenses: BankExpense[];
   bankExpenseRules: BankExpenseRule[];
@@ -518,6 +530,7 @@ export const createEmptyDocument = (now = nowIso()): CashDocument => ({
   catalog: { subItems: [], templates: [] },
   quotes: [],
   nextQuoteNumber: 1,
+  bankAccounts: [],
   bankExpenseCategories: [createTaxCategory()],
   bankExpenses: [],
   bankExpenseRules: [],

@@ -3,7 +3,7 @@ import { parseDocument, documentHeaderSchema } from '../domain/schema';
 import type { CashDocument } from '../domain/model';
 import type { ConcurrencyToken } from '../shared/archive';
 
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 export const APPLICATION_ID = 0x43415348;
 
 type Row = Record<string, SQLInputValue>;
@@ -89,8 +89,14 @@ const tables: Table[] = [
     booleans: ['excludedFromCalculations'],
   },
   {
+    name: 'bank_accounts',
+    fields: `${meta}, name TEXT NOT NULL, pendingSince TEXT`,
+    keys: ['id'],
+  },
+  {
     name: 'bank_expenses',
-    fields: `${meta}, date TEXT NOT NULL, description TEXT NOT NULL, amount TEXT NOT NULL, excludedFromCalculations INTEGER`,
+    // accountId is last: storage v3 added it with ALTER TABLE.
+    fields: `${meta}, date TEXT NOT NULL, description TEXT NOT NULL, amount TEXT NOT NULL, excludedFromCalculations INTEGER, accountId TEXT REFERENCES bank_accounts(id) DEFERRABLE INITIALLY DEFERRED`,
     keys: ['id'],
     booleans: ['excludedFromCalculations'],
     constraints: ', UNIQUE(date, description, amount)',
@@ -201,6 +207,7 @@ export function documentRows(document: CashDocument): DocumentRows {
     quotes: document.quotes,
     fiscal_payment_overrides: document.fiscalPaymentOverrides ?? [],
     bank_expense_categories: document.bankExpenseCategories,
+    bank_accounts: document.bankAccounts,
     bank_expenses: document.bankExpenses,
     bank_expense_manual_categories: document.bankExpenses.flatMap((expense) =>
       expense.categoryIds.map((categoryId, position) => ({
@@ -427,6 +434,7 @@ export function readDocument(db: DatabaseSync): CashDocument {
       ? { fiscalPaymentOverrides: data.fiscal_payment_overrides }
       : {}),
     bankExpenseCategories: data.bank_expense_categories,
+    bankAccounts: data.bank_accounts,
     bankExpenses: data.bank_expenses!.map((expense) => ({
       ...expense,
       categoryIds: manual.get(expense.id) ?? [],

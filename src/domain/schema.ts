@@ -19,6 +19,8 @@ const nonBlank = z
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
+  bankAccounts: 'Conti',
+  accountId: 'conto',
   bankExpenses: 'Movimenti bancari',
   bankExpenseCategories: 'Categorie spese',
   bankExpenseRules: 'Regole automatiche',
@@ -619,6 +621,8 @@ export const bankExpenseRowSchema = z.object({
 export const bankExpenseImportSchema = z.object({
   rows: z.array(bankExpenseRowSchema),
   ignoredIncome: z.number().int().nonnegative(),
+  skippedPending: z.number().int().nonnegative(),
+  pendingFrom: z.string().date().optional(),
 });
 export const bankExpenseRuleSchema = z.object({
   ...entity,
@@ -655,11 +659,18 @@ const bankExpenseSchema = z.preprocess(
     ...entity,
     categoryIds: z.array(uuid),
     excludedFromCalculations: z.boolean().optional(),
+    accountId: uuid.optional(),
   }),
 );
+export const bankAccountSchema = z.object({
+  ...entity,
+  name: z.string().trim().min(1),
+  pendingSince: z.string().date().optional(),
+});
 
 export const cashDocumentSchema: z.ZodType<CashDocument> = z
   .object({
+    bankAccounts: z.array(bankAccountSchema).default([]),
     bankExpenses: z.array(bankExpenseSchema).default([]),
     bankExpenseCategories: z.array(
       z.object({
@@ -840,6 +851,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
       'businessCosts',
       'vehicles',
       'sites',
+      'bankAccounts',
       'bankExpenses',
       'bankExpenseCategories',
       'bankExpenseRules',
@@ -966,9 +978,28 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
             'Il padre deve essere una categoria principale utente esistente',
         });
     });
+    const accounts = new Set<string>();
+    const accountNames = new Set<string>();
+    document.bankAccounts.forEach((account, index) => {
+      accounts.add(account.id);
+      const name = account.name.trim().toLocaleLowerCase('it');
+      if (accountNames.has(name))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['bankAccounts', index, 'name'],
+          message: 'Nome conto duplicato',
+        });
+      accountNames.add(name);
+    });
     const movements = new Set<string>();
     document.bankExpenses.forEach((expense, index) => {
       const path = ['bankExpenses', index];
+      if (expense.accountId && !accounts.has(expense.accountId))
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'accountId'],
+          message: 'Conto del movimento inesistente',
+        });
       if (expense.categoryIds.some((id) => !categories.has(id)))
         ctx.addIssue({
           code: 'custom',

@@ -181,7 +181,7 @@ describe('importazione JSON read-only', () => {
       );
       expect(
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all(),
-      ).toHaveLength(20);
+      ).toHaveLength(21);
     } finally {
       db.close();
     }
@@ -600,13 +600,13 @@ describe('riconoscimento e versioni SQL', () => {
     closeArchive(path);
     const safety = await runSchemaMigrations(
       path,
-      [{ version: 3, sql: 'CREATE INDEX test_migration ON quotes(position)' }],
-      3,
+      [{ version: 4, sql: 'CREATE INDEX test_migration ON quotes(position)' }],
+      4,
     );
     expect(safety).toBeDefined();
     const db = new DatabaseSync(path);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(3);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
       expect(
         db
           .prepare("SELECT name FROM sqlite_master WHERE name='test_migration'")
@@ -620,18 +620,18 @@ describe('riconoscimento e versioni SQL', () => {
         path,
         [
           {
-            version: 4,
+            version: 5,
             sql: 'ALTER TABLE quotes ADD COLUMN migration_test TEXT; SELECT * FROM no_such_table',
           },
         ],
-        4,
+        5,
       ),
     ).rejects.toThrow('backup:');
     const rolledBack = new DatabaseSync(path);
     try {
       expect(
         rolledBack.prepare('PRAGMA user_version').get()!.user_version,
-      ).toBe(3);
+      ).toBe(4);
       expect(
         rolledBack
           .prepare('PRAGMA table_info(quotes)')
