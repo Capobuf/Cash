@@ -77,11 +77,13 @@ export function snapshotSite(site: Site): SiteSnapshot {
   };
 }
 
+// The arrow tells round trips (<-->) from one-way trips (-->).
 export function defaultTravelName(
   departure?: Pick<Site, 'name'>,
   destination?: Pick<Site, 'name'>,
+  roundTrip = true,
 ): string {
-  return `Trasferta - ${departure?.name.trim() || 'Partenza'} <--> ${destination?.name.trim() || 'Destinazione'}`;
+  return `Trasferta - ${departure?.name.trim() || 'Partenza'} ${roundTrip ? '<-->' : '-->'} ${destination?.name.trim() || 'Destinazione'}`;
 }
 
 export function siteHasUsableLocation(site: Site): boolean {

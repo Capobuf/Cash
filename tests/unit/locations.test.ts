@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   coordinatesInput,
+  defaultTravelName,
   parseCoordinates,
   siteHasUsableLocation,
   snapshotSite,
@@ -53,4 +54,15 @@ describe('Sedi e valori predefiniti globali', () => {
     site.location.inputValue = '12.4964, 41.9028';
     expect(siteHasUsableLocation(site)).toBe(true);
   });
+});
+
+it('names round trips with <--> and one-way trips with -->', () => {
+  const office = { name: 'Ufficio' };
+  const client = { name: 'Cliente' };
+  expect(defaultTravelName(office, client)).toBe(
+    'Trasferta - Ufficio <--> Cliente',
+  );
+  expect(defaultTravelName(office, client, false)).toBe(
+    'Trasferta - Ufficio --> Cliente',
+  );
 });
