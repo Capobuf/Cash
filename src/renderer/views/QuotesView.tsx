@@ -12,7 +12,6 @@ import {
   CloudUpload,
   FilePlus2,
   MoreHorizontal,
-  Pencil,
   Plus,
   RefreshCw,
   UserRound,
@@ -33,7 +32,7 @@ import {
 } from '@/components/quotes/CatalogInsertDialogs';
 import { CustomerDialog } from '@/components/quotes/CustomerDialog';
 import { ExportDialog } from '@/components/quotes/ExportDialog';
-import { QuoteTitleDialog } from '@/components/quotes/QuoteTitleDialog';
+import { InlineQuoteInput } from '@/components/quotes/InlineQuoteInput';
 import { QuoteLayoutEditor } from '@/components/quotes/QuoteLayoutEditor';
 import { SaveTemplateEditor } from '@/components/quotes/CatalogSaveDialogs';
 import { SubItemDialog } from '@/components/quotes/SubItemDialog';
@@ -90,7 +89,6 @@ import type { AppState } from '../state';
 import type { DeleteTarget } from '../types';
 
 type Overlay =
-  | { kind: 'title' }
   | { kind: 'customer' }
   | { kind: 'site'; context: string; siteId?: string }
   | {
@@ -181,6 +179,7 @@ export function QuotesView({
     );
 
   const hourly = quote.profileSnapshot?.hourlyTarget;
+  const automaticTitle = quoteTitle({ ...quote, customTitle: undefined });
   const siteContext = `${appState.archiveContext}:${quote.id}:${quote.client?.companyId}:${quote.client?.clientId}`;
   const canAddSite = Boolean(
     quote.client &&
@@ -460,21 +459,22 @@ export function QuotesView({
           </Button>
           <div className="h-5 w-px bg-border" />
           <div className="min-w-0">
-            <div className="flex items-center gap-1">
-              <h2 className="min-w-0 font-semibold [overflow-wrap:anywhere]">
-                {quoteTitle(quote)}
-              </h2>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Rinomina preventivo"
-                title="Rinomina preventivo"
+            <h2 className="-ml-2.5 min-w-0 [&_input]:w-auto [&_input]:max-w-full [&_input]:field-sizing-content [&_input]:font-semibold">
+              <InlineQuoteInput
+                key={quote.id}
+                id="quote-title"
+                label="Titolo preventivo"
+                value={quoteTitle(quote)}
+                placeholder={automaticTitle}
                 disabled={readOnly}
-                onClick={() => setOverlay({ kind: 'title' })}
-              >
-                <Pencil />
-              </Button>
-            </div>
+                // Empty or automatic text keeps the automatic title.
+                onCommit={(title) =>
+                  controller.renameQuote(
+                    title.trim() === automaticTitle ? '' : title,
+                  )
+                }
+              />
+            </h2>
             <p className="text-xs text-muted-foreground">
               {dateIt(quote.date)} · {quote.items.length}{' '}
               {quote.items.length === 1 ? 'voce' : 'voci'}
@@ -957,14 +957,6 @@ export function QuotesView({
         ) : null}
       </div>
 
-      {overlay?.kind === 'title' ? (
-        <QuoteTitleDialog
-          quote={quote}
-          readOnly={readOnly}
-          onClose={() => setOverlay(undefined)}
-          onSave={controller.renameQuote}
-        />
-      ) : null}
       {overlay?.kind === 'customer' ? (
         <CustomerDialog
           open

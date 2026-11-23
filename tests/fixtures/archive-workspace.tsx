@@ -628,7 +628,7 @@ export async function runWorkspaceChecks() {
       });
     });
     check(
-      document.querySelector('h2')?.textContent ===
+      document.querySelector<HTMLInputElement>('#quote-title')?.value ===
         'MCH Italia - Preventivo #1',
       'Client change did not update quote title',
     );
@@ -638,7 +638,8 @@ export async function runWorkspaceChecks() {
       });
     });
     check(
-      document.querySelector('h2')?.textContent === 'Preventivo #1',
+      document.querySelector<HTMLInputElement>('#quote-title')?.value ===
+        'Preventivo #1',
       'Removing client changed the quote number or kept its name',
     );
     const chosenSelector = `#chosen-${state.document!.quotes[0]!.items[0]!.id}`;
@@ -1199,9 +1200,8 @@ export async function runWorkspaceChecks() {
     await clickSelector(`[aria-label="Apri ${quoteTitle(linkedQuote)}"]`);
     check(
       !document.querySelector('[data-slot="dialog-content"][data-open]') &&
-        [...document.querySelectorAll('h2')].some(
-          (heading) => heading.textContent === quoteTitle(linkedQuote),
-        ) &&
+        document.querySelector<HTMLInputElement>('#quote-title')?.value ===
+          quoteTitle(linkedQuote) &&
         [
           ...document.querySelectorAll<HTMLInputElement>(
             'input[id^=quote-name-]',
