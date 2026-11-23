@@ -167,10 +167,12 @@ describe('Importazione CSV bancario', () => {
     if (!parsed.ok) throw new Error(parsed.error.message);
     const first = deduplicateBankExpenses([], parsed.value.rows);
     expect(first.added).toHaveLength(1);
-    expect(first.duplicates).toBe(1);
+    expect(first.duplicates).toBe(0);
+    expect(first.repeatedInFile).toBe(1);
     expect(deduplicateBankExpenses(first.added, parsed.value.rows)).toEqual({
       added: [],
       duplicates: 2,
+      repeatedInFile: 0,
     });
   });
 

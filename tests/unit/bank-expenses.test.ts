@@ -300,7 +300,8 @@ describe('uscite dal conto', () => {
       added,
       { ...added, description: 'nuova spesa' },
     ]);
-    expect(result.duplicates).toBe(2);
+    expect(result.duplicates).toBe(1);
+    expect(result.repeatedInFile).toBe(1);
     expect(result.added).toHaveLength(2);
     expect(result.added[0]?.description).toBe('Nuova spesa');
     expect(result.added[0]?.categoryIds).toEqual([]);

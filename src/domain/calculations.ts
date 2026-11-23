@@ -98,8 +98,6 @@ export function calculateFiscalProjection(
     if (
       profitability.lte(0) ||
       profitability.gt(1) ||
-      contributionRate.lt(0) ||
-      contributionRate.gt(1) ||
       taxRate.lt(0) ||
       taxRate.gt(1)
     )

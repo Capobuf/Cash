@@ -41,6 +41,34 @@ describe('fonti ufficiali', () => {
     expect(result.ok).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it('applica il limite di 15 secondi anche alla lettura del corpo', async () => {
+    vi.useFakeTimers();
+    try {
+      // Headers arrive at once; the body never ends until the request is aborted.
+      const fetcher = async (_url: string, init?: RequestInit) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              init?.signal?.addEventListener('abort', () =>
+                controller.error(new DOMException('aborted', 'AbortError')),
+              );
+            },
+          }),
+        );
+      const pending = officialFetch(
+        'https://api-v2.fattureincloud.it/user/companies',
+        {},
+        fetcher as unknown as typeof fetch,
+      );
+      await vi.advanceTimersByTimeAsync(15_000);
+      const result = await pending;
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error.code).toBe('SOURCE_UNAVAILABLE');
+      expect(!result.ok && result.error.message).toContain('15 secondi');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('normalizza il CSV regionale MIMIT esatto', () => {
     const csv =
       'Aggiornamento 07-09-2026\nREGIONE;TIPOLOGIA;EROGAZIONE;PREZZO MEDIO\nLazio;Benzina;SELF;1.900\n';

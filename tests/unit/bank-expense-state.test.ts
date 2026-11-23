@@ -124,6 +124,7 @@ describe('import atomico e autosalvataggio spese', () => {
     expect(state.bankExpenseImportSummary).toEqual({
       imported: 1,
       duplicates: 0,
+      repeatedInFile: 0,
       ignoredIncome: 2,
     });
     await vi.runAllTimersAsync();
@@ -143,6 +144,7 @@ describe('import atomico e autosalvataggio spese', () => {
     expect(state.bankExpenseImportSummary).toEqual({
       imported: 0,
       duplicates: 1,
+      repeatedInFile: 0,
       ignoredIncome: 2,
     });
     expect(state.document).toEqual(before);

@@ -202,7 +202,8 @@ describe('analisi finanziaria', () => {
   it.each([
     { amountGross: '77.45', expected: '0.00' },
     { amountGross: '77.46', expected: '0.00' },
-    { amountGross: '77.47', expected: '2.00' },
+    { amountGross: '77.47', expected: '0.00' },
+    { amountGross: '77.48', expected: '2.00' },
     { amountGross: '100.00', numeration: 'PA', number: '1', expected: '0.00' },
     { amountGross: '100.00', numeration: 'PA/2026', expected: '0.00' },
     { amountGross: '100.00', numeration: ' pa/2026 ', expected: '0.00' },
@@ -384,7 +385,6 @@ describe('analisi finanziaria', () => {
       paidCosts: '100.00',
       receivedCreditNotes: '10.00',
       revenueTarget: '1000.00',
-      gapToTarget: '700.00',
       percentIssuedVsTarget: '40.00',
       percentCollectedVsTarget: '30.00',
     });
@@ -482,7 +482,6 @@ describe('analisi finanziaria', () => {
     Object.assign(profile, { confirmed: true, revenueTarget: '100.00' });
     const run = () =>
       calculateFinancialAnalysis(snapshot(), 2026, profile, [], '2026-09-30');
-    expect(run().gapToTarget).toBe('-200.00');
     profile.revenueTarget = '0.00';
     expect(run().percentCollectedVsTarget).toBeUndefined();
     profile.fiscal.ordinaryThreshold = '200.00';

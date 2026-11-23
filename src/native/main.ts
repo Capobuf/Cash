@@ -626,9 +626,6 @@ function registerHandlers(): void {
         }),
   );
   ipcMain.handle(IPC.tokenHas, () => hasFicToken());
-  ipcMain.handle(IPC.tokenSet, (_event, value: unknown) =>
-    setFicToken(typeof value === 'string' ? value : ''),
-  );
   ipcMain.handle(
     IPC.mimitFuel,
     (_event, input: { territory: string; fuel: Fuel }) =>

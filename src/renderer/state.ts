@@ -246,7 +246,7 @@ export class AppState {
         this.setError(validationErrorFromIssues(parsed.error.issues));
         return;
       }
-      const { added, duplicates } = deduplicateBankExpenses(
+      const { added, duplicates, repeatedInFile } = deduplicateBankExpenses(
         this.document.bankExpenses,
         parsed.data.rows,
       );
@@ -260,6 +260,7 @@ export class AppState {
       this.bankExpenseImportSummary = {
         imported: added.length,
         duplicates,
+        repeatedInFile,
         ignoredIncome: parsed.data.ignoredIncome,
       };
     } catch {

@@ -37,7 +37,6 @@ const api: CashNativeApi = {
   },
   credentials: {
     hasFicToken: () => ipcRenderer.invoke(IPC.tokenHas),
-    setFicToken: (token) => ipcRenderer.invoke(IPC.tokenSet, token),
   },
   mimit: {
     latestFuelPrice: (input) => ipcRenderer.invoke(IPC.mimitFuel, input),

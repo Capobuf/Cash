@@ -177,6 +177,13 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
           <AlertDescription>
             {summary.imported} movimenti importati · {summary.duplicates}{' '}
             duplicati già presenti · {summary.ignoredIncome} entrate ignorate.
+            {summary.repeatedInFile ? (
+              <span className="block">
+                {summary.repeatedInFile} righe identiche nel file (stessa data,
+                descrizione e importo) sono state unite: se erano spese
+                distinte, aggiungile a mano.
+              </span>
+            ) : null}
             <span className="block">
               Il file viene importato per tutti gli anni. Qui sono visibili i
               movimenti del {year ?? 'periodo selezionato'}.

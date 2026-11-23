@@ -117,7 +117,6 @@ export function calculateFinancialOverview(
         : undefined),
     estimatedAvailability,
     bankExpenseShareOfCollections: share(bankSummary.total),
-    availableShareOfCollections: share(estimatedAvailability),
     monthly: bankSummary.monthly.map((bankMonth, index) => {
       const collected = analysis?.monthly[index]?.collectedRevenue;
       return {

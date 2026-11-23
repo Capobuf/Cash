@@ -443,7 +443,7 @@ export function calculateFinancialAnalysis(
           );
           const stampInvoices = annualInvoices.filter(
             (document) =>
-              d(document.amountGross).gt('77.46') &&
+              d(document.amountGross).gt('77.47') &&
               ![document.numeration, document.number].some((value) =>
                 value?.trim().toUpperCase().startsWith('PA'),
               ),
@@ -539,10 +539,6 @@ export function calculateFinancialAnalysis(
           inYear(document.date, year),
       ),
     ),
-    gapToTarget:
-      revenueTarget === undefined
-        ? undefined
-        : money(d(revenueTarget).minus(collectedRevenue)),
     percentIssuedVsTarget:
       revenueTarget && d(revenueTarget).gt(0)
         ? percentOut(d(issuedRevenue).div(revenueTarget).mul(100))

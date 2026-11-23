@@ -457,6 +457,7 @@ export interface BankExpenseImport {
 export interface BankExpenseImportSummary {
   imported: number;
   duplicates: number;
+  repeatedInFile: number;
   ignoredIncome: number;
 }
 

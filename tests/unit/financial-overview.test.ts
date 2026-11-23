@@ -386,7 +386,6 @@ describe('panoramica finanziaria unificata', () => {
       fiscalReserve: undefined,
       estimatedAvailability: undefined,
       bankExpenseShareOfCollections: '25.00',
-      availableShareOfCollections: undefined,
     });
     expect(result.analysis?.fiscalProjection).toMatchObject({
       annualTotal: '6400.00',
@@ -686,7 +685,6 @@ describe('panoramica finanziaria unificata', () => {
       marginAfterOutflows: '0.00',
       estimatedAvailability: undefined,
       bankExpenseShareOfCollections: undefined,
-      availableShareOfCollections: undefined,
     });
     expect(buildFinancialOverviewFlow(overview(empty)).links).toEqual([]);
     expect(overview(fixture(), 2027)).toMatchObject({

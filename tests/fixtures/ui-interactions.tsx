@@ -1282,6 +1282,7 @@ export async function runUiChecks() {
     appState.bankExpenseImportSummary = {
       imported: 1,
       duplicates: 2,
+      repeatedInFile: 0,
       ignoredIncome: 3,
     };
     await render(

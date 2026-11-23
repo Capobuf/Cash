@@ -52,7 +52,6 @@ export const IPC = {
   archiveRestore: 'cash:archive:restore',
   archiveInspect: 'cash:archive:inspect',
   tokenHas: 'cash:token:has',
-  tokenSet: 'cash:token:set',
   mimitFuel: 'cash:mimit:fuel',
   foiRevalue: 'cash:foi:revalue',
   ficQuota: 'cash:fic:quota',
@@ -130,7 +129,6 @@ export interface CashNativeApi {
   };
   credentials: {
     hasFicToken(): Promise<Result<boolean>>;
-    setFicToken(token: string): Promise<Result<void>>;
   };
   mimit: {
     latestFuelPrice(input: {

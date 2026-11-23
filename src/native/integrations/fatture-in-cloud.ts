@@ -122,6 +122,18 @@ export const companyInfoSchema = z.object({
   }),
 });
 
+type CompanyPermissions = z.infer<
+  typeof companyInfoSchema
+>['access_info']['permissions'];
+const issuedLevel = (
+  permissions: CompanyPermissions,
+  type: 'invoices' | 'credit_notes' | 'quotes',
+) =>
+  permissions.fic_issued_documents === 'detailed' ||
+  permissions.fic_issued_documents == null
+    ? permissions.fic_issued_documents_detailed?.[type]
+    : permissions.fic_issued_documents;
+
 function missingPermissions(
   company: z.infer<typeof companyInfoSchema>,
   financialOnly: boolean,
@@ -129,14 +141,15 @@ function missingPermissions(
   const permissions = company.access_info.permissions;
   const canRead = (level: z.infer<typeof permissionLevel>) =>
     level === 'read' || level === 'write' || level === 'detailed';
-  const issuedLevel = (type: 'invoices' | 'credit_notes' | 'quotes') =>
-    permissions.fic_issued_documents === 'detailed' ||
-    permissions.fic_issued_documents == null
-      ? permissions.fic_issued_documents_detailed?.[type]
-      : permissions.fic_issued_documents;
   const checks: Array<[string, boolean]> = [
-    ['issued_documents.invoices:r', canRead(issuedLevel('invoices'))],
-    ['issued_documents.credit_notes:r', canRead(issuedLevel('credit_notes'))],
+    [
+      'issued_documents.invoices:r',
+      canRead(issuedLevel(permissions, 'invoices')),
+    ],
+    [
+      'issued_documents.credit_notes:r',
+      canRead(issuedLevel(permissions, 'credit_notes')),
+    ],
     ['received_documents:r', canRead(permissions.fic_received_documents)],
   ];
   if (!financialOnly)
@@ -144,7 +157,10 @@ function missingPermissions(
       ['entity.clients:r', canRead(permissions.fic_clients)],
       ['products:r', canRead(permissions.fic_products)],
       ['settings:r', canRead(permissions.fic_settings)],
-      ['issued_documents.quotes:a', issuedLevel('quotes') === 'write'],
+      [
+        'issued_documents.quotes:a',
+        issuedLevel(permissions, 'quotes') === 'write',
+      ],
     );
   return checks.filter(([, allowed]) => !allowed).map(([scope]) => scope);
 }
@@ -231,11 +247,7 @@ export async function verifyPermissions(
       result.requiredAccess.push({ label, scope, status, detail });
     }
     const permissions = company.access_info.permissions;
-    const quoteLevel =
-      permissions.fic_issued_documents === 'detailed' ||
-      permissions.fic_issued_documents == null
-        ? permissions.fic_issued_documents_detailed?.quotes
-        : permissions.fic_issued_documents;
+    const quoteLevel = issuedLevel(permissions, 'quotes');
     result.requiredAccess.push({
       label: 'Creazione clienti',
       scope: 'entity.clients:a',
