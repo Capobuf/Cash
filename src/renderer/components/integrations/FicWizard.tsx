@@ -74,15 +74,8 @@ export function FicWizard({
       return;
     }
     if (step === 2) {
+      // The token is stored only by completeActivation, after verification.
       if (!token.trim()) return;
-      setBusy(true);
-      const result = await window.cash.credentials.setFicToken(token);
-      setBusy(false);
-      if (!result.ok) {
-        appState.setError(result.error);
-        return;
-      }
-      ficUi.setHasToken(true);
       setStep(3);
       return;
     }
@@ -242,8 +235,8 @@ export function FicWizard({
                 autoFocus
               />
               <FieldDescription>
-                Genera il token con questi permessi. Continua lo salva su questa
-                postazione, anche se interrompi la configurazione.
+                Genera il token con questi permessi. Viene salvato su questa
+                postazione solo al termine della configurazione.
               </FieldDescription>
               <FicPermissions scopes={ficUi.setupInfo.requiredScopes} />
             </Field>

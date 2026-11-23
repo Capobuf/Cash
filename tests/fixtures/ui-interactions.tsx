@@ -27,6 +27,7 @@ import { FinancialAnalysisView } from '../../src/renderer/views/FinancialAnalysi
 import { FinancialOverviewDashboard } from '../../src/renderer/components/FinancialOverviewDashboard';
 import { calculateFinancialOverview } from '../../src/domain/financial-overview';
 import { BankMovementsView } from '../../src/renderer/views/BankMovementsView';
+import { BankAccountsSettings } from '../../src/renderer/components/BankAccounts';
 import { BankRulesTable } from '../../src/renderer/components/BankRulesTable';
 import { CustomerDialog } from '../../src/renderer/components/quotes/CustomerDialog';
 import {
@@ -1278,11 +1279,15 @@ export async function runUiChecks() {
     await render(null);
     results.push('backup-controls');
 
+    doc.bankAccounts = [{ ...meta(), name: 'Fineco' }];
     appState.bankExpenseImporting = true;
     appState.bankExpenseImportSummary = {
       imported: 1,
+      accountName: 'Fineco',
       duplicates: 2,
+      repeatedInFile: 0,
       ignoredIncome: 3,
+      skippedPending: 0,
     };
     await render(
       <BankMovementsView doc={doc} appState={appState} year={2026} />,
@@ -1291,8 +1296,103 @@ export async function runUiChecks() {
       document.querySelector('[data-slot=spinner]') &&
         document.body.innerText.includes('Importazione in corso') &&
         document.body.innerText.includes('1 movimenti importati') &&
-        document.body.innerText.includes('Adobe'),
+        document.body.innerText.includes('Adobe') &&
+        document.body.innerText.includes('Importa dai conti'),
       'Import feedback hid bank rows or original summary',
+    );
+    await render(<BankAccountsSettings doc={doc} appState={appState} />);
+    check(
+      document.body.innerText.includes('Conti bancari') &&
+        document.body.innerText.includes('Fineco') &&
+        document.querySelector('[aria-label="Rinomina Fineco"]') &&
+        document.querySelector('[aria-label="Apri Fineco"]') &&
+        document.body.innerText.includes('Formato: da scegliere') &&
+        !document.body.innerText.includes('Importa dai conti'),
+      'Bank account settings missing account or management controls',
+    );
+    const sampleRows = [
+      ['Export conto'],
+      [
+        'Data_Operazione',
+        'Data_Valuta',
+        'Entrate',
+        'Uscite',
+        'Descrizione',
+        'Descrizione_Completa',
+        'Stato',
+      ],
+      ['', '02/11/2026', '', '-3,50', 'POS', 'Bar Centrale', 'Contabilizzato'],
+    ];
+    let previews = 0;
+    window.cash.bankExpenses = {
+      importFile: async () =>
+        ok({ rows: [], ignoredIncome: 0, skippedPending: 0 }),
+      openSample: async () => ok({ name: 'prova.xlsx', rows: sampleRows }),
+      previewSample: async () => {
+        previews++;
+        const expense = {
+          date: '2026-11-02',
+          description: 'Bar Centrale',
+          amount: '3.50',
+          time: '09:41',
+        };
+        return ok({
+          rows: [expense],
+          ignoredIncome: 0,
+          skippedPending: 0,
+          outcomes: [{ row: 3, kind: 'expense' as const, expense }],
+        });
+      },
+    };
+    const settle = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    await click(find('[aria-label="Apri Fineco"]'));
+    check(
+      document.body.innerText.includes('Carica file di prova') &&
+        document.body.innerText.includes('Carica un file di prova') &&
+        button('Salva formato').disabled,
+      'Bank account page missing sample loader or saves without a format',
+    );
+    await choose('#bank-import-preset', 'Fineco');
+    check(
+      document.body.innerText.includes('Data_Valuta') &&
+        document.body.innerText.includes('Contabilizzato') &&
+        !button('Salva formato').disabled,
+      'Fineco preset did not fill the import format',
+    );
+    await click(button('Carica file di prova'));
+    await settle();
+    check(
+      previews === 1 &&
+        document.body.innerText.includes('prova.xlsx') &&
+        document.body.innerText.includes('Bar Centrale') &&
+        document.body.innerText.includes('Uscite') &&
+        document.body.innerText.includes('1 spese nuove') &&
+        document.body.innerText.includes('Nuova') &&
+        document.body.innerText.includes('09:41') &&
+        document.body.innerText.includes('Importazione in Cash') &&
+        document.body.innerText.includes('Intestazione alla riga 2') &&
+        document.body.innerText.includes('-3,50'),
+      'Sample file or its result in Cash not shown',
+    );
+    await click(find('[aria-label="Collega Uscite"]'));
+    const signed = [
+      ...document.querySelectorAll<HTMLElement>('[role=menuitemcheckbox]'),
+    ].find((entry) => entry.textContent?.includes('Importo con segno'));
+    check(signed, 'Header menu missing the Cash fields');
+    await click(signed!);
+    await settle();
+    check(
+      document.body.innerText.includes('Personalizzato') &&
+        document.body.innerText.includes('Importo con segno (+/−)'),
+      'Choosing a Cash field from the header did not change the mapping',
+    );
+    await click(button('Conti bancari'));
+    check(
+      document.querySelector('[aria-label="Apri Fineco"]'),
+      'Back button did not return to the account list',
     );
     results.push('bank-import');
     await render(null);

@@ -1,7 +1,6 @@
 import { DataTable } from '@/components/ui/data-table';
-import { Spinner } from '@/components/ui/spinner';
 import { useMemo, useState } from 'react';
-import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   automaticCategoryIds,
   bankCategoryLabel,
@@ -21,6 +20,7 @@ import { BankCategoryCombobox } from '@/components/BankCategoryCombobox';
 import { BankManualCategoriesDialog } from '@/components/BankManualCategoriesDialog';
 import { BankRuleDialog } from '@/components/BankRuleDialog';
 import { BankExpenseDialog } from '@/components/BankExpenseDialog';
+import { BankAccountsImportCard } from '@/components/BankAccounts';
 import { BankBulkCategoriesDialog } from '@/components/BankBulkCategoriesDialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -101,6 +101,11 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
   const clearSelection = () => setSelected([]);
   return (
     <div className="space-y-5">
+      <BankAccountsImportCard
+        doc={doc}
+        appState={appState}
+        readOnly={readOnly}
+      />
       <Card>
         <CardContent className="flex flex-wrap items-end gap-4">
           <div className="min-w-52 flex-1 space-y-2">
@@ -151,19 +156,6 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
             <Plus />
             Nuova spesa
           </Button>
-          <Button
-            disabled={readOnly || appState.bankExpenseImporting}
-            onClick={() => void appState.importBankExpenses()}
-          >
-            {appState.bankExpenseImporting ? (
-              <Spinner aria-hidden="true" />
-            ) : (
-              <Upload />
-            )}
-            {appState.bankExpenseImporting
-              ? 'Importazione in corso…'
-              : 'Importa XLSX / CSV'}
-          </Button>
         </CardContent>
       </Card>
       {notice ? (
@@ -173,10 +165,26 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
       ) : null}
       {summary ? (
         <Alert role="status">
-          <AlertTitle>Importazione completata</AlertTitle>
+          <AlertTitle>
+            Importazione completata · {summary.accountName}
+          </AlertTitle>
           <AlertDescription>
             {summary.imported} movimenti importati · {summary.duplicates}{' '}
             duplicati già presenti · {summary.ignoredIncome} entrate ignorate.
+            {summary.skippedPending ? (
+              <span className="block">
+                {summary.skippedPending} movimenti in attesa non importati:
+                entreranno con un import successivo, quando la banca li avrà
+                contabilizzati.
+              </span>
+            ) : null}
+            {summary.repeatedInFile ? (
+              <span className="block">
+                {summary.repeatedInFile} righe identiche nel file (stessa data,
+                descrizione e importo) sono state unite: se erano spese
+                distinte, aggiungile a mano.
+              </span>
+            ) : null}
             <span className="block">
               Il file viene importato per tutti gli anni. Qui sono visibili i
               movimenti del {year ?? 'periodo selezionato'}.
@@ -292,9 +300,19 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
               {
                 id: 'date',
                 header: 'Data',
-                value: (expense) => expense.date,
+                value: (expense) => `${expense.date} ${expense.time ?? ''}`,
                 className: 'whitespace-nowrap',
-                cell: (expense) => dateIt(expense.date),
+                cell: (expense) =>
+                  expense.time ? (
+                    <>
+                      {dateIt(expense.date)}{' '}
+                      <span className="text-muted-foreground tabular-nums">
+                        {expense.time}
+                      </span>
+                    </>
+                  ) : (
+                    dateIt(expense.date)
+                  ),
               },
               {
                 id: 'description',

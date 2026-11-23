@@ -38,6 +38,25 @@ const migrations: readonly SchemaMigration[] = [
         nextQuoteNumber=(SELECT COUNT(*)+1 FROM quotes) WHERE singleton=1;
     `,
   },
+  {
+    version: 3,
+    sql: `
+      CREATE TABLE bank_accounts (
+        id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+        position INTEGER NOT NULL, name TEXT NOT NULL, pendingSince TEXT
+      ) STRICT;
+      ALTER TABLE bank_expenses ADD COLUMN accountId TEXT
+        REFERENCES bank_accounts(id) DEFERRABLE INITIALLY DEFERRED;
+    `,
+  },
+  {
+    version: 4,
+    sql: 'ALTER TABLE bank_accounts ADD COLUMN importConfig TEXT;',
+  },
+  {
+    version: 5,
+    sql: 'ALTER TABLE bank_expenses ADD COLUMN time TEXT;',
+  },
 ];
 
 export async function runSchemaMigrations(

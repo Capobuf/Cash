@@ -19,6 +19,8 @@ const nonBlank = z
 
 type ValidationIssue = { path: PropertyKey[]; code: string; message: string };
 const pathLabels: Record<string, string> = {
+  bankAccounts: 'Conti',
+  accountId: 'conto',
   bankExpenses: 'Movimenti bancari',
   bankExpenseCategories: 'Categorie spese',
   bankExpenseRules: 'Regole automatiche',
@@ -615,10 +617,16 @@ export const bankExpenseRowSchema = z.object({
         /^(?:0|[1-9]\d*)\.\d{2}$/.test(value) && new Decimal(value).gt(0),
       'importo non positivo',
     ),
+  time: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
 });
 export const bankExpenseImportSchema = z.object({
   rows: z.array(bankExpenseRowSchema),
   ignoredIncome: z.number().int().nonnegative(),
+  skippedPending: z.number().int().nonnegative(),
+  pendingFrom: z.string().date().optional(),
 });
 export const bankExpenseRuleSchema = z.object({
   ...entity,
@@ -655,11 +663,74 @@ const bankExpenseSchema = z.preprocess(
     ...entity,
     categoryIds: z.array(uuid),
     excludedFromCalculations: z.boolean().optional(),
+    accountId: uuid.optional(),
   }),
 );
+const label = z.string().trim().min(1);
+export const bankImportConfigSchema = z
+  .object({
+    headers: z.array(label).min(1),
+    date: label,
+    dateFallback: label.optional(),
+    time: label.optional(),
+    description: label,
+    descriptionFallback: label.optional(),
+    amount: z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('debit'),
+        debit: label,
+        credit: label.optional(),
+      }),
+      z.object({
+        kind: z.literal('signed'),
+        amount: label,
+        fee: label.optional(),
+      }),
+    ]),
+    decimal: z.enum([',', '.']),
+    status: z
+      .object({ column: label, booked: z.array(label).min(1) })
+      .optional(),
+    currency: z.object({ column: label, value: label }).optional(),
+  })
+  .strict()
+  .superRefine((config, ctx) => {
+    if (new Set(config.headers).size !== config.headers.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['headers'],
+        message: 'Intestazioni ripetute',
+      });
+    const used = [
+      config.date,
+      config.dateFallback,
+      config.time,
+      config.description,
+      config.descriptionFallback,
+      ...(config.amount.kind === 'debit'
+        ? [config.amount.debit, config.amount.credit]
+        : [config.amount.amount, config.amount.fee]),
+      config.status?.column,
+      config.currency?.column,
+    ];
+    for (const column of used)
+      if (column !== undefined && !config.headers.includes(column))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['headers'],
+          message: `Colonna ${column} assente dall’intestazione`,
+        });
+  });
+export const bankAccountSchema = z.object({
+  ...entity,
+  name: z.string().trim().min(1),
+  pendingSince: z.string().date().optional(),
+  importConfig: bankImportConfigSchema.optional(),
+});
 
 export const cashDocumentSchema: z.ZodType<CashDocument> = z
   .object({
+    bankAccounts: z.array(bankAccountSchema).default([]),
     bankExpenses: z.array(bankExpenseSchema).default([]),
     bankExpenseCategories: z.array(
       z.object({
@@ -840,6 +911,7 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
       'businessCosts',
       'vehicles',
       'sites',
+      'bankAccounts',
       'bankExpenses',
       'bankExpenseCategories',
       'bankExpenseRules',
@@ -966,9 +1038,28 @@ export const cashDocumentSchema: z.ZodType<CashDocument> = z
             'Il padre deve essere una categoria principale utente esistente',
         });
     });
+    const accounts = new Set<string>();
+    const accountNames = new Set<string>();
+    document.bankAccounts.forEach((account, index) => {
+      accounts.add(account.id);
+      const name = account.name.trim().toLocaleLowerCase('it');
+      if (accountNames.has(name))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['bankAccounts', index, 'name'],
+          message: 'Nome conto duplicato',
+        });
+      accountNames.add(name);
+    });
     const movements = new Set<string>();
     document.bankExpenses.forEach((expense, index) => {
       const path = ['bankExpenses', index];
+      if (expense.accountId && !accounts.has(expense.accountId))
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'accountId'],
+          message: 'Conto del movimento inesistente',
+        });
       if (expense.categoryIds.some((id) => !categories.has(id)))
         ctx.addIssue({
           code: 'custom',

@@ -130,13 +130,20 @@ export function deduplicateBankExpenses(
   existing: BankExpense[],
   rows: BankExpenseRow[],
 ) {
-  const seen = new Set(existing.map(bankExpenseIdentity));
+  const present = new Set(existing.map(bankExpenseIdentity));
+  const seen = new Set<string>();
   const added: BankExpense[] = [];
   let duplicates = 0;
+  // shortcut: identical rows in one file are merged (storage keeps date+description+amount unique); needs a bank transaction ID to lift.
+  let repeatedInFile = 0;
   for (const row of rows) {
     const key = bankExpenseIdentity(row);
-    if (seen.has(key)) {
+    if (present.has(key)) {
       duplicates++;
+      continue;
+    }
+    if (seen.has(key)) {
+      repeatedInFile++;
       continue;
     }
     seen.add(key);
@@ -145,10 +152,11 @@ export function deduplicateBankExpenses(
       date: row.date,
       description: normalizeBankDescription(row.description),
       amount: row.amount,
+      ...(row.time ? { time: row.time } : {}),
       categoryIds: [],
     });
   }
-  return { added, duplicates };
+  return { added, duplicates, repeatedInFile };
 }
 
 export function bankCategoryTree(categories: BankExpenseCategory[]) {

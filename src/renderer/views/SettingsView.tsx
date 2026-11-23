@@ -17,6 +17,7 @@ import {
 import { ResourcesView } from './ResourcesView';
 import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { BackupSettingsPanel } from '@/components/BackupSettingsPanel';
+import { BankAccountsSettings } from '@/components/BankAccounts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -103,6 +104,7 @@ export function SettingsView({
           <TabsTrigger value="resources">
             Costi, trasferte e altre sedi
           </TabsTrigger>
+          <TabsTrigger value="bank-accounts">Conti bancari</TabsTrigger>
           <TabsTrigger value="integrations">Integrazioni</TabsTrigger>
           <TabsTrigger value="archive">Archivio</TabsTrigger>
           <TabsTrigger value="backup">Backup</TabsTrigger>
@@ -310,6 +312,10 @@ export function SettingsView({
             appState={appState}
             requestDelete={requestDelete}
           />
+        </TabsContent>
+
+        <TabsContent value="bank-accounts">
+          <BankAccountsSettings doc={doc} appState={appState} />
         </TabsContent>
 
         <IntegrationsSettings doc={doc} appState={appState} ficUi={ficUi} />

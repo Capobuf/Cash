@@ -30,6 +30,7 @@ import * as persistence from '../../src/native/persistence';
 import { readPreferences } from '../../src/native/preferences';
 import type { ArchiveSession } from '../../src/shared/archive';
 import type { BackupState } from '../../src/shared/backup';
+import { downgradeToStorageV2 } from '../fixtures/storage-v2';
 
 const native = vi.hoisted(() => ({ directory: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => native.directory } }));
@@ -759,6 +760,7 @@ it('applies the existing SQLite migration only on the restore staging copy', asy
   const token = current!.token;
   const db = new DatabaseSync(source);
   try {
+    downgradeToStorageV2(db);
     db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE old_quotes (id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, position INTEGER NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL) STRICT;
     INSERT INTO old_quotes SELECT id, createdAt, updatedAt, position, date, payload FROM quotes;
@@ -770,7 +772,7 @@ it('applies the existing SQLite migration only on the restore staging copy', asy
   }
   const bytes = await readFile(source);
   const staged = unwrap(await manager.stageRestore(source));
-  expect(staged.inspection.storageVersion).toBe(2);
+  expect(staged.inspection.storageVersion).toBe(5);
   expect(staged.inspection.header.schemaVersion).toBe(12);
   const restored = unwrap(
     await restoreArchiveCopy(

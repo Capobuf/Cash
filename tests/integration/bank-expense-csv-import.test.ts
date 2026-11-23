@@ -7,6 +7,9 @@ import {
   parseBankExpenseCsv,
   readBankExpenseFile,
 } from '../../src/native/bank-expense-import';
+import { bankImportPresets } from '../../src/domain/bank-accounts';
+
+const { Fineco, Revolut } = bankImportPresets;
 import { deduplicateBankExpenses } from '../../src/domain/bank-expenses';
 
 const headers =
@@ -41,7 +44,7 @@ afterEach(async () => {
 });
 
 describe('Importazione CSV bancario', () => {
-  it('legge il formato fornito includendo commissioni e movimenti in sospeso, senza modificare il file', async () => {
+  it('legge il formato fornito includendo commissioni, salta i movimenti in sospeso e non modifica il file', async () => {
     const text = [
       headers,
       'Ricarica,Attuale,2026-06-25 16:54:38,2026-06-25 16:54:39,Pagamento da Cliente,1000,0,EUR,COMPLETATO,1000',
@@ -52,22 +55,30 @@ describe('Importazione CSV bancario', () => {
     ].join('\r\n');
     const path = join(await directory(), 'movimenti.CSV');
     await writeFile(path, '\uFEFF' + text);
-    expect(await readBankExpenseFile(path)).toEqual({
+    expect(await readBankExpenseFile(path, Revolut)).toEqual({
       ok: true,
       value: {
         ignoredIncome: 1,
+        skippedPending: 1,
+        pendingFrom: '2026-10-01',
         rows: [
           {
             date: '2026-06-25',
             description: 'Commissione per la consegna della carta',
             amount: '6.99',
+            time: '16:57',
           },
-          { date: '2026-06-30', description: 'Negozio', amount: '57.03' },
-          { date: '2026-10-01', description: 'Panificio', amount: '4.40' },
+          {
+            date: '2026-06-30',
+            description: 'Negozio',
+            amount: '57.03',
+            time: '13:27',
+          },
           {
             date: '2026-06-30',
             description: 'Pagamento con commissione',
             amount: '10.15',
+            time: '13:27',
           },
         ],
       },
@@ -78,16 +89,19 @@ describe('Importazione CSV bancario', () => {
   it('gestisce virgolette, virgole, Unicode, campi multilinea e righe vuote', async () => {
     const result = await parseBankExpenseCsv(
       `${headers}\n\n${csvRow({ 4: '  Caffè, "Centro"\n Roma  ', 3: '2026-07-01 5:42:32' })}\n\n`,
+      Revolut,
     );
     expect(result).toEqual({
       ok: true,
       value: {
         ignoredIncome: 0,
+        skippedPending: 0,
         rows: [
           {
             date: '2026-07-01',
             description: 'Caffè, "Centro" Roma',
             amount: '57.03',
+            time: '05:42',
           },
         ],
       },
@@ -102,9 +116,9 @@ describe('Importazione CSV bancario', () => {
       ),
       csvRow({ 3: '', 4: '', 5: '10', 6: '1' }),
     ].join('\n');
-    expect(await parseBankExpenseCsv(text)).toEqual({
+    expect(await parseBankExpenseCsv(text, Revolut)).toEqual({
       ok: true,
-      value: { ignoredIncome: 2, rows: [] },
+      value: { ignoredIncome: 2, skippedPending: 0, rows: [] },
     });
   });
 
@@ -122,7 +136,10 @@ describe('Importazione CSV bancario', () => {
     ['valuta', { 7: 'USD' }],
   ])('annulla tutto per %s non valida', async (_label, changes) => {
     expect(
-      await parseBankExpenseCsv(`${headers}\n${csvRow()}\n${csvRow(changes)}`),
+      await parseBankExpenseCsv(
+        `${headers}\n${csvRow()}\n${csvRow(changes)}`,
+        Revolut,
+      ),
     ).toMatchObject({
       ok: false,
       error: {
@@ -140,19 +157,20 @@ describe('Importazione CSV bancario', () => {
     `${headers}\n${payment.slice(0, -1).join(',')}`,
     `${headers}\n"campo non chiuso`,
   ])('rifiuta strutture CSV non valide', async (text) => {
-    expect(await parseBankExpenseCsv(text)).toMatchObject({
+    expect(await parseBankExpenseCsv(text, Revolut)).toMatchObject({
       ok: false,
       error: { code: 'SOURCE_INVALID' },
     });
   });
 
   it('accetta intestazioni riordinate e file con sole intestazioni', async () => {
-    expect(await parseBankExpenseCsv(headers)).toEqual({
+    expect(await parseBankExpenseCsv(headers, Revolut)).toEqual({
       ok: true,
-      value: { rows: [], ignoredIncome: 0 },
+      value: { rows: [], ignoredIncome: 0, skippedPending: 0 },
     });
     const result = await parseBankExpenseCsv(
       `${headers.split(',').reverse().join(',')}\n${[...payment].reverse().join(',')}`,
+      Revolut,
     );
     expect(result).toMatchObject({
       ok: true,
@@ -163,14 +181,17 @@ describe('Importazione CSV bancario', () => {
   it('riutilizza la deduplica esistente anche per la reimportazione', async () => {
     const parsed = await parseBankExpenseCsv(
       `${headers}\n${csvRow()}\n${csvRow()}`,
+      Revolut,
     );
     if (!parsed.ok) throw new Error(parsed.error.message);
     const first = deduplicateBankExpenses([], parsed.value.rows);
     expect(first.added).toHaveLength(1);
-    expect(first.duplicates).toBe(1);
+    expect(first.duplicates).toBe(0);
+    expect(first.repeatedInFile).toBe(1);
     expect(deduplicateBankExpenses(first.added, parsed.value.rows)).toEqual({
       added: [],
       duplicates: 2,
+      repeatedInFile: 0,
     });
   });
 
@@ -198,17 +219,17 @@ describe('Importazione CSV bancario', () => {
     ]);
     const path = join(dir, 'movimenti.xlsx');
     await book.xlsx.writeFile(path);
-    expect(await readBankExpenseFile(path)).toMatchObject({
+    expect(await readBankExpenseFile(path, Fineco)).toMatchObject({
       ok: true,
       value: {
         rows: [{ date: '2026-06-30', description: 'Negozio', amount: '57.03' }],
       },
     });
-    expect((await readBankExpenseFile(join(dir, 'missing.csv'))).ok).toBe(
-      false,
-    );
-    expect((await readBankExpenseFile(join(dir, 'movimenti.txt'))).ok).toBe(
-      false,
-    );
+    expect(
+      (await readBankExpenseFile(join(dir, 'missing.csv'), Revolut)).ok,
+    ).toBe(false);
+    expect(
+      (await readBankExpenseFile(join(dir, 'movimenti.txt'), Revolut)).ok,
+    ).toBe(false);
   });
 });

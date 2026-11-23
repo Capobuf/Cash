@@ -27,7 +27,15 @@ export async function officialFetch(
       signal: controller.signal,
       redirect: 'error',
     });
-    return ok(response);
+    // Read the body under the same deadline: a stalled body must not hang the caller.
+    const body = await response.arrayBuffer();
+    return ok(
+      new Response([204, 205, 304].includes(response.status) ? null : body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      }),
+    );
   } catch (cause) {
     const record = cause as
       | { name?: unknown; message?: unknown; cause?: { code?: unknown } }
