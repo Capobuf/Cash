@@ -22,7 +22,12 @@ const api: CashNativeApi = {
       return () => ipcRenderer.removeListener(IPC.backupChanged, wrapped);
     },
   },
-  bankExpenses: { importFile: () => ipcRenderer.invoke(IPC.bankExpenseImport) },
+  bankExpenses: {
+    importFile: (config) => ipcRenderer.invoke(IPC.bankExpenseImport, config),
+    openSample: () => ipcRenderer.invoke(IPC.bankExpenseSample),
+    previewSample: (config) =>
+      ipcRenderer.invoke(IPC.bankExpensePreview, config),
+  },
   archive: {
     create: (document) => ipcRenderer.invoke(IPC.archiveCreate, document),
     open: () => ipcRenderer.invoke(IPC.archiveOpen),

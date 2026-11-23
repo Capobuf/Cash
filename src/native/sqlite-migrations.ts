@@ -49,6 +49,14 @@ const migrations: readonly SchemaMigration[] = [
         REFERENCES bank_accounts(id) DEFERRABLE INITIALLY DEFERRED;
     `,
   },
+  {
+    version: 4,
+    sql: 'ALTER TABLE bank_accounts ADD COLUMN importConfig TEXT;',
+  },
+  {
+    version: 5,
+    sql: 'ALTER TABLE bank_expenses ADD COLUMN time TEXT;',
+  },
 ];
 
 export async function runSchemaMigrations(

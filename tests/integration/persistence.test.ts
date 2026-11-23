@@ -600,13 +600,13 @@ describe('riconoscimento e versioni SQL', () => {
     closeArchive(path);
     const safety = await runSchemaMigrations(
       path,
-      [{ version: 4, sql: 'CREATE INDEX test_migration ON quotes(position)' }],
-      4,
+      [{ version: 6, sql: 'CREATE INDEX test_migration ON quotes(position)' }],
+      6,
     );
     expect(safety).toBeDefined();
     const db = new DatabaseSync(path);
     try {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
+      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(6);
       expect(
         db
           .prepare("SELECT name FROM sqlite_master WHERE name='test_migration'")
@@ -620,18 +620,18 @@ describe('riconoscimento e versioni SQL', () => {
         path,
         [
           {
-            version: 5,
+            version: 7,
             sql: 'ALTER TABLE quotes ADD COLUMN migration_test TEXT; SELECT * FROM no_such_table',
           },
         ],
-        5,
+        7,
       ),
     ).rejects.toThrow('backup:');
     const rolledBack = new DatabaseSync(path);
     try {
       expect(
         rolledBack.prepare('PRAGMA user_version').get()!.user_version,
-      ).toBe(4);
+      ).toBe(6);
       expect(
         rolledBack
           .prepare('PRAGMA table_info(quotes)')

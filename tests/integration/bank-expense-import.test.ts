@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   parseBankExpenseWorkbook,
-  readBankExpenseXlsx,
+  readBankExpenseFile,
 } from '../../src/native/bank-expense-import';
+import { bankImportPresets } from '../../src/domain/bank-accounts';
 import { createEmptyDocument, meta } from '../../src/domain/model';
 import {
   createArchive,
@@ -75,7 +76,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
     book.addWorksheet('Da ignorare').addRow(['non valido']);
     const path = join(await directory(), 'export.xlsx');
     await book.xlsx.writeFile(path);
-    expect(await readBankExpenseXlsx(path)).toEqual({
+    expect(await readBankExpenseFile(path, bankImportPresets.Fineco)).toEqual({
       ok: true,
       value: {
         ignoredIncome: 1,
@@ -111,7 +112,7 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       '',
       'Contabilizzato',
     ]);
-    expect(parseBankExpenseWorkbook(book)).toEqual({
+    expect(parseBankExpenseWorkbook(book, bankImportPresets.Fineco)).toEqual({
       ok: true,
       value: {
         ignoredIncome: 6,
@@ -133,7 +134,9 @@ describe('XLSX bancario nativo e archivio corrente', () => {
       const { book, sheet } = workbook();
       sheet.addRow(['', '01/01/2026', '', '-1', 'Valida', '', '']);
       sheet.addRow(['', date, '', amount, description, '', '']);
-      expect(parseBankExpenseWorkbook(book)).toMatchObject({
+      expect(
+        parseBankExpenseWorkbook(book, bankImportPresets.Fineco),
+      ).toMatchObject({
         ok: false,
         error: {
           code: 'SOURCE_INVALID',
@@ -147,21 +150,29 @@ describe('XLSX bancario nativo e archivio corrente', () => {
     const { book, sheet } = workbook();
     book.properties.date1904 = true;
     sheet.addRow(['', 0, '', '-1.25', 'Inizio', '', 'Contabilizzato']);
-    expect(parseBankExpenseWorkbook(book)).toMatchObject({
+    expect(
+      parseBankExpenseWorkbook(book, bankImportPresets.Fineco),
+    ).toMatchObject({
       ok: true,
       value: { rows: [{ date: '1904-01-01', amount: '1.25' }] },
     });
     sheet.getCell('A3').value = 'Altro';
     book.addWorksheet('Secondo').addRow(headers);
-    expect(parseBankExpenseWorkbook(book).ok).toBe(false);
+    expect(parseBankExpenseWorkbook(book, bankImportPresets.Fineco).ok).toBe(
+      false,
+    );
   });
 
   it('rifiuta file corrotti e non XLSX senza scriverli', async () => {
     const path = join(await directory(), 'invalid.xlsx');
     await writeFile(path, 'invalid');
-    expect((await readBankExpenseXlsx(path)).ok).toBe(false);
+    expect((await readBankExpenseFile(path, bankImportPresets.Fineco)).ok).toBe(
+      false,
+    );
     expect(await readFile(path, 'utf8')).toBe('invalid');
-    expect((await readBankExpenseXlsx(path + '.csv')).ok).toBe(false);
+    expect(
+      (await readBankExpenseFile(path + '.csv', bankImportPresets.Fineco)).ok,
+    ).toBe(false);
   });
 
   it('migra v5 con backup byte per byte, conserva integralmente FIC e salva categorie e movimenti', async () => {

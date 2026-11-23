@@ -215,10 +215,12 @@ export class AppState {
     const account = this.document.bankAccounts.find(
       (entry) => entry.id === accountId,
     );
-    if (!account) {
+    if (!account?.importConfig) {
       this.setError({
         code: 'VALIDATION',
-        message: 'Scegli un conto esistente prima di importare.',
+        message: account
+          ? 'Scegli prima il formato del file per questo conto.'
+          : 'Scegli un conto esistente prima di importare.',
       });
       return;
     }
@@ -229,7 +231,9 @@ export class AppState {
     this.bankExpenseImportSummary = null;
     this.emit();
     try {
-      const result = await window.cash.bankExpenses.importFile();
+      const result = await window.cash.bankExpenses.importFile(
+        account.importConfig,
+      );
       if (
         context !== this.archiveContextVersion ||
         this.document?.documentId !== documentId ||

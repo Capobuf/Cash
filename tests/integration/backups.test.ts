@@ -772,7 +772,7 @@ it('applies the existing SQLite migration only on the restore staging copy', asy
   }
   const bytes = await readFile(source);
   const staged = unwrap(await manager.stageRestore(source));
-  expect(staged.inspection.storageVersion).toBe(3);
+  expect(staged.inspection.storageVersion).toBe(5);
   expect(staged.inspection.header.schemaVersion).toBe(12);
   const restored = unwrap(
     await restoreArchiveCopy(

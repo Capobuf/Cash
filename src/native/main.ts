@@ -7,7 +7,15 @@ import {
   shell,
 } from 'electron';
 import { BackupManager } from './backups';
-import { readBankExpenseFile } from './bank-expense-import';
+import {
+  previewBankExpenseFile,
+  readBankExpenseFile,
+  readBankSampleRows,
+} from './bank-expense-import';
+import {
+  bankImportConfigSchema,
+  validationErrorFromIssues,
+} from '../domain/schema';
 import { existsSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import {
@@ -477,22 +485,50 @@ function registerHandlers(): void {
       void backups.check();
     }
   });
-  ipcMain.handle(IPC.bankExpenseImport, async () => {
-    if (!current?.document || current.readOnly)
-      return err({
-        code: 'VALIDATION',
-        message: 'Apri un archivio modificabile prima di importare.',
-      });
+  const chooseBankFile = async (title: string) => {
     const choice = await dialog.showOpenDialog({
-      title: 'Importa uscite dal conto',
+      title,
       properties: ['openFile'],
       filters: [
         { name: 'Movimenti bancari XLSX e CSV', extensions: ['xlsx', 'csv'] },
       ],
     });
-    if (choice.canceled || !choice.filePaths[0])
+    return choice.canceled ? undefined : choice.filePaths[0];
+  };
+  // Only a file the user picked in the dialog is read again for the preview.
+  let bankSamplePath: string | undefined;
+  ipcMain.handle(IPC.bankExpenseImport, async (_event, input: unknown) => {
+    if (!current?.document || current.readOnly)
+      return err({
+        code: 'VALIDATION',
+        message: 'Apri un archivio modificabile prima di importare.',
+      });
+    const config = bankImportConfigSchema.safeParse(input);
+    if (!config.success)
+      return err(validationErrorFromIssues(config.error.issues));
+    const path = await chooseBankFile('Importa uscite dal conto');
+    if (!path)
       return err({ code: 'CANCELLED', message: 'Importazione annullata.' });
-    return readBankExpenseFile(choice.filePaths[0]);
+    return readBankExpenseFile(path, config.data);
+  });
+  ipcMain.handle(IPC.bankExpenseSample, async () => {
+    const path = await chooseBankFile('Scegli un file di prova della banca');
+    if (!path) return err({ code: 'CANCELLED', message: 'Scelta annullata.' });
+    const rows = await readBankSampleRows(path);
+    if (!rows.ok) return rows;
+    bankSamplePath = path;
+    return ok({ name: basename(path), rows: rows.value });
+  });
+  ipcMain.handle(IPC.bankExpensePreview, async (_event, input: unknown) => {
+    const config = bankImportConfigSchema.safeParse(input);
+    if (!config.success)
+      return err(validationErrorFromIssues(config.error.issues));
+    if (!bankSamplePath)
+      return err({
+        code: 'VALIDATION',
+        message: 'Carica prima un file di prova.',
+      });
+    return previewBankExpenseFile(bankSamplePath, config.data);
   });
   ipcMain.handle(IPC.archiveOpen, () => selectOpen());
   ipcMain.handle(IPC.archiveOpenLast, async () => {

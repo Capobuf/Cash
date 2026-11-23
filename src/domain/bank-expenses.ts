@@ -152,6 +152,7 @@ export function deduplicateBankExpenses(
       date: row.date,
       description: normalizeBankDescription(row.description),
       amount: row.amount,
+      ...(row.time ? { time: row.time } : {}),
       categoryIds: [],
     });
   }

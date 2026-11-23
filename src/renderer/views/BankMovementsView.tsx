@@ -300,9 +300,19 @@ function BankMovementsContent({ doc, appState, year }: BankMovementsProps) {
               {
                 id: 'date',
                 header: 'Data',
-                value: (expense) => expense.date,
+                value: (expense) => `${expense.date} ${expense.time ?? ''}`,
                 className: 'whitespace-nowrap',
-                cell: (expense) => dateIt(expense.date),
+                cell: (expense) =>
+                  expense.time ? (
+                    <>
+                      {dateIt(expense.date)}{' '}
+                      <span className="text-muted-foreground tabular-nums">
+                        {expense.time}
+                      </span>
+                    </>
+                  ) : (
+                    dateIt(expense.date)
+                  ),
               },
               {
                 id: 'description',

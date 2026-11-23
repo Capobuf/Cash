@@ -617,6 +617,10 @@ export const bankExpenseRowSchema = z.object({
         /^(?:0|[1-9]\d*)\.\d{2}$/.test(value) && new Decimal(value).gt(0),
       'importo non positivo',
     ),
+  time: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
 });
 export const bankExpenseImportSchema = z.object({
   rows: z.array(bankExpenseRowSchema),
@@ -662,10 +666,66 @@ const bankExpenseSchema = z.preprocess(
     accountId: uuid.optional(),
   }),
 );
+const label = z.string().trim().min(1);
+export const bankImportConfigSchema = z
+  .object({
+    headers: z.array(label).min(1),
+    date: label,
+    dateFallback: label.optional(),
+    time: label.optional(),
+    description: label,
+    descriptionFallback: label.optional(),
+    amount: z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('debit'),
+        debit: label,
+        credit: label.optional(),
+      }),
+      z.object({
+        kind: z.literal('signed'),
+        amount: label,
+        fee: label.optional(),
+      }),
+    ]),
+    decimal: z.enum([',', '.']),
+    status: z
+      .object({ column: label, booked: z.array(label).min(1) })
+      .optional(),
+    currency: z.object({ column: label, value: label }).optional(),
+  })
+  .strict()
+  .superRefine((config, ctx) => {
+    if (new Set(config.headers).size !== config.headers.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['headers'],
+        message: 'Intestazioni ripetute',
+      });
+    const used = [
+      config.date,
+      config.dateFallback,
+      config.time,
+      config.description,
+      config.descriptionFallback,
+      ...(config.amount.kind === 'debit'
+        ? [config.amount.debit, config.amount.credit]
+        : [config.amount.amount, config.amount.fee]),
+      config.status?.column,
+      config.currency?.column,
+    ];
+    for (const column of used)
+      if (column !== undefined && !config.headers.includes(column))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['headers'],
+          message: `Colonna ${column} assente dall’intestazione`,
+        });
+  });
 export const bankAccountSchema = z.object({
   ...entity,
   name: z.string().trim().min(1),
   pendingSince: z.string().date().optional(),
+  importConfig: bankImportConfigSchema.optional(),
 });
 
 export const cashDocumentSchema: z.ZodType<CashDocument> = z

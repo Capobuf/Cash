@@ -6,9 +6,67 @@ import {
   type BankAccount,
   type BankExpense,
   type BankExpenseImport,
+  type BankImportConfig,
   type CashDocument,
   type Result,
 } from './model';
+import { bankImportConfigSchema } from './schema';
+
+// The formats Cash read before import rules were configurable.
+export const bankImportPresets = {
+  Fineco: {
+    headers: [
+      'Data_Operazione',
+      'Data_Valuta',
+      'Entrate',
+      'Uscite',
+      'Descrizione',
+      'Descrizione_Completa',
+      'Stato',
+    ],
+    date: 'Data_Valuta',
+    description: 'Descrizione_Completa',
+    descriptionFallback: 'Descrizione',
+    amount: { kind: 'debit', debit: 'Uscite', credit: 'Entrate' },
+    decimal: ',',
+    status: { column: 'Stato', booked: ['Contabilizzato'] },
+  },
+  Revolut: {
+    headers: [
+      'Tipo',
+      'Prodotto',
+      'Data di inizio',
+      'Data di completamento',
+      'Descrizione',
+      'Importo',
+      'Costo',
+      'Valuta',
+      'State',
+      'Saldo',
+    ],
+    date: 'Data di completamento',
+    dateFallback: 'Data di inizio',
+    description: 'Descrizione',
+    amount: { kind: 'signed', amount: 'Importo', fee: 'Costo' },
+    decimal: '.',
+    status: { column: 'State', booked: ['COMPLETATO'] },
+    currency: { column: 'Valuta', value: 'EUR' },
+  },
+} satisfies Record<string, BankImportConfig>;
+
+export function bankImportPresetName(
+  config: BankImportConfig | undefined,
+): string | undefined {
+  if (!config) return undefined;
+  // Parsing fixes the key order, so equal rules compare equal as JSON.
+  const json = (value: BankImportConfig) =>
+    JSON.stringify(bankImportConfigSchema.parse(value));
+  return (
+    Object.entries(bankImportPresets).find(
+      ([, preset]) => json(preset) === json(config),
+    )?.[0] ?? 'Personalizzato'
+  );
+}
 
 const minDate = (...dates: (string | undefined)[]): string | undefined =>
   dates.filter((date): date is string => !!date).sort()[0];
@@ -104,4 +162,75 @@ export function applyBankImport(
   if (pendingSince) account.pendingSince = pendingSince;
   else delete account.pendingSince;
   account.updatedAt = nowIso();
+}
+
+/** Form state for the import rules: empty strings mean "no column". */
+export interface BankImportDraft {
+  headers: string[];
+  date: string;
+  dateFallback: string;
+  time: string;
+  description: string;
+  descriptionFallback: string;
+  kind: 'debit' | 'signed';
+  /** debit: outflows column; signed: amount column. */
+  amount: string;
+  /** debit: income column; signed: fee column. */
+  extra: string;
+  decimal: ',' | '.';
+  status: string;
+  booked: string[];
+  currency: string;
+  currencyValue: string;
+}
+
+export const bankImportDraft = (
+  config?: BankImportConfig,
+): BankImportDraft => ({
+  headers: config?.headers ?? [],
+  date: config?.date ?? '',
+  dateFallback: config?.dateFallback ?? '',
+  time: config?.time ?? '',
+  description: config?.description ?? '',
+  descriptionFallback: config?.descriptionFallback ?? '',
+  kind: config?.amount.kind ?? 'debit',
+  amount:
+    config?.amount.kind === 'signed'
+      ? config.amount.amount
+      : (config?.amount.debit ?? ''),
+  extra:
+    (config?.amount.kind === 'signed'
+      ? config.amount.fee
+      : config?.amount.credit) ?? '',
+  decimal: config?.decimal ?? ',',
+  status: config?.status?.column ?? '',
+  booked: config?.status?.booked ?? [],
+  currency: config?.currency?.column ?? '',
+  currencyValue: config?.currency?.value ?? '',
+});
+
+export function bankImportConfigFromDraft(
+  draft: BankImportDraft,
+): BankImportConfig | undefined {
+  const optional = (value: string) => value || undefined;
+  const parsed = bankImportConfigSchema.safeParse({
+    headers: draft.headers,
+    date: draft.date,
+    dateFallback: optional(draft.dateFallback),
+    time: optional(draft.time),
+    description: draft.description,
+    descriptionFallback: optional(draft.descriptionFallback),
+    amount:
+      draft.kind === 'debit'
+        ? { kind: 'debit', debit: draft.amount, credit: optional(draft.extra) }
+        : { kind: 'signed', amount: draft.amount, fee: optional(draft.extra) },
+    decimal: draft.decimal,
+    status: draft.status
+      ? { column: draft.status, booked: draft.booked }
+      : undefined,
+    currency: draft.currency
+      ? { column: draft.currency, value: draft.currencyValue }
+      : undefined,
+  });
+  return parsed.success ? parsed.data : undefined;
 }

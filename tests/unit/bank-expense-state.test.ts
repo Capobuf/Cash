@@ -14,6 +14,7 @@ import {
   changeBankManualCategories,
   deleteBankExpenses,
 } from '../../src/domain/bank-expense-editing';
+import { bankImportPresets } from '../../src/domain/bank-accounts';
 
 const session = (
   document: CashDocument,
@@ -32,16 +33,20 @@ const imported: BankExpenseImport = {
   ignoredIncome: 2,
   skippedPending: 0,
 };
-const account = { ...meta(), name: 'Fineco' };
+const account = {
+  ...meta(),
+  name: 'Fineco',
+  importConfig: bankImportPresets.Fineco,
+};
 const withAccount = () => {
   const document = createEmptyDocument();
   document.bankAccounts.push(structuredClone(account));
   return document;
 };
 function setup() {
-  const importFile = vi.fn<() => Promise<Result<BankExpenseImport>>>(async () =>
-    ok(structuredClone(imported)),
-  );
+  const importFile = vi.fn<
+    (config: unknown) => Promise<Result<BankExpenseImport>>
+  >(async () => ok(structuredClone(imported)));
   const save = vi.fn(async (_path: string, document: CashDocument) =>
     ok(session({ ...document, revision: document.revision + 1 })),
   );
@@ -278,6 +283,7 @@ describe('import atomico e autosalvataggio spese', () => {
     );
     await state.importBankExpenses(account.id);
     await vi.runAllTimersAsync();
+    expect(importFile).toHaveBeenCalledWith(bankImportPresets.Fineco);
     expect(state.document?.bankExpenses[0]?.accountId).toBe(account.id);
     expect(state.document?.bankAccounts[0]?.pendingSince).toBe('2026-09-28');
     expect(state.bankExpenseImportSummary).toMatchObject({
@@ -288,5 +294,15 @@ describe('import atomico e autosalvataggio spese', () => {
     await state.importBankExpenses(meta().id);
     expect(importFile).not.toHaveBeenCalled();
     expect(state.error?.code).toBe('VALIDATION');
+  });
+
+  it('non importa da un conto senza formato scelto', async () => {
+    const { state, importFile } = setup();
+    state.mutate((document) => {
+      delete document.bankAccounts[0]!.importConfig;
+    });
+    await state.importBankExpenses(account.id);
+    expect(importFile).not.toHaveBeenCalled();
+    expect(state.error?.message).toContain('formato');
   });
 });

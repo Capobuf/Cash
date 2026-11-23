@@ -5,18 +5,23 @@ import { readFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { normalizeBankDescription } from '../domain/bank-expenses';
 import { bankExpenseRowSchema } from '../domain/schema';
-import { err, ok, type BankExpenseImport, type Result } from '../domain/model';
+import {
+  err,
+  ok,
+  type BankExpenseImport,
+  type BankExpensePreview,
+  type BankImportConfig,
+  type BankRowOutcome,
+  type Result,
+} from '../domain/model';
 
-const headers = [
-  'Data_Operazione',
-  'Data_Valuta',
-  'Entrate',
-  'Uscite',
-  'Descrizione',
-  'Descrizione_Completa',
-  'Stato',
-] as const;
-type Header = (typeof headers)[number];
+interface Sheet {
+  sheet: ExcelJS.Worksheet;
+  date1904: boolean;
+  /** CSV rows must have as many fields as the header. */
+  csv: boolean;
+}
+
 const blank = (value: unknown) =>
   value === null ||
   value === undefined ||
@@ -33,11 +38,24 @@ function cellValue(value: ExcelJS.CellValue): unknown {
   return value;
 }
 
-function expenseDate(value: unknown, date1904: boolean): string {
+const hhmm = (hours: number, minutes: number) =>
+  `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+function expenseMoment(
+  value: unknown,
+  date1904: boolean,
+): { date: string; time?: string } {
   if (value instanceof Date) {
-    if (!Number.isFinite(value.getTime()))
-      throw new Error('Data_Valuta non valida.');
-    return value.toISOString().slice(0, 10);
+    if (!Number.isFinite(value.getTime())) throw new Error('Data non valida.');
+    const hours = value.getUTCHours();
+    const minutes = value.getUTCMinutes();
+    // Midnight is how date-only cells arrive: no time to show.
+    return {
+      date: value.toISOString().slice(0, 10),
+      ...(hours || minutes || value.getUTCSeconds()
+        ? { time: hhmm(hours, minutes) }
+        : {}),
+    };
   }
   if (typeof value === 'number') {
     if (
@@ -45,41 +63,83 @@ function expenseDate(value: unknown, date1904: boolean): string {
       value < 0 ||
       (!date1904 && Math.floor(value) === 60)
     )
-      throw new Error('Data_Valuta non valida.');
+      throw new Error('Data non valida.');
     // Excel's 1900 calendar contains a fictitious leap day; 1904 workbooks use another epoch.
     const days = Math.floor(value);
     const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 31);
-    return expenseDate(
-      new Date(epoch + (days - (!date1904 && days > 60 ? 1 : 0)) * 86400000),
+    const seconds = Math.round((value - days) * 86400);
+    return expenseMoment(
+      new Date(
+        epoch +
+          (days - (!date1904 && days > 60 ? 1 : 0)) * 86400000 +
+          seconds * 1000,
+      ),
       date1904,
     );
   }
   if (typeof value !== 'string')
-    throw new Error('Data_Valuta assente o non valida.');
+    throw new Error('Data del movimento assente o non valida.');
   const text = value.trim();
   const italian = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
-  return italian
-    ? `${italian[3]}-${italian[2]!.padStart(2, '0')}-${italian[1]!.padStart(2, '0')}`
-    : text;
+  if (italian)
+    return {
+      date: `${italian[3]}-${italian[2]!.padStart(2, '0')}-${italian[1]!.padStart(2, '0')}`,
+    };
+  // Keep the bank's calendar date without applying the computer's timezone.
+  const withTime = /^(\d{4}-\d{2}-\d{2}) (\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(
+    text,
+  );
+  if (withTime && Number(withTime[2]) > 23)
+    throw new Error('Data del movimento assente o non valida.');
+  return withTime
+    ? {
+        date: withTime[1]!,
+        time: hhmm(Number(withTime[2]), Number(withTime[3])),
+      }
+    : { date: text };
 }
 
-function expenseAmount(value: unknown): string | undefined {
+// A dedicated time column: text H:MM[:SS], or an Excel time cell.
+function timeOf(value: unknown): string | undefined {
+  if (blank(value)) return undefined;
+  if (value instanceof Date && Number.isFinite(value.getTime()))
+    return hhmm(value.getUTCHours(), value.getUTCMinutes());
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    const seconds = Math.round((value - Math.floor(value)) * 86400) % 86400;
+    return hhmm(Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60));
+  }
+  const match =
+    typeof value === 'string' &&
+    /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/.exec(value.trim());
+  if (!match || Number(match[1]) > 23) throw new Error('Ora non valida.');
+  return hhmm(Number(match[1]), Number(match[2]));
+}
+
+function amountOf(
+  value: unknown,
+  decimal: BankImportConfig['decimal'],
+  column: string,
+): Decimal {
   let text: string;
   if (typeof value === 'number' && Number.isFinite(value)) text = String(value);
   else if (typeof value === 'string') {
     text = value.trim();
     // Italian decimals and grouping, or a plain dot decimal, without ambiguous coercion.
-    if (/^[+-]?(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(text))
+    if (
+      decimal === ',' &&
+      /^[+-]?(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(text)
+    )
       text = text.replace(/\./g, '').replace(',', '.');
-    else if (!/^[+-]?\d+\.\d{1,2}$/.test(text))
-      throw new Error('Uscite: importo non valido.');
-  } else throw new Error('Uscite: importo non valido.');
+    else if (
+      !(
+        decimal === ',' ? /^[+-]?\d+\.\d{1,2}$/ : /^[+-]?\d+(?:\.\d{1,2})?$/
+      ).test(text)
+    )
+      throw new Error(`${column}: importo non valido (massimo due decimali).`);
+  } else throw new Error(`${column}: importo non valido.`);
   const amount = new Decimal(text);
-  if (!amount.isFinite()) throw new Error('Uscite: importo non valido.');
-  if (amount.gte(0)) return undefined;
-  if (amount.decimalPlaces() > 2)
-    throw new Error('Uscite: massimo due decimali.');
-  return amount.abs().toFixed(2);
+  if (!amount.isFinite()) throw new Error(`${column}: importo non valido.`);
+  return amount;
 }
 
 // Only booked movements are imported: pending ones change date or description
@@ -88,219 +148,130 @@ function keepBooked(
   result: BankExpenseImport,
   row: BankExpenseImport['rows'][number],
   state: unknown,
-  booked: string,
-): void {
-  if (typeof state === 'string' && state.trim() === booked) {
+  booked: string[] | undefined,
+): boolean {
+  if (!booked || (typeof state === 'string' && booked.includes(state.trim()))) {
     result.rows.push(row);
-    return;
+    return true;
   }
   result.skippedPending++;
   if (!result.pendingFrom || row.date < result.pendingFrom)
     result.pendingFrom = row.date;
+  return false;
 }
 
-export function parseBankExpenseWorkbook(
-  workbook: ExcelJS.Workbook,
+function parseSheet(
+  { sheet, date1904, csv }: Sheet,
+  config: BankImportConfig,
+  outcomes?: BankRowOutcome[],
 ): Result<BankExpenseImport> {
-  const sheet = workbook.worksheets[0];
-  if (!sheet)
-    return err({
-      code: 'SOURCE_INVALID',
-      message: 'Il file XLSX non contiene fogli.',
-    });
-  let columns: Map<Header, number> | undefined;
-  let headerRow = 0;
-  sheet.eachRow((row, index) => {
-    if (columns) return;
-    const found = new Map<Header, number>();
-    row.eachCell((cell, column) => {
-      const label = cell.text.trim();
-      if (headers.includes(label as Header)) found.set(label as Header, column);
-    });
-    if (headers.every((header) => found.has(header))) {
-      columns = found;
-      headerRow = index;
-    }
+  let header: ExcelJS.Row | undefined;
+  sheet.eachRow((row) => {
+    if (header) return;
+    const labels = new Set<string>();
+    row.eachCell((cell) => void labels.add(cell.text.trim()));
+    if (config.headers.every((label) => labels.has(label))) header = row;
   });
-  if (!columns)
+  if (!header)
     return err({
       code: 'SOURCE_INVALID',
       message: 'Intestazione bancaria non trovata nel primo foglio.',
-      details: [`Colonne richieste: ${headers.join(', ')}.`],
+      details: [`Colonne richieste: ${config.headers.join(', ')}.`],
     });
-  const result: BankExpenseImport = {
-    rows: [],
-    ignoredIncome: 0,
-    skippedPending: 0,
-  };
-  for (let index = headerRow + 1; index <= sheet.rowCount; index++) {
-    const row = sheet.getRow(index);
-    const raw = (header: Header) => row.getCell(columns!.get(header)!).value;
-    // Income rows are outside scope; their dates and descriptions are deliberately not parsed.
-    if (blank(raw('Uscite'))) {
-      if (!blank(raw('Entrate'))) result.ignoredIncome++;
-      continue;
-    }
-    try {
-      const amount = expenseAmount(cellValue(raw('Uscite')));
-      if (amount === undefined) {
-        if (!blank(raw('Entrate'))) result.ignoredIncome++;
-        continue;
-      }
-      const full = cellValue(raw('Descrizione_Completa'));
-      const description = blank(full) ? cellValue(raw('Descrizione')) : full;
-      if (typeof description !== 'string')
-        throw new Error('Descrizione assente o non valida.');
-      const parsed = bankExpenseRowSchema.safeParse({
-        date: expenseDate(
-          cellValue(raw('Data_Valuta')),
-          Boolean(workbook.properties.date1904),
-        ),
-        description: normalizeBankDescription(description),
-        amount,
-      });
-      if (!parsed.success)
-        throw new Error(
-          parsed.error.issues
-            .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-            .join('; '),
-        );
-      keepBooked(
-        result,
-        parsed.data,
-        cellValue(raw('Stato')),
-        'Contabilizzato',
-      );
-    } catch (cause) {
-      return err({
-        code: 'SOURCE_INVALID',
-        message: `Importazione annullata: uscita non valida alla riga ${index}.`,
-        action:
-          'Correggi il file e ripeti l’importazione. Nessun movimento è stato importato.',
-        details: [cause instanceof Error ? cause.message : String(cause)],
-      });
-    }
-  }
-  return ok(result);
-}
-
-export async function readBankExpenseXlsx(
-  path: string,
-): Promise<Result<BankExpenseImport>> {
-  if (extname(path).toLowerCase() !== '.xlsx')
-    return err({ code: 'SOURCE_INVALID', message: 'Seleziona un file XLSX.' });
-  try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(path);
-    return parseBankExpenseWorkbook(workbook);
-  } catch {
-    return err({
-      code: 'SOURCE_INVALID',
-      message: 'Impossibile leggere il file XLSX.',
-      action:
-        'Verifica che il file sia accessibile e sia un XLSX valido non protetto da password.',
-    });
-  }
-}
-
-const csvHeaders = [
-  'Tipo',
-  'Prodotto',
-  'Data di inizio',
-  'Data di completamento',
-  'Descrizione',
-  'Importo',
-  'Costo',
-  'Valuta',
-  'State',
-  'Saldo',
-] as const;
-type CsvHeader = (typeof csvHeaders)[number];
-
-function csvAmount(text: string, column: string): Decimal {
-  // This export uses dot decimals, without thousands separators.
-  if (!/^[+-]?\d+(?:\.\d{1,2})?$/.test(text))
-    throw new Error(`${column}: importo non valido (massimo due decimali).`);
-  return new Decimal(text);
-}
-
-function csvDate(text: string): string {
-  // Preserve the bank's calendar date without applying the computer's timezone.
-  const match = /^(\d{4}-\d{2}-\d{2}) (\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(
-    text,
-  );
-  if (!match || Number(match[2]) > 23)
-    throw new Error('Data del movimento assente o non valida.');
-  return match[1]!;
-}
-
-export async function parseBankExpenseCsv(
-  text: string,
-): Promise<Result<BankExpenseImport>> {
-  let sheet: ExcelJS.Worksheet;
-  try {
-    // Reuse ExcelJS's CSV parser for quoted commas, escaped quotes, BOM and multiline fields.
-    // Keep all cells as text: dates and monetary values must not be coerced by ExcelJS.
-    sheet = await new ExcelJS.Workbook().csv.read(Readable.from([text]), {
-      map: (value) => value,
-    });
-  } catch {
-    return err({
-      code: 'SOURCE_INVALID',
-      message: 'Impossibile leggere il CSV: struttura o virgolette non valide.',
-    });
-  }
-  const columns = new Map<CsvHeader, number>();
-  const header = sheet.getRow(1);
-  header.eachCell((cell, index) => {
+  const columns = new Map<string, number>();
+  const repeated = new Set<string>();
+  header.eachCell((cell, column) => {
     const label = cell.text.trim();
-    if (csvHeaders.includes(label as CsvHeader))
-      columns.set(label as CsvHeader, index);
+    if (columns.has(label)) repeated.add(label);
+    else columns.set(label, column);
   });
-  if (
-    columns.size !== csvHeaders.length ||
-    header.cellCount !== csvHeaders.length
-  ) {
+  const ambiguous = config.headers.filter((label) => repeated.has(label));
+  if (ambiguous.length)
     return err({
       code: 'SOURCE_INVALID',
-      message: 'Intestazione CSV bancaria non valida.',
-      details: [`Colonne richieste: ${csvHeaders.join(', ')}.`],
+      message: 'Intestazione bancaria con colonne ripetute.',
+      details: [`Colonne ripetute: ${ambiguous.join(', ')}.`],
     });
-  }
   const result: BankExpenseImport = {
     rows: [],
     ignoredIncome: 0,
     skippedPending: 0,
   };
-  for (let index = 2; index <= sheet.rowCount; index++) {
+  for (let index = header.number + 1; index <= sheet.rowCount; index++) {
     const row = sheet.getRow(index);
     if (
       !row.hasValues ||
       (row.values instanceof Array && row.values.every((value) => blank(value)))
     )
       continue;
-    const raw = (column: CsvHeader) =>
-      row.getCell(columns.get(column)!).text.trim();
+    const raw = (column: string) => row.getCell(columns.get(column)!).value;
+    const value = (column: string) => cellValue(raw(column));
+    const pick = (column: string, fallback?: string) => {
+      const first = value(column);
+      return blank(first) && fallback ? value(fallback) : first;
+    };
     try {
-      if (row.cellCount !== header.cellCount)
+      if (csv && row.cellCount !== header.cellCount)
         throw new Error('Numero di colonne diverso dall’intestazione.');
-      const amount = csvAmount(raw('Importo'), 'Importo');
-      const fee = csvAmount(raw('Costo'), 'Costo');
-      if (fee.lt(0))
-        throw new Error('Costo: la commissione non può essere negativa.');
-      const debit = fee.minus(amount);
-      if (debit.lte(0)) {
-        if (amount.gt(0)) result.ignoredIncome++;
-        continue;
+      let debit: Decimal;
+      // Income rows are outside scope; their dates and descriptions are deliberately not parsed.
+      if (config.amount.kind === 'debit') {
+        const { debit: column, credit } = config.amount;
+        const outflow = blank(raw(column))
+          ? undefined
+          : amountOf(value(column), config.decimal, column);
+        if (!outflow?.lt(0)) {
+          if (credit && !blank(raw(credit))) {
+            result.ignoredIncome++;
+            outcomes?.push({ row: index, kind: 'income' });
+          }
+          continue;
+        }
+        debit = outflow.neg();
+      } else {
+        const { amount: column, fee: feeColumn } = config.amount;
+        const amount = amountOf(value(column), config.decimal, column);
+        const fee = feeColumn
+          ? amountOf(value(feeColumn), config.decimal, feeColumn)
+          : new Decimal(0);
+        if (fee.lt(0))
+          throw new Error(
+            `${feeColumn}: la commissione non può essere negativa.`,
+          );
+        debit = fee.minus(amount);
+        if (debit.lte(0)) {
+          if (amount.gt(0)) {
+            result.ignoredIncome++;
+            outcomes?.push({ row: index, kind: 'income' });
+          }
+          continue;
+        }
       }
-      if (raw('Valuta') !== 'EUR')
-        throw new Error(
-          'Valuta non supportata: sono ammesse solo uscite in EUR.',
-        );
+      if (debit.decimalPlaces() > 2)
+        throw new Error('Importo: massimo due decimali.');
+      if (config.currency) {
+        const currency = value(config.currency.column);
+        if (
+          typeof currency !== 'string' ||
+          currency.trim() !== config.currency.value
+        )
+          throw new Error(
+            `Valuta non supportata: sono ammesse solo uscite in ${config.currency.value}.`,
+          );
+      }
+      const description = pick(config.description, config.descriptionFallback);
+      if (typeof description !== 'string')
+        throw new Error('Descrizione assente o non valida.');
+      const moment = expenseMoment(
+        pick(config.date, config.dateFallback),
+        date1904,
+      );
+      const time = config.time ? timeOf(value(config.time)) : moment.time;
       const parsed = bankExpenseRowSchema.safeParse({
-        date: csvDate(raw('Data di completamento') || raw('Data di inizio')),
-        description: normalizeBankDescription(raw('Descrizione')),
+        date: moment.date,
+        description: normalizeBankDescription(description),
         amount: debit.toFixed(2),
+        ...(time ? { time } : {}),
       });
       if (!parsed.success)
         throw new Error(
@@ -308,7 +279,17 @@ export async function parseBankExpenseCsv(
             .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
             .join('; '),
         );
-      keepBooked(result, parsed.data, raw('State'), 'COMPLETATO');
+      const booked = keepBooked(
+        result,
+        parsed.data,
+        config.status && value(config.status.column),
+        config.status?.booked,
+      );
+      outcomes?.push({
+        row: index,
+        kind: booked ? 'expense' : 'pending',
+        expense: parsed.data,
+      });
     } catch (cause) {
       return err({
         code: 'SOURCE_INVALID',
@@ -322,18 +303,56 @@ export async function parseBankExpenseCsv(
   return ok(result);
 }
 
-export async function readBankExpenseFile(
-  path: string,
-): Promise<Result<BankExpenseImport>> {
+function workbookSheet(workbook: ExcelJS.Workbook): Result<Sheet> {
+  const sheet = workbook.worksheets[0];
+  return sheet
+    ? ok({ sheet, date1904: Boolean(workbook.properties.date1904), csv: false })
+    : err({
+        code: 'SOURCE_INVALID',
+        message: 'Il file XLSX non contiene fogli.',
+      });
+}
+
+async function csvSheet(text: string): Promise<Result<Sheet>> {
+  try {
+    // Reuse ExcelJS's CSV parser for quoted commas, escaped quotes, BOM and multiline fields.
+    // Keep all cells as text: dates and monetary values must not be coerced by ExcelJS.
+    const sheet = await new ExcelJS.Workbook().csv.read(Readable.from([text]), {
+      map: (value) => value,
+    });
+    return ok({ sheet, date1904: false, csv: true });
+  } catch {
+    return err({
+      code: 'SOURCE_INVALID',
+      message: 'Impossibile leggere il CSV: struttura o virgolette non valide.',
+    });
+  }
+}
+
+async function readSheet(path: string): Promise<Result<Sheet>> {
   const extension = extname(path).toLowerCase();
-  if (extension === '.xlsx') return readBankExpenseXlsx(path);
+  if (extension === '.xlsx') {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(path);
+      return workbookSheet(workbook);
+    } catch {
+      return err({
+        code: 'SOURCE_INVALID',
+        message: 'Impossibile leggere il file XLSX.',
+        action:
+          'Verifica che il file sia accessibile e sia un XLSX valido non protetto da password.',
+      });
+    }
+  }
   if (extension !== '.csv')
     return err({
       code: 'SOURCE_INVALID',
       message: 'Seleziona un file XLSX o CSV.',
     });
+  let text: string;
   try {
-    return await parseBankExpenseCsv(await readFile(path, 'utf8'));
+    text = await readFile(path, 'utf8');
   } catch {
     return err({
       code: 'SOURCE_INVALID',
@@ -342,4 +361,66 @@ export async function readBankExpenseFile(
         'Verifica che il file sia accessibile e sia un CSV valido in UTF-8.',
     });
   }
+  return csvSheet(text);
+}
+
+export function parseBankExpenseWorkbook(
+  workbook: ExcelJS.Workbook,
+  config: BankImportConfig,
+): Result<BankExpenseImport> {
+  const sheet = workbookSheet(workbook);
+  return sheet.ok ? parseSheet(sheet.value, config) : sheet;
+}
+
+export async function parseBankExpenseCsv(
+  text: string,
+  config: BankImportConfig,
+): Promise<Result<BankExpenseImport>> {
+  const sheet = await csvSheet(text);
+  return sheet.ok ? parseSheet(sheet.value, config) : sheet;
+}
+
+export async function readBankExpenseFile(
+  path: string,
+  config: BankImportConfig,
+): Promise<Result<BankExpenseImport>> {
+  const sheet = await readSheet(path);
+  return sheet.ok ? parseSheet(sheet.value, config) : sheet;
+}
+
+/** The import of a sample file, plus what happens to each of its rows. */
+export async function previewBankExpenseFile(
+  path: string,
+  config: BankImportConfig,
+): Promise<Result<BankExpensePreview>> {
+  const sheet = await readSheet(path);
+  if (!sheet.ok) return sheet;
+  const outcomes: BankRowOutcome[] = [];
+  const result = parseSheet(sheet.value, config, outcomes);
+  return result.ok ? ok({ ...result.value, outcomes }) : result;
+}
+
+/** A sample file's rows as text, at index row number − 1 (empty rows are []). */
+export async function readBankSampleRows(
+  path: string,
+): Promise<Result<string[][]>> {
+  const sheet = await readSheet(path);
+  if (!sheet.ok) return sheet;
+  const rows: string[][] = [];
+  sheet.value.sheet.eachRow((row, number) => {
+    const cells: string[] = [];
+    row.eachCell((cell, column) => {
+      const value = cell.value;
+      if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+        cells[column - 1] = cell.text.trim();
+        return;
+      }
+      // cell.text would show the date in the computer's timezone (01:00 for a plain day).
+      const { date, time } = expenseMoment(value, false);
+      const [year, month, day] = date.split('-');
+      cells[column - 1] = `${day}/${month}/${year}${time ? ` ${time}` : ''}`;
+    });
+    rows[number - 1] = Array.from(cells, (cell) => cell ?? '');
+  });
+  return ok(Array.from(rows, (cells) => cells ?? []));
 }

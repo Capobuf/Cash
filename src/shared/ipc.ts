@@ -10,7 +10,11 @@ import type {
   ConcurrencyToken,
   ArchiveInspection,
 } from './archive';
-import type { BankExpenseImport } from '../domain/model';
+import type {
+  BankExpenseImport,
+  BankExpensePreview,
+  BankImportConfig,
+} from '../domain/model';
 import type { BackupApi } from './backup';
 import type {
   FicAccessVerification,
@@ -44,6 +48,8 @@ export const IPC = {
   backupReveal: 'cash:backup:reveal',
   backupChanged: 'cash:backup:changed',
   bankExpenseImport: 'cash:bank-expenses:import-file',
+  bankExpenseSample: 'cash:bank-expenses:open-sample',
+  bankExpensePreview: 'cash:bank-expenses:preview-sample',
   archiveCreate: 'cash:archive:create',
   archiveOpen: 'cash:archive:open',
   archiveOpenLast: 'cash:archive:open-last',
@@ -110,7 +116,15 @@ export interface CashUpdateStatus {
 
 export interface CashNativeApi {
   backup: BackupApi;
-  bankExpenses: { importFile(): Promise<Result<BankExpenseImport>> };
+  bankExpenses: {
+    importFile(config: BankImportConfig): Promise<Result<BankExpenseImport>>;
+    /** Asks for a sample file and returns its rows as text. */
+    openSample(): Promise<Result<{ name: string; rows: string[][] }>>;
+    /** Reads the last sample file with these rules. */
+    previewSample(
+      config: BankImportConfig,
+    ): Promise<Result<BankExpensePreview>>;
+  };
   archive: {
     create(document: CashDocument): Promise<Result<ArchiveSession>>;
     open(): Promise<Result<ArchiveSession>>;

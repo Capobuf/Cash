@@ -433,12 +433,36 @@ export interface BankExpense extends EntityMeta {
   categoryIds: string[];
   excludedFromCalculations?: boolean;
   accountId?: string;
+  /** HH:MM as written in the bank file (Revolut: already Europe/Rome), never shifted
+   * by the computer's timezone; shown only, not part of the identity. */
+  time?: string;
 }
 
 export interface BankAccount extends EntityMeta {
   name: string;
   /** Earliest pending movement skipped by the last import into this account. */
   pendingSince?: string;
+  /** How to read this bank's export; absent until the user chooses it. */
+  importConfig?: BankImportConfig;
+}
+
+/** Columns are header labels; `headers` is the header row a file must contain. */
+export interface BankImportConfig {
+  headers: string[];
+  date: string;
+  dateFallback?: string;
+  /** Without it, the time comes from the date cell when that has one. */
+  time?: string;
+  description: string;
+  descriptionFallback?: string;
+  /** debit: negative values in a column of outflows; signed: outflow = fee − amount. */
+  amount:
+    | { kind: 'debit'; debit: string; credit?: string }
+    | { kind: 'signed'; amount: string; fee?: string };
+  decimal: ',' | '.';
+  status?: { column: string; booked: string[] };
+  /** Outflows in any other currency cancel the import. */
+  currency?: { column: string; value: string };
 }
 
 export interface BankExpenseCategory extends EntityMeta {
@@ -455,13 +479,20 @@ export interface BankExpenseRule extends EntityMeta {
 
 export type BankExpenseRow = Pick<
   BankExpense,
-  'date' | 'description' | 'amount'
+  'date' | 'description' | 'amount' | 'time'
 >;
 export interface BankExpenseImport {
   rows: BankExpenseRow[];
   ignoredIncome: number;
   skippedPending: number;
   pendingFrom?: string;
+}
+/** What an import does with one row of the file (sheet row number). */
+export type BankRowOutcome =
+  | { row: number; kind: 'income' }
+  | { row: number; kind: 'expense' | 'pending'; expense: BankExpenseRow };
+export interface BankExpensePreview extends BankExpenseImport {
+  outcomes: BankRowOutcome[];
 }
 export interface BankExpenseImportSummary {
   accountName: string;

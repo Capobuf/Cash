@@ -3,7 +3,7 @@ import { parseDocument, documentHeaderSchema } from '../domain/schema';
 import type { CashDocument } from '../domain/model';
 import type { ConcurrencyToken } from '../shared/archive';
 
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 5;
 export const APPLICATION_ID = 0x43415348;
 
 type Row = Record<string, SQLInputValue>;
@@ -90,13 +90,15 @@ const tables: Table[] = [
   },
   {
     name: 'bank_accounts',
-    fields: `${meta}, name TEXT NOT NULL, pendingSince TEXT`,
+    // importConfig is last: storage v4 added it with ALTER TABLE.
+    fields: `${meta}, name TEXT NOT NULL, pendingSince TEXT, importConfig TEXT`,
     keys: ['id'],
+    json: ['importConfig'],
   },
   {
     name: 'bank_expenses',
-    // accountId is last: storage v3 added it with ALTER TABLE.
-    fields: `${meta}, date TEXT NOT NULL, description TEXT NOT NULL, amount TEXT NOT NULL, excludedFromCalculations INTEGER, accountId TEXT REFERENCES bank_accounts(id) DEFERRABLE INITIALLY DEFERRED`,
+    // accountId and time are last: storage v3 and v5 added them with ALTER TABLE.
+    fields: `${meta}, date TEXT NOT NULL, description TEXT NOT NULL, amount TEXT NOT NULL, excludedFromCalculations INTEGER, accountId TEXT REFERENCES bank_accounts(id) DEFERRABLE INITIALLY DEFERRED, time TEXT`,
     keys: ['id'],
     booleans: ['excludedFromCalculations'],
     constraints: ', UNIQUE(date, description, amount)',

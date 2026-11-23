@@ -191,7 +191,7 @@ describe('numerazione persistente dei preventivi', () => {
     downgrade(path);
     const migrated = unwrap(await openArchive(path));
     expect(migrated.document).toEqual(document);
-    expect(migrated.storageVersion).toBe(3);
+    expect(migrated.storageVersion).toBe(5);
     const backups = (await readdir(dir)).filter((name) =>
       name.includes('.schema-v1.'),
     );
