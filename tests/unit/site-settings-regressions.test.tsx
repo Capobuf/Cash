@@ -2,6 +2,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createEmptyDocument,
+  meta,
   ok,
   type CashDocument,
 } from '../../src/domain/model';
@@ -106,14 +107,9 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('site coordinate submission', () => {
-  it.each([
-    ['coordinates', false],
-    ['coordinates', true],
-    ['address', false],
-    ['address', true],
-  ] as const)(
-    'preserves coordinates entered in %s with reverse geocoding %s',
-    async (mode, search) => {
+  it.each([false, true])(
+    'preserves coordinates entered with reverse geocoding %s',
+    async (search) => {
       const { state, document } = setup();
       const render = () => {
         hooks.cursor = 0;
@@ -125,17 +121,7 @@ describe('site coordinate submission', () => {
         });
       };
       let tree = render();
-      if (mode === 'coordinates')
-        find(tree, (e) => e.props.id === 'site-mode')!.props.onValueChange(
-          mode,
-        );
-      tree = render();
-      find(
-        tree,
-        (e) =>
-          e.props.id ===
-          (mode === 'coordinates' ? 'site-coordinates' : 'site-address'),
-      )!.props.onChange({
+      find(tree, (e) => e.props.id === 'site-address')!.props.onChange({
         target: { value: ' 41.9028, 12.4964 ' },
       });
       tree = render();
@@ -183,21 +169,40 @@ describe('site coordinate submission', () => {
     expect(window.cash.ors.searchAddress).toHaveBeenCalledWith('Via Roma, 12');
     expect(window.cash.ors.reverseCoordinates).not.toHaveBeenCalled();
   });
-  it('rejects invalid coordinates without adding a partial site', () => {
-    const { state, document } = setup();
-    hooks.values = ['coordinates', '', '91, 12'];
+  it('keeps an existing reverse-geocoded site unchanged on save', async () => {
+    const { state } = setup();
+    const location = {
+      inputKind: 'coordinates' as const,
+      inputValue: '41.9028, 12.4964',
+      coordinates: { latitude: '41.9028', longitude: '12.4964' },
+    };
+    state.mutate((doc) => {
+      doc.sites.push({
+        ...meta(),
+        name: 'Sede Roma',
+        address: 'Roma',
+        location,
+      });
+    });
     const tree = SiteDialog({
       open: true,
       onOpenChange: vi.fn(),
       appState: state,
-      doc: document,
+      doc: state.document!,
+      site: state.document!.sites[0],
     });
+    expect(
+      find(tree, (e) => e.props.id === 'site-address')!.props,
+    ).toMatchObject({ value: 'Roma' });
     find(tree, (e) => e.type === 'form')!.props.onSubmit({
       preventDefault() {},
       currentTarget: {},
     });
-    expect(state.document?.sites).toEqual([]);
-    expect(state.error?.code).toBe('VALIDATION');
+    await state.save();
+    expect(state.document?.sites[0]).toMatchObject({
+      address: 'Roma',
+      location,
+    });
   });
 });
 
